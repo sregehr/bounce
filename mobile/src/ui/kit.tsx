@@ -1,4 +1,4 @@
-import { useRef, type ComponentRef, type ReactNode } from 'react';
+import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -13,10 +13,11 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { router, type Href } from 'expo-router';
+import { router, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
+import { TAB_BAR_HEIGHT, tabFor } from './tabs';
 import { C, F, type Weight } from './theme';
 
 // ---------- Text ----------
@@ -105,12 +106,14 @@ export function Screen({
   scroll?: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  // On tabbed screens the content runs under the bar, so it ends clear of it (and of the raised mic button).
+  const tabbed = tabFor(usePathname()) !== null;
   const content: ViewStyle = {
     flexGrow: 1,
     gap,
     paddingHorizontal: padX,
     paddingTop: Math.max(60, insets.top + 16),
-    paddingBottom: padBottom ?? Math.max(28, insets.bottom + 12),
+    paddingBottom: tabbed ? TAB_BAR_HEIGHT + insets.bottom + 28 : (padBottom ?? Math.max(28, insets.bottom + 12)),
   };
   if (!scroll) return <View style={[{ flex: 1, backgroundColor: C.bg }, content, style]}>{children}</View>;
   return (
@@ -303,6 +306,103 @@ export function Bars({ bars, height, color = C.text, style }: { bars: Bar[]; hei
     <View accessible={false} style={[{ height, flexDirection: 'row', alignItems: 'center', gap: 2, overflow: 'hidden' }, style]}>
       {bars.map((b, i) => (
         <View key={i} style={{ width: 3, height: Math.max(2, Math.min(height, b.h)), borderRadius: 2, backgroundColor: b.c ?? color }} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * A waveform you can tap or drag to move through the track. It fits its bars to its own
+ * width, so the whole track is always on show and a tap lands where it looks like it will.
+ */
+export function SeekTrack({
+  peaks,
+  height,
+  progress,
+  onSeek,
+  played = C.accent,
+  rest = C.waveDim,
+  label = 'Position in track',
+  disabled,
+  style,
+}: {
+  peaks: number[];
+  height: number;
+  /** How far through the track playback is, 0–1. */
+  progress: number;
+  /** Called with where to jump to, 0–1. */
+  onSeek: (fraction: number) => void;
+  played?: string;
+  rest?: string;
+  label?: string;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const ref = useRef<ComponentRef<typeof View>>(null);
+  const box = useRef({ left: 0, width: 1 });
+  const dragging = useRef<number | null>(null);
+  const [width, setWidth] = useState(0);
+  const [drag, setDrag] = useState<number | null>(null);
+
+  const at = (pageX: number) => Math.max(0, Math.min(1, (pageX - box.current.left) / box.current.width));
+  const move = (pageX: number) => {
+    dragging.current = at(pageX);
+    setDrag(dragging.current);
+  };
+  const shown = Math.max(0, Math.min(1, drag ?? progress));
+  const count = Math.max(8, Math.floor((width + 2) / 5));
+  const bars = width > 0 ? waveBars(peaks, count, height, (i) => ((i + 0.5) / count <= shown ? played : rest)) : [];
+
+  const web =
+    Platform.OS === 'web'
+      ? {
+          tabIndex: disabled ? -1 : 0,
+          'aria-valuemin': 0,
+          'aria-valuemax': 100,
+          'aria-valuenow': Math.round(shown * 100),
+          onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+            if (disabled) return;
+            if (e.key === 'ArrowRight') (e.preventDefault(), onSeek(Math.min(1, progress + 0.05)));
+            if (e.key === 'ArrowLeft') (e.preventDefault(), onSeek(Math.max(0, progress - 0.05)));
+          },
+        }
+      : {};
+
+  return (
+    <View
+      ref={ref}
+      {...(web as object)}
+      accessible
+      accessibilityRole="adjustable"
+      accessibilityLabel={label}
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100) }}
+      accessibilityState={{ disabled: !!disabled }}
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      onStartShouldSetResponder={() => !disabled}
+      onMoveShouldSetResponder={() => !disabled}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={(e) => {
+        const pageX = e.nativeEvent.pageX;
+        // Measure on every touch: the screen may have scrolled or resized since the last one.
+        ref.current?.measureInWindow((x, _y, w) => {
+          if (w > 0) box.current = { left: x, width: w };
+          move(pageX);
+        });
+      }}
+      onResponderMove={(e) => dragging.current !== null && move(e.nativeEvent.pageX)}
+      onResponderRelease={() => {
+        if (dragging.current !== null) onSeek(dragging.current);
+        dragging.current = null;
+        setDrag(null);
+      }}
+      onResponderTerminate={() => {
+        dragging.current = null;
+        setDrag(null);
+      }}
+      style={[{ height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', overflow: 'hidden' }, Platform.OS === 'web' && !disabled ? ({ cursor: 'pointer', touchAction: 'pan-y', userSelect: 'none' } as ViewStyle) : null, style]}
+    >
+      {bars.map((b, i) => (
+        <View key={i} style={{ width: 3, height: Math.max(2, Math.min(height, b.h)), borderRadius: 2, backgroundColor: b.c, pointerEvents: 'none' }} />
       ))}
     </View>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CoverImage } from '@/cover/CoverImage';
 import { exportFiles } from '@/data/exporting';
@@ -10,6 +11,7 @@ import { useSong } from '@/data/song';
 import { spectrum } from '@/engine/engine';
 import { Btn, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
+import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { C, F, clock, lufs } from '@/ui/theme';
 
 const BARS = 34;
@@ -48,6 +50,7 @@ export default function Player() {
   const [drag, setDrag] = useState<number | null>(null);
   const [lyrics, setLyrics] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
   useStopOnLeave();
 
   if (!project) return <Redirect href="/" />;
@@ -82,17 +85,12 @@ export default function Player() {
             {song.error ? 'Could not render' : !mix ? song.stage || 'Mastering' : [take ? 'Mastered' : 'Beat', project.overrides.master ? 'by hand' : project.master.style, lufs(mix.lufs, 0)].join(' · ')}
           </Txt>
         </Pressable>
-        <Pressable accessibilityRole="link" onPress={() => router.push('/vault')} style={[pill, { minHeight: 44, borderRadius: 22, paddingHorizontal: 16, justifyContent: 'center' }]}>
-          <Txt size={15} w="semi">
-            Vault
-          </Txt>
-        </Pressable>
       </View>
 
       <View style={{ flexGrow: 1 }} />
       <Visualiser playing={t.playing} />
 
-      <View style={{ backgroundColor: C.bg, paddingTop: 20, paddingHorizontal: 24, paddingBottom: 28, gap: 14 }}>
+      <View style={{ backgroundColor: C.bg, paddingTop: 20, paddingHorizontal: 24, paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 28, gap: 14 }}>
         <View style={[s.row, { gap: 14 }]}>
           <Pressable accessibilityRole="link" accessibilityLabel="Change cover art" onPress={() => router.push('/cover')}>
             <CoverImage project={project} size={60} radius={12} />

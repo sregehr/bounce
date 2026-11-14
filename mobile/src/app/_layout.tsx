@@ -10,6 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { startBackup } from '@/data/backup';
 import { loadLibrary, useLibrary, useReady } from '@/data/store';
 import { closeInput } from '@/engine/engine';
+import { TabBar } from '@/ui/TabBar';
 import { C } from '@/ui/theme';
 
 const LISTENING = ['/onboarding', '/capture', '/record', '/vocals', '/settings'];
@@ -43,7 +44,10 @@ export default function Layout() {
           {!loaded ? null : !onboarded && pathname !== '/onboarding' ? (
             <Redirect href="/onboarding" />
           ) : (
-            <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }} />
+            <>
+              <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }} />
+              <TabBar />
+            </>
           )}
         </View>
       </View>

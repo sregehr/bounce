@@ -11,9 +11,9 @@ import { barSeconds, useMix } from '@/data/studio';
 import { strongestStretch } from '@/dsp/analysis';
 import { wavePeaks } from '@/dsp/core';
 import { encodeWav } from '@/dsp/wav';
-import { pause, play, toggle } from '@/engine/engine';
+import { pause, play, seek, toggle } from '@/engine/engine';
 import { makeSnippetVideo, videoSupported } from '@/snippet/video';
-import { Bars, Btn, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, Segmented, TopBar, Txt, s, waveBars } from '@/ui/kit';
+import { Btn, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
 import { C, clock } from '@/ui/theme';
 
@@ -104,7 +104,7 @@ export default function Snippet() {
             {artist}
           </Txt>
         </View>
-        <Bars bars={waveBars(clip?.peaks ?? [], 59, 96, (i) => (t.playing && t.duration > 0 && i / 59 > t.position / t.duration ? 'rgba(18,18,18,0.35)' : C.bg))} height={96} color={C.bg} style={{ justifyContent: 'space-between' }} />
+        <SeekTrack peaks={clip?.peaks ?? []} height={96} progress={t.duration > 0 ? t.position / t.duration : 0} played={C.bg} rest={t.loaded && t.position > 0 ? 'rgba(18,18,18,0.35)' : C.bg} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
         <View style={{ gap: 8, minHeight: 52, justifyContent: 'flex-end' }}>
           {choice.captions && (
             <Txt size={22} w="display" lh={1.2} ls={0} color={caption ? C.bg : 'rgba(18,18,18,0.5)'} numberOfLines={2}>

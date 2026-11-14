@@ -91,7 +91,7 @@ export default function Vault() {
 
   return (
     <Screen gap={16}>
-      <TopBar left="Vault" right={<NavLink home>Home</NavLink>} />
+      <TopBar left="Vault" />
 
       <View style={{ gap: 6 }}>
         <Eyebrow>Search your bars</Eyebrow>

@@ -55,7 +55,7 @@ export default function Settings() {
 
   return (
     <Screen gap={18} padBottom={40}>
-      <TopBar left="Settings" right={<NavLink to="/" back>Done</NavLink>} />
+      <TopBar left="Settings" />
 
       <View style={{ gap: 8 }}>
         <Eyebrow>Names</Eyebrow>

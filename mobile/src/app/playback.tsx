@@ -5,7 +5,7 @@ import { Redirect } from 'expo-router';
 import { activeTake, deleteTake, patchProject, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
-import { Bars, Btn, Chip, Chips, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, RoundPlay, Screen, Segmented, SliderRow, TickIcon, TopBar, Txt, s, waveBars } from '@/ui/kit';
+import { Btn, Chip, Chips, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, SliderRow, TickIcon, TopBar, Txt, s } from '@/ui/kit';
 import { useArmed, useStopOnLeave } from '@/ui/hooks';
 import { C, clock } from '@/ui/theme';
 
@@ -28,7 +28,6 @@ export default function Playback() {
   const setPolish = (patch: Partial<Polish>) => patchProject(project.id, { polish: { ...polish, ...patch } });
   const side = t.side === 'b' ? 'Raw take' : 'Polished';
   const progress = t.duration > 0 ? t.position / t.duration : 0;
-  const bars = waveBars(take.wave, 68, 44, (i) => (i / 68 < progress ? C.accent : C.waveDim));
   const status = song.error ? 'could not render' : song.busy ? (mix ? 'updating' : 'working') : t.playing ? 'playing' : 'ready';
   const steps = ['Lined up with the beat', mix?.did.noiseReduced === false ? 'Take was already clean' : 'Background noise lowered', 'Chain matched to your voice', 'Levels balanced with the beat'];
   const origin = take.origin === 'kept' ? ' · kept from the last 60 s' : take.origin === 'punched' ? ' · punched in' : '';
@@ -50,18 +49,7 @@ export default function Playback() {
 
       <View style={[s.row, { gap: 12 }]}>
         <RoundPlay playing={t.playing} onPress={song.toggle} disabled={!t.loaded} />
-        <Pressable
-          accessibilityRole="adjustable"
-          accessibilityLabel="Position in take"
-          style={{ flex: 1 }}
-          onPress={(e) => {
-            const x = e.nativeEvent.locationX;
-            // Bars are 3 wide with a 2 gap; the strip is as wide as its bars.
-            if (t.duration > 0) song.seek(Math.max(0, Math.min(1, x / (68 * 5))) * t.duration);
-          }}
-        >
-          <Bars bars={bars} height={44} style={{ pointerEvents: 'none' }} />
-        </Pressable>
+        <SeekTrack peaks={take.wave} height={44} progress={progress} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" style={{ flex: 1 }} />
       </View>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 8 }}>

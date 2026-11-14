@@ -4,8 +4,8 @@ import { Redirect, router } from 'expo-router';
 
 import { deleteProject, patchProject, useProject } from '@/data/store';
 import { barsIn, loadPcm } from '@/data/studio';
-import { play, toggle } from '@/engine/engine';
-import { Bars, Card, Chip, Eyebrow, Foot, Muted, NavLink, RoundPlay, Screen, TopBar, Txt, s, waveBars } from '@/ui/kit';
+import { play, seek, toggle } from '@/engine/engine';
+import { Card, Chip, Eyebrow, Foot, Muted, NavLink, RoundPlay, Screen, SeekTrack, TopBar, Txt, s } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
 import { Stat } from '@/ui/parts';
 import { C, F, clock, db, lufs, rateLabel } from '@/ui/theme';
@@ -32,7 +32,6 @@ export default function BeatReady() {
     void task.run(async () => play(id, { a: await loadPcm(beat.key) }));
   };
   const progress = t.duration > 0 ? t.position / t.duration : 0;
-  const bars = waveBars(beat.wave, 59, 84, (i) => (t.loaded && i / 59 < progress ? C.accent : undefined));
   const setBpm = (bpm: number | null) => patchProject(project.id, { beat: { ...beat, bpm: bpm && bpm >= 40 && bpm <= 240 ? Math.round(bpm * 100) / 100 : null } });
   const commitTempo = () => {
     if (tempoText === null) return;
@@ -45,7 +44,7 @@ export default function BeatReady() {
 
   return (
     <Screen gap={22} padBottom={32}>
-      <TopBar left={<Eyebrow>{beat.source === 'capture' ? 'Beat captured' : beat.source === 'import' ? 'Beat imported' : 'Demo beat'}</Eyebrow>} right={beat.source === 'capture' ? <NavLink to="/capture" replace>Record again</NavLink> : <NavLink home>Home</NavLink>} />
+      <TopBar left={<Eyebrow>{beat.source === 'capture' ? 'Beat captured' : beat.source === 'import' ? 'Beat imported' : 'Demo beat'}</Eyebrow>} right={beat.source === 'capture' ? <NavLink to="/capture" replace>Record again</NavLink> : undefined} />
 
       <View style={{ gap: 6 }}>
         <Txt size={12} color={C.muted}>
@@ -63,7 +62,9 @@ export default function BeatReady() {
       </View>
 
       <Card style={{ paddingVertical: 18, paddingHorizontal: 16 }}>
-        <Bars bars={bars} height={84} style={{ borderLeftWidth: 3, borderRightWidth: 3, borderColor: C.accent, borderRadius: 4, paddingHorizontal: 6, justifyContent: 'space-between' }} />
+        <View style={{ borderLeftWidth: 3, borderRightWidth: 3, borderColor: C.accent, borderRadius: 4, paddingHorizontal: 6 }}>
+          <SeekTrack peaks={beat.wave} height={84} progress={t.loaded ? progress : 0} rest={C.text} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in beat" />
+        </View>
         <View style={[s.row, { gap: 14 }]}>
           <RoundPlay size={48} icon={18} playing={t.playing} onPress={onPlay} disabled={task.busy} />
           <View style={{ gap: 2, flex: 1 }}>

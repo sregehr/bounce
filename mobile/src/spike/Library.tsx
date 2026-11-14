@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery } from 'convex/react';
 
-import { api } from './convex/_generated/api';
-import type { Recording } from './modules/bounce-audio';
+import { api } from '../../convex/_generated/api';
+import type { Recording } from '../../modules/bounce-audio';
 
 const C = { surface: '#1c1c1c', border: '#333333', dim: '#3a3a3a', text: '#f2f0ea', muted: '#a8a6a0', accent: '#ffb020', rec: '#ff4b3e', bg: '#121212' };
 

@@ -1,0 +1,96 @@
+import type { VoiceStats } from '@/dsp/analysis';
+import type { Chain, MasterSettings, Polish } from '@/dsp/presets';
+
+/** A stored audio file: `key` finds it in the blob store. */
+export type AudioInfo = { key: string; durationSec: number; sampleRate: number; channels: number };
+
+export type Beat = AudioInfo & {
+  source: 'capture' | 'import' | 'demo';
+  sourceLabel: string;
+  peakDb: number;
+  lufs: number;
+  clipped: boolean;
+  trimmedSec: number;
+  /** Normalised peaks for drawing the waveform. */
+  wave: number[];
+  bpm: number | null;
+  /** Musical key, such as "F minor". */
+  musicalKey: string | null;
+};
+
+export type Take = AudioInfo & {
+  id: string;
+  number: number;
+  createdAt: number;
+  /** How far into the loop the take starts, in seconds. */
+  phaseSec: number;
+  /** The loop the take was recorded over, so it always plays back against the same bars. */
+  loop: LoopChoice;
+  wave: number[];
+  peakDb: number;
+  clipped: boolean;
+  origin: 'recorded' | 'kept' | 'punched';
+  voice: VoiceStats | null;
+};
+
+/** `bars` 0 means the whole beat, played through once. */
+export type LoopChoice = { bars: 0 | 8 | 16; startBar: number };
+
+export const SCENES = ['photo', 'studio', 'stage', 'rooftop'] as const;
+export type SceneId = (typeof SCENES)[number];
+
+export type Cover = {
+  scene: SceneId;
+  /** The photo as taken. */
+  photoKey: string | null;
+  /** The person cut out of the photo, when that worked. */
+  cutoutKey: string | null;
+  /** The finished cover for the chosen scene. */
+  imageKey: string | null;
+};
+
+export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format: 'wav24' | 'wav16'; instrumental: boolean; vocals: boolean };
+export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean };
+
+export type Project = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  beat: Beat;
+  loop: LoopChoice;
+  takes: Take[];
+  /** The take that Playback, Master and the Player use. */
+  takeId: string | null;
+  polish: Polish;
+  master: MasterSettings;
+  /** Chains edited by hand on the Advanced screen. */
+  overrides: { vocal?: Chain; beat?: Chain; master?: Chain };
+  exporting: ExportChoice;
+  snippet: SnippetChoice;
+  cover: Cover;
+  lyrics: string;
+  /** Numbers from the last master, shown in lists without rendering again. */
+  stats: { lufs: number; truePeakDb: number; durationSec: number } | null;
+};
+
+export type Profile = { artist: string; producer: string; onboarded: boolean };
+
+export type Settings = {
+  inputId: string | null;
+  /** Round-trip delay measured on this device, or null to use what the browser reports. */
+  latencyMs: number | null;
+  backup: boolean;
+  /** Identifies this browser to the backup until there are accounts. */
+  deviceId: string;
+  /** A vocal chain saved from the Advanced screen. */
+  vocalPreset?: Chain;
+};
+
+export type Library = { version: 1; profile: Profile; settings: Settings; projects: Project[]; currentId: string | null; coverPhotoKey: string | null };
+
+export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+export function emptyLibrary(): Library {
+  return { version: 1, profile: { artist: '', producer: '', onboarded: false }, settings: { inputId: null, latencyMs: null, backup: true, deviceId: newId() + newId() }, projects: [], currentId: null, coverPhotoKey: null };
+}

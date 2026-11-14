@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { ConvexProvider, ConvexReactClient } from 'convex/react';
 
-import BounceAudio, { AudioStatus, LatencyResult, MeterEvent, Recording } from './modules/bounce-audio';
+import BounceAudio, { AudioStatus, LatencyResult, MeterEvent, Recording } from '../../modules/bounce-audio';
 import { Library } from './Library';
 
 // Set by `npx convex dev` in .env.local. Without it the spike still runs, minus the library.

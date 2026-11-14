@@ -1,0 +1,675 @@
+import { useRef, type ComponentRef, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type StyleProp,
+  type TextInputProps,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
+import { router, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path, Rect } from 'react-native-svg';
+
+import { C, F, type Weight } from './theme';
+
+// ---------- Text ----------
+
+export function Txt({
+  children,
+  size = 15,
+  w = 'regular',
+  color = C.text,
+  lh,
+  ls,
+  center,
+  right,
+  upper,
+  style,
+  numberOfLines,
+}: {
+  children: ReactNode;
+  size?: number;
+  w?: Weight;
+  color?: string;
+  /** Line height as a multiple of the font size. */
+  lh?: number;
+  /** Letter spacing in em. */
+  ls?: number;
+  center?: boolean;
+  right?: boolean;
+  upper?: boolean;
+  style?: StyleProp<TextStyle>;
+  numberOfLines?: number;
+}) {
+  const display = w === 'display' || w === 'displayMedium';
+  return (
+    <Text
+      numberOfLines={numberOfLines}
+      style={[
+        {
+          fontFamily: F[w],
+          fontSize: size,
+          color,
+          letterSpacing: (ls ?? (w === 'display' ? -0.02 : 0)) * size,
+          lineHeight: Math.round(size * (lh ?? (display ? 1.15 : 1.35))),
+          textAlign: center ? 'center' : right ? 'right' : undefined,
+          textTransform: upper ? 'uppercase' : undefined,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </Text>
+  );
+}
+
+export function Eyebrow({ children, accent, color, size = 12 }: { children: ReactNode; accent?: boolean; color?: string; size?: number }) {
+  return (
+    <Txt size={size} w="semi" ls={0.08} upper color={color ?? (accent ? C.accent : C.muted)}>
+      {children}
+    </Txt>
+  );
+}
+
+export function Muted({ children, size = 14, center, lh = 1.45, style }: { children: ReactNode; size?: number; center?: boolean; lh?: number; style?: StyleProp<TextStyle> }) {
+  return (
+    <Txt size={size} color={C.muted} center={center} lh={lh} style={style}>
+      {children}
+    </Txt>
+  );
+}
+
+// ---------- Layout ----------
+
+/** Full-height phone screen. `gap` and `padBottom` vary per screen in the design. */
+export function Screen({
+  gap = 12,
+  padBottom,
+  padX = 24,
+  style,
+  children,
+  scroll = true,
+}: {
+  gap?: number;
+  padBottom?: number;
+  padX?: number;
+  style?: StyleProp<ViewStyle>;
+  children: ReactNode;
+  scroll?: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  const content: ViewStyle = {
+    flexGrow: 1,
+    gap,
+    paddingHorizontal: padX,
+    paddingTop: Math.max(60, insets.top + 16),
+    paddingBottom: padBottom ?? Math.max(28, insets.bottom + 12),
+  };
+  if (!scroll) return <View style={[{ flex: 1, backgroundColor: C.bg }, content, style]}>{children}</View>;
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: C.bg }}
+      contentContainerStyle={[content, style]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
+export function TopBar({ left, right }: { left: ReactNode; right?: ReactNode }) {
+  return (
+    <View style={s.topbar}>
+      {typeof left === 'string' ? (
+        <Txt size={26} w="display" style={{ flexShrink: 1 }}>
+          {left}
+        </Txt>
+      ) : (
+        left
+      )}
+      {right}
+    </View>
+  );
+}
+
+/** Pushes whatever follows to the bottom of the screen, like the design's footer. */
+export function Foot({ children, gap = 10, center, style }: { children: ReactNode; gap?: number; center?: boolean; style?: StyleProp<ViewStyle> }) {
+  return <View style={[{ flexGrow: 1, justifyContent: 'flex-end', gap, alignItems: center ? 'center' : 'stretch' }, style]}>{children}</View>;
+}
+
+export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  return <View style={[s.card, style]}>{children}</View>;
+}
+
+/** React Native for Web adds `hovered` to a Pressable's state; the types do not know about it. */
+type Hover = { pressed: boolean; hovered?: boolean };
+
+// ---------- Navigation ----------
+
+export type Nav = { to?: Href; replace?: boolean; back?: boolean; home?: boolean; onPress?: () => void };
+
+/**
+ * Runs the tap handler, then navigates. `back` returns to the previous screen when there is
+ * one; `home` closes everything above the home screen.
+ */
+export function go({ to, replace, back, home, onPress }: Nav) {
+  onPress?.();
+  if (home) {
+    if (router.canDismiss()) router.dismissAll();
+    router.replace('/');
+  } else if (back && router.canGoBack()) router.back();
+  else if (to) (replace || back ? router.replace : router.push)(to);
+}
+
+export function NavLink({ children, center, size = 15, w = 'medium', style, ...nav }: Nav & { children: ReactNode; center?: boolean; size?: number; w?: Weight; style?: StyleProp<ViewStyle> }) {
+  return (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => go(nav)}
+      hitSlop={6}
+      style={[{ minHeight: 44, justifyContent: 'center', alignItems: center ? 'center' : 'flex-start' }, style]}
+    >
+      {(press) => (
+        <Txt size={size} w={w} color={(press as Hover).hovered ? C.accentHover : C.accent} style={{ textDecorationLine: 'underline' }}>
+          {children}
+        </Txt>
+      )}
+    </Pressable>
+  );
+}
+
+// ---------- Buttons ----------
+
+export function Btn({
+  label,
+  kind = 'primary',
+  disabled,
+  busy,
+  style,
+  size,
+  ...nav
+}: Nav & { label: string; kind?: 'primary' | 'light' | 'outline'; disabled?: boolean; busy?: boolean; style?: StyleProp<ViewStyle>; size?: number }) {
+  const off = disabled || busy;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!off, busy: !!busy }}
+      disabled={off}
+      onPress={() => go(nav)}
+      style={({ pressed, hovered }: Hover) => [
+        s.btn,
+        kind === 'primary' && { backgroundColor: hovered ? C.accentHover : C.accent },
+        kind === 'light' && { backgroundColor: C.text, borderRadius: 18, minHeight: 64 },
+        kind === 'outline' && { backgroundColor: 'transparent', borderWidth: 1, borderColor: hovered ? C.muted : C.borderStrong, minHeight: 52, paddingHorizontal: 6 },
+        off && { opacity: 0.4 },
+        pressed && { opacity: 0.8 },
+        style,
+      ]}
+    >
+      {busy ? (
+        <ActivityIndicator color={kind === 'outline' ? C.text : C.bg} />
+      ) : kind === 'outline' ? (
+        <Txt size={size ?? 15} w="semi" center>
+          {label}
+        </Txt>
+      ) : (
+        <Txt size={size ?? (kind === 'light' ? 22 : 18)} w="display" color={C.bg} center>
+          {label}
+        </Txt>
+      )}
+    </Pressable>
+  );
+}
+
+export function RoundPlay({ playing, onPress, size = 44, label, icon = 16, disabled }: { playing?: boolean; onPress?: () => void; size?: number; label?: string; icon?: number; disabled?: boolean }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label ?? (playing ? 'Pause' : 'Play')}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [{ width: size, height: size, borderRadius: size / 2, backgroundColor: C.text, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : pressed ? 0.8 : 1 }]}
+    >
+      {playing ? <PauseIcon size={icon + 2} color={C.bg} /> : <PlayIcon size={icon} color={C.bg} />}
+    </Pressable>
+  );
+}
+
+// ---------- Segmented + chips ----------
+
+export function Segmented<T extends string>({ options, value, onChange, variant }: { options: readonly T[]; value: T; onChange: (v: T) => void; variant?: 'inset' | 'compact' }) {
+  const inset = variant === 'inset';
+  return (
+    <View style={[s.segmented, inset && { backgroundColor: C.bg, borderWidth: 0, borderRadius: 12 }]}>
+      {options.map((o) => {
+        const on = o === value;
+        return (
+          <Pressable
+            key={o}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            onPress={() => onChange(o)}
+            style={[s.segment, { borderRadius: inset ? 9 : 10 }, on && { backgroundColor: C.text }]}
+          >
+            <Txt size={variant ? 14 : 15} w="semi" color={on ? C.bg : C.muted}>
+              {o}
+            </Txt>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export function Chip({ label, on, onPress, square, style }: { label: string; on?: boolean; onPress?: () => void; square?: boolean; style?: StyleProp<ViewStyle> }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!on }}
+      onPress={onPress}
+      style={[s.chip, square && { borderRadius: 12, paddingHorizontal: 0, flex: 1 }, on && { backgroundColor: C.text, borderColor: C.text }, style]}
+    >
+      <Txt size={square ? 13 : 14} w="semi" color={on ? C.bg : C.text}>
+        {label}
+      </Txt>
+    </Pressable>
+  );
+}
+
+export function Chips<T extends string>({ options, value, onChange, wrap }: { options: readonly T[]; value: T; onChange: (v: T) => void; wrap?: boolean }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 8, flexWrap: wrap ? 'wrap' : 'nowrap' }}>
+      {options.map((o) => (
+        <Chip key={o} label={o} on={o === value} onPress={() => onChange(o)} />
+      ))}
+    </View>
+  );
+}
+
+// ---------- Waveform bars + meters ----------
+
+export type Bar = { h: number; c?: string };
+
+export function Bars({ bars, height, color = C.text, style }: { bars: Bar[]; height: number; color?: string; style?: StyleProp<ViewStyle> }) {
+  return (
+    <View accessible={false} style={[{ height, flexDirection: 'row', alignItems: 'center', gap: 2, overflow: 'hidden' }, style]}>
+      {bars.map((b, i) => (
+        <View key={i} style={{ width: 3, height: Math.max(2, Math.min(height, b.h)), borderRadius: 2, backgroundColor: b.c ?? color }} />
+      ))}
+    </View>
+  );
+}
+
+/** Turns normalised 0–1 peaks into bars of a given count, resampling as needed. */
+export function waveBars(peaks: number[], count: number, maxHeight: number, color?: (i: number) => string | undefined): Bar[] {
+  const bars: Bar[] = [];
+  for (let i = 0; i < count; i++) {
+    let p = 0;
+    if (peaks.length > 0) {
+      const from = Math.floor((i * peaks.length) / count);
+      const to = Math.max(from + 1, Math.floor(((i + 1) * peaks.length) / count));
+      for (let j = from; j < to && j < peaks.length; j++) p = Math.max(p, peaks[j]);
+    }
+    bars.push({ h: Math.round(6 + Math.sqrt(p) * (maxHeight - 6)), c: color?.(i) });
+  }
+  return bars;
+}
+
+export function Meter({ label, pct, height = 6, accent }: { label?: string; pct: number; height?: number; accent?: boolean }) {
+  return (
+    <View style={[s.row, { gap: 10 }]}>
+      {label ? (
+        <Txt size={12} color={C.muted} style={{ width: 10 }}>
+          {label}
+        </Txt>
+      ) : null}
+      <View style={{ flex: 1, height, borderRadius: 99, backgroundColor: C.line, overflow: 'hidden' }}>
+        <View style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height, borderRadius: 99, backgroundColor: accent ? C.accent : C.text }} />
+      </View>
+    </View>
+  );
+}
+
+// ---------- Slider ----------
+
+export function Slider({
+  value,
+  min = 0,
+  max = 100,
+  step = 1,
+  onChange,
+  onCommit,
+  height = 40,
+  label,
+  disabled,
+  style,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (v: number) => void;
+  /** Called once when the drag ends, for work too heavy to run on every move. */
+  onCommit?: (v: number) => void;
+  height?: number;
+  label?: string;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const ref = useRef<ComponentRef<typeof View>>(null);
+  const box = useRef({ left: 0, width: 1 });
+  const latest = useRef(value);
+  latest.current = value;
+
+  const snap = (v: number) => {
+    const stepped = Math.round((v - min) / step) * step + min;
+    return Math.max(min, Math.min(max, Number(stepped.toFixed(6))));
+  };
+  const setFromPage = (pageX: number) => {
+    const t = Math.max(0, Math.min(1, (pageX - box.current.left) / box.current.width));
+    const next = snap(min + t * (max - min));
+    if (next !== latest.current) {
+      latest.current = next;
+      onChange(next);
+    }
+  };
+  const measure = (then?: () => void) =>
+    ref.current?.measureInWindow((x, _y, width) => {
+      if (width > 0) box.current = { left: x + 9, width: Math.max(1, width - 18) };
+      then?.();
+    });
+  const nudge = (dir: number, big?: boolean) => {
+    const next = snap(latest.current + dir * step * (big ? 10 : 1));
+    latest.current = next;
+    onChange(next);
+    onCommit?.(next);
+  };
+
+  const t = max > min ? (value - min) / (max - min) : 0;
+  const web =
+    Platform.OS === 'web'
+      ? {
+          tabIndex: disabled ? -1 : 0,
+          onKeyDown: (e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') (e.preventDefault(), nudge(1, e.shiftKey));
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') (e.preventDefault(), nudge(-1, e.shiftKey));
+          },
+        }
+      : {};
+
+  return (
+    <View
+      ref={ref}
+      {...(web as object)}
+      accessibilityRole="adjustable"
+      accessibilityLabel={label}
+      accessibilityValue={{ min, max, now: value }}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
+      onLayout={() => measure()}
+      onStartShouldSetResponder={() => !disabled}
+      onMoveShouldSetResponder={() => !disabled}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={(e) => {
+        const x = e.nativeEvent.pageX;
+        measure(() => setFromPage(x));
+      }}
+      onResponderMove={(e) => setFromPage(e.nativeEvent.pageX)}
+      onResponderRelease={() => onCommit?.(latest.current)}
+      onResponderTerminate={() => onCommit?.(latest.current)}
+      style={[{ height, justifyContent: 'center', opacity: disabled ? 0.4 : 1 }, Platform.OS === 'web' && ({ cursor: 'pointer', userSelect: 'none', touchAction: 'none' } as object), style]}
+    >
+      <View pointerEvents="none" style={{ height: 4, borderRadius: 2, backgroundColor: C.dim, marginHorizontal: 9 }}>
+        <View style={{ width: `${t * 100}%`, height: 4, borderRadius: 2, backgroundColor: C.accent }} />
+      </View>
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 18, top: 0, bottom: 0, justifyContent: 'center' }}>
+        <View style={{ marginLeft: `${t * 100}%`, width: 18, height: 18, borderRadius: 9, backgroundColor: C.accent }} />
+      </View>
+    </View>
+  );
+}
+
+export function SliderRow({
+  label,
+  value,
+  display,
+  onChange,
+  onCommit,
+  min = 0,
+  max = 100,
+  step = 1,
+  labelWidth = 76,
+  valueWidth = 62,
+  minHeight = 40,
+  fontSize = 14,
+}: {
+  label: string;
+  value: number;
+  display?: string;
+  onChange: (v: number) => void;
+  onCommit?: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  labelWidth?: number;
+  valueWidth?: number;
+  minHeight?: number;
+  fontSize?: number;
+}) {
+  return (
+    <View style={[s.row, { minHeight }]}>
+      <Txt size={fontSize} style={{ width: labelWidth }}>
+        {label}
+      </Txt>
+      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} height={minHeight} style={{ flex: 1 }} />
+      {display !== undefined && (
+        <Txt size={13} color={C.muted} right style={{ width: valueWidth }}>
+          {display}
+        </Txt>
+      )}
+    </View>
+  );
+}
+
+// ---------- Checkbox, radio, option rows ----------
+
+export function Check({ checked, round, size = 22 }: { checked: boolean; round?: boolean; size?: number }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: round ? size / 2 : 5,
+        borderWidth: checked && !round ? 0 : 1.5,
+        borderColor: checked ? C.accent : C.muted,
+        backgroundColor: checked && !round ? C.accent : 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {checked && round && <View style={{ width: size - 10, height: size - 10, borderRadius: size, backgroundColor: C.accent }} />}
+      {checked && !round && (
+        <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+          <Path d="M2 7.5l3.2 3L12 3.5" stroke={C.bg} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      )}
+    </View>
+  );
+}
+
+/** A tappable row with a checkbox or radio, a label and an optional hint. */
+export function Option({
+  label,
+  sub,
+  hint,
+  checked,
+  onChange,
+  radio,
+  divided,
+  minHeight = 48,
+  boxFirst,
+  w = 'medium',
+}: {
+  label: string;
+  sub?: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  radio?: boolean;
+  divided?: boolean;
+  minHeight?: number;
+  boxFirst?: boolean;
+  w?: Weight;
+}) {
+  const box = <Check checked={checked} round={radio} size={radio ? 20 : 22} />;
+  return (
+    <Pressable
+      accessibilityRole={radio ? 'radio' : 'checkbox'}
+      accessibilityState={{ checked }}
+      accessibilityLabel={label}
+      onPress={() => onChange(radio ? true : !checked)}
+      style={[s.row, { minHeight, gap: boxFirst ? 12 : 14 }, divided && s.divided]}
+    >
+      {boxFirst && box}
+      <View style={{ flex: 1, gap: 2 }}>
+        <Txt size={15} w={sub ? 'semi' : w}>
+          {label}
+        </Txt>
+        {sub ? <Txt size={13} color={C.muted}>{sub}</Txt> : null}
+      </View>
+      {hint ? (
+        <Txt size={13} color={C.muted}>
+          {hint}
+        </Txt>
+      ) : null}
+      {!boxFirst && box}
+    </Pressable>
+  );
+}
+
+export function Disclosure({ title, summary, open, onToggle, last, children, size = 16 }: { title: string; summary: string; open: boolean; onToggle: () => void; last?: boolean; children?: ReactNode; size?: number }) {
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={onToggle}
+        style={[s.row, { minHeight: 48, justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.line }, last && !open && s.divided]}
+      >
+        <Txt size={size} w="semi">
+          {title}
+        </Txt>
+        <Txt size={13} color={C.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
+          {summary}
+        </Txt>
+      </Pressable>
+      {open && children}
+    </>
+  );
+}
+
+// ---------- Fields ----------
+
+export function Field(props: TextInputProps & { label?: string }) {
+  const { label, style, ...rest } = props;
+  return (
+    <TextInput
+      accessibilityLabel={label}
+      placeholderTextColor={C.muted}
+      selectionColor={C.accent}
+      {...rest}
+      style={[s.field, Platform.OS === 'web' && ({ outlineColor: C.accent } as object), style]}
+    />
+  );
+}
+
+// ---------- Icons ----------
+
+export function PlayIcon({ size = 16, color = C.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 18 18">
+      <Path d="M5 3l10 6-10 6z" fill={color} />
+    </Svg>
+  );
+}
+
+export function PauseIcon({ size = 26, color = C.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20">
+      <Rect x={4} y={3} width={4} height={14} rx={1} fill={color} />
+      <Rect x={12} y={3} width={4} height={14} rx={1} fill={color} />
+    </Svg>
+  );
+}
+
+export function MicIcon({ size = 26, color = C.accent }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 26 26" fill="none">
+      <Rect x={9} y={3} width={8} height={13} rx={4} stroke={color} strokeWidth={2} />
+      <Path d="M5 12a8 8 0 0016 0M13 20v3" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function TickIcon({ size = 14, color = C.accent }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 14 14" fill="none">
+      <Path d="M2 7.5l3.2 3L12 3.5" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function SkipIcon({ size = 26, color = C.text, back }: { size?: number; color?: string; back?: boolean }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 26 26">
+      {back ? (
+        <>
+          <Path d="M22 4v18L9 13z" fill={color} />
+          <Rect x={4} y={4} width={3} height={18} rx={1} fill={color} />
+        </>
+      ) : (
+        <>
+          <Path d="M4 4v18l13-9z" fill={color} />
+          <Rect x={19} y={4} width={3} height={18} rx={1} fill={color} />
+        </>
+      )}
+    </Svg>
+  );
+}
+
+/** The record/stop control: a ring with a red square (stop) or red disc (record). */
+export function StopButton({ size = 96, recording = true, onPress, halo, label, disabled }: { size?: number; recording?: boolean; onPress?: () => void; halo?: boolean; label: string; disabled?: boolean }) {
+  const inner = Math.round(size * 0.35);
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ opacity: disabled ? 0.35 : pressed ? 0.8 : 1 })}>
+      <View style={[halo && { padding: 10, borderRadius: size, backgroundColor: C.recHalo }]}>
+        <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: size > 110 ? 4 : 3, borderColor: C.text, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: recording ? inner : inner * 1.5, height: recording ? inner : inner * 1.5, borderRadius: recording ? Math.round(inner * 0.23) : inner, backgroundColor: C.rec }} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+// ---------- Shared styles ----------
+
+export const s = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  between: { justifyContent: 'space-between' },
+  divided: { borderBottomWidth: 1, borderBottomColor: C.line },
+  topbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 44, gap: 12 },
+  card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 20, padding: 20, gap: 14 },
+  btn: { alignItems: 'center', justifyContent: 'center', borderRadius: 16, minHeight: 56, paddingHorizontal: 16 },
+  segmented: { flexDirection: 'row', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 4, gap: 4 },
+  segment: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  chip: { minHeight: 44, paddingHorizontal: 14, borderRadius: 22, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  field: { minHeight: 48, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, color: C.text, fontFamily: F.regular, fontSize: 16 },
+});

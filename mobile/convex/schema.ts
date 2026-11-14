@@ -17,6 +17,24 @@ export default defineSchema({
     key: v.optional(v.string()),
   }),
 
+  // Backup of the app's local library. Until there are accounts, a random id made on each
+  // device stands in for the owner; anyone holding that id can read that device's backup.
+  backupProjects: defineTable({
+    deviceId: v.string(),
+    localId: v.string(),
+    name: v.string(),
+    updatedAt: v.number(),
+    /** The project as the app stores it, as JSON. */
+    data: v.string(),
+  }).index("by_device_local", ["deviceId", "localId"]),
+
+  backupFiles: defineTable({
+    deviceId: v.string(),
+    key: v.string(),
+    storageId: v.id("_storage"),
+    size: v.number(),
+  }).index("by_device_key", ["deviceId", "key"]),
+
   takes: defineTable({
     beatId: v.id("beats"),
     audio: v.id("_storage"),

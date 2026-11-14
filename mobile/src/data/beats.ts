@@ -1,8 +1,11 @@
 // The three ways a beat gets into the library, shared by Home and onboarding.
 import * as DocumentPicker from 'expo-document-picker';
 
+import { detectTempo } from '@/dsp/analysis';
 import { DEMO, makeDemoBeat } from '@/dsp/demoBeat';
 import { decode } from '@/engine/engine';
+
+import type { DemoSong } from './demoSongs';
 
 import { addBeat } from './studio';
 import { getLibrary, nextBeatName } from './store';
@@ -19,6 +22,24 @@ export async function addDemoBeat() {
   await new Promise((r) => setTimeout(r, 30));
   const [left, right] = makeDemoBeat();
   return addBeat({ channels: [left, right], sampleRate: DEMO.sampleRate }, { source: 'demo', label: 'Demo beat', name: freeName(DEMO.name), trim: false });
+}
+
+/** Fetches one of the bundled demo songs and adds it as a beat. */
+export async function addDemoSong(song: DemoSong) {
+  let pcm;
+  try {
+    const response = await fetch(`/demo/${song.id}.m4a`);
+    if (!response.ok) throw new Error(String(response.status));
+    pcm = await decode(await response.arrayBuffer());
+  } catch {
+    throw new Error(`"${song.title}" could not be loaded. Check your connection and try again.`);
+  }
+  // The exact tempo comes from the audio when it agrees with the tempo the song was written at
+  // (or its half or double); otherwise the written tempo stands.
+  const heard = detectTempo(pcm.channels, pcm.sampleRate)?.bpm;
+  const factor = heard ? [1, 2, 0.5].find((f) => Math.abs((heard * f) / song.bpm - 1) < 0.03) : undefined;
+  const bpm = heard && factor ? heard * factor : song.bpm;
+  return addBeat(pcm, { source: 'demo', label: 'Demo song', name: freeName(song.title), trim: false, bpm });
 }
 
 /** Lets the user pick an audio file. Resolves to null if they cancel. */

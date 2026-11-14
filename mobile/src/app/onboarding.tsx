@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
-import { addDemoBeat, importBeat } from '@/data/beats';
+import { importBeat } from '@/data/beats';
 import type { Project } from '@/data/model';
 import { setProfile, setSettings, useLibrary } from '@/data/store';
 import { measureLatency, openInput, reportedLatencyMs, setPair, useEngine } from '@/engine/engine';
@@ -66,7 +66,7 @@ export default function Onboarding() {
       setSettings({ latencyMs: result.medianMs !== null ? ms : null });
       setTiming({ ms, measured: result.medianMs !== null, heard: result.detected });
     });
-  const finish = (work?: () => Promise<Project | null>, to: '/beat' | '/capture' | '/' = '/beat') =>
+  const finish = (work?: () => Promise<Project | null>, to: '/beat' | '/capture' | '/demos' | '/' = '/beat') =>
     start.run(async () => {
       if (work && !(await work())) return;
       setProfile({ onboarded: true });
@@ -224,7 +224,7 @@ export default function Onboarding() {
           <View style={{ gap: 12 }}>
             <Choice primary title="Capture from your MPC" body="Plug it in by USB-C and press play. Recording starts by itself." disabled={start.busy} onPress={() => finish(undefined, '/capture')} />
             <Choice title="Import a file" body="A WAV, MP3 or M4A of a beat you already have." disabled={start.busy} onPress={() => finish(importBeat)} />
-            <Choice title={start.busy ? 'One moment…' : 'Try the demo beat'} body="No gear needed: a built-in loop, so you can go straight to the mic." disabled={start.busy} onPress={() => finish(addDemoBeat)} />
+            <Choice title="Try a demo song" body="No gear needed: pick a ready-made beat and go straight to the mic." disabled={start.busy} onPress={() => finish(undefined, '/demos')} />
           </View>
           <Foot>
             <NavLink center size={14} onPress={() => finish(undefined, '/')}>

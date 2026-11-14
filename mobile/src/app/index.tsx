@@ -1,7 +1,7 @@
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
-import { addDemoBeat, importBeat } from '@/data/beats';
+import { importBeat } from '@/data/beats';
 import { CoverImage } from '@/cover/CoverImage';
 import { tempoLine } from '@/data/labels';
 import type { Project } from '@/data/model';
@@ -37,11 +37,6 @@ export default function Home() {
             Bounce
           </Txt>
         }
-        right={
-          <NavLink to="/vault" w="semi">
-            Vault
-          </NavLink>
-        }
       />
 
       {latest ? (
@@ -75,7 +70,7 @@ export default function Home() {
             Bring a beat
           </Txt>
           <Txt size={15} w="medium" lh={1.4} color={C.bg}>
-            Capture one from your MPC, import a file, or try the built-in demo beat.
+            Capture one from your MPC, import a file, or pick a demo song.
           </Txt>
         </View>
       )}
@@ -133,15 +128,10 @@ export default function Home() {
           <Btn kind="outline" label="Capture from MPC" to="/capture" style={{ flex: 1, minHeight: 56 }} disabled={task.busy} />
           <Btn kind="outline" label="Import a file" busy={task.busy} onPress={() => add(importBeat)} style={{ flex: 1, minHeight: 56 }} />
         </View>
-        <View style={[s.row, s.between]}>
-          <NavLink size={14} onPress={() => !task.busy && add(addDemoBeat)}>
-            {projects.length ? 'Add the demo beat' : 'Try the demo beat'}
-          </NavLink>
-          <NavLink size={14} to="/settings">
-            Settings
-          </NavLink>
-        </View>
-        {projects.length === 0 && <Muted size={13}>No gear to hand? The demo beat lets you try everything with just a microphone.</Muted>}
+        <NavLink size={14} to="/demos">
+          {projects.length ? 'Add a demo song' : 'Try a demo song'}
+        </NavLink>
+        {projects.length === 0 && <Muted size={13}>No gear to hand? The demo songs let you try everything with just a microphone.</Muted>}
       </Foot>
     </Screen>
   );

@@ -59,7 +59,7 @@ async function expectText(needle, name, ms) {
 async function tap(label, { exact = true, optional = false } = {}) {
   const hit = await page.evaluate(
     (label, exact) => {
-      const nodes = [...document.querySelectorAll('[role=button],[role=link],[role=radio],[role=checkbox],[role=switch],a,button')];
+      const nodes = [...document.querySelectorAll('[role=button],[role=link],[role=tab],[role=radio],[role=checkbox],[role=switch],a,button')];
       const visible = nodes.filter((n) => {
         const r = n.getBoundingClientRect();
         return r.width > 0 && r.height > 0 && getComputedStyle(n).visibility !== 'hidden';
@@ -110,6 +110,19 @@ async function slide(label, fraction) {
   await sleep(200);
 }
 const state = (expr) => page.evaluate(expr);
+const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
+async function tapTrack(label, fraction) {
+  const box = await page.evaluate((label) => {
+    const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    if (!n) return null;
+    n.scrollIntoView({ block: 'center' });
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, label);
+  if (!box) return log(false, `tap track "${label}"`, 'no such track');
+  await page.mouse.click(box.x + box.w * fraction, box.y + box.h / 2);
+  await sleep(250);
+}
 
 async function onboarding() {
   await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 120000 });
@@ -134,7 +147,15 @@ async function onboarding() {
   await tap('Continue');
   await expectText('Ready, Kai Rivers.');
   await shot('05-first-beat');
-  await tap('Try the demo beat');
+  await tap('Try a demo song');
+  await expectText('Ready-made beats', 'the demo songs are listed');
+  await shot('05b-demo-songs');
+  await tap('Add Small Steps, Big City');
+  await expectText('What next?', 'a demo song lands on the beat screen', 30000);
+  await expectText('94 BPM', 'and keeps the tempo it was written at');
+  await page.goto(BASE + '/demos', { waitUntil: 'networkidle2', timeout: 120000 });
+  await expectText('Ready-made beats', 'the demo songs open again');
+  await tap('Add Night bus');
   await expectText('What next?', 'demo beat lands on the beat screen', 20000);
   await expectText('92 BPM', 'tempo detected');
   await expectText('F minor', 'key detected');
@@ -189,6 +210,16 @@ async function song() {
   await expectText(/ready in [\d.]+ s/, 'kept take is polished', 30000);
   await tap('Take 1');
   await expectText(/ready in [\d.]+ s/, 'switching takes renders', 30000);
+  await tap('Pause', { optional: true });
+  await tapTrack('Position in take', 0.75);
+  let at = await trackAt('Position in take');
+  log(Math.abs(at - 75) <= 3, 'tapping the track while paused moves there', `at ${at}%`);
+  await tap('Play');
+  await sleep(600);
+  await tapTrack('Position in take', 0.2);
+  at = await trackAt('Position in take');
+  log(at >= 18 && at <= 45, 'tapping the track during playback jumps there', `at ${at}%`);
+  await tap('Pause');
 
   await tap('Tweak it', { exact: false });
   await tap('Advanced: EQ', { exact: false });
@@ -334,7 +365,7 @@ async function library() {
   await expectText('Timing');
   await expectText('Everything is backed up', 'the library is backed up to the server', 30000);
   await shot('24-settings');
-  await tap('Done');
+  await tap('Home');
 
   // Everything survives a reload.
   await page.reload({ waitUntil: 'networkidle2' });

@@ -17,7 +17,10 @@ npm run web           # the app, at http://localhost:8081
 The app works without it: everything is saved in the browser, and backup simply waits.
 
 Use Chrome or Safari. Recording needs a microphone and, for capturing beats, an audio input
-such as an MPC over USB. The demo beat on the home screen needs neither.
+such as an MPC over USB. The demo songs on the home screen need neither.
+
+The demo songs are the Get a Life soundtrack, copied into `public/demo` (51 MB) and listed in
+`src/data/demoSongs.ts`. Their provenance and usage terms are recorded in that project.
 
 ### On a phone, in the browser
 

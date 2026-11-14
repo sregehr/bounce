@@ -278,13 +278,13 @@ function blockPeak(a: Float32Array) {
   return p;
 }
 
-function onBlock(msg: { peaks: Float32Array; l: Float32Array; r: Float32Array; pair: number; frame: number }) {
+function onBlock(msg: { peaks: Float32Array; l: Float32Array; r: Float32Array; pair: number; frame: number; mono?: boolean }) {
   if (!ctx) return;
   const { peaks, l, r, frame } = msg;
   const lp = blockPeak(l);
   const rp = blockPeak(r);
   const loud = Math.max(lp, rp);
-  set('input', { channels: peaks.length, pair: msg.pair, levelL: Math.max(lp, state.input.levelL * 0.8), levelR: Math.max(rp, state.input.levelR * 0.8) });
+  set('input', { channels: msg.mono ? 1 : peaks.length, pair: msg.pair, levelL: Math.max(lp, state.input.levelL * 0.8), levelR: Math.max(rp, state.input.levelR * 0.8) });
 
   if (probe) {
     probe.blocks.push({ l, r, frame });

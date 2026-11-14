@@ -1,11 +1,11 @@
-// Bounce: the built app (dist/) served as static assets by a Worker.
+// Bounce: the built Expo web app (mobile/dist-site/) served as static assets by a Worker.
 // Unknown paths get index.html so the app's own routes (/vocals, /player, ...) work.
 // Deploy with: npm run deploy (wrangler needs Node 22.12 or newer)
 {
   "name": "mpc-mastering",
   "compatibility_date": "2026-11-13",
   "assets": {
-    "directory": "./dist",
+    "directory": "./mobile/dist-site",
     "not_found_handling": "single-page-application"
   },
   // Keep the workers.dev address working alongside the custom domain.

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
-import { Bars, makeBars, NavLink, PlayIcon, Screen, TopBar } from '../components/ui'
+import { clock, rateLabel, useCapture } from '../audio/capture'
+import { Bars, db, makeBars, NavLink, PauseIcon, PlayIcon, Screen, TopBar } from '../components/ui'
 
 const bars = makeBars(7, 59, (i, r) => {
   const env = 0.4 + 0.6 * Math.abs(Math.sin(i * 0.31 + 1))
@@ -18,6 +19,20 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function BeatReady() {
   const [name, setName] = useState('Untitled beat 13')
+  const { take } = useCapture()
+  const audio = useRef<HTMLAudioElement>(null)
+  const [playing, setPlaying] = useState(false)
+
+  useEffect(() => setPlaying(false), [take])
+
+  const toggle = () => {
+    const el = audio.current
+    if (!el) return
+    if (el.paused) void el.play()
+    else el.pause()
+  }
+  const shown = take ? take.wave.map((p) => ({ h: Math.round(8 + Math.sqrt(p) * 72) })) : bars
+  const fileName = `${name.trim() || 'beat'}.wav`
   return (
     <Screen gap={22} padBottom={32}>
       <TopBar left={<div className="eyebrow">Beat captured</div>} right={<NavLink to="/record">Record again</NavLink>} />
@@ -45,7 +60,7 @@ export function BeatReady() {
 
       <div className="card" style={{ padding: '18px 16px' }}>
         <Bars
-          bars={bars}
+          bars={shown}
           height={84}
           style={{
             borderLeft: '3px solid var(--accent)',
@@ -55,20 +70,54 @@ export function BeatReady() {
           }}
         />
         <div className="row" style={{ gap: 14 }}>
-          <button type="button" aria-label="Play" className="round-play" style={{ width: 48, height: 48 }}>
-            <PlayIcon size={18} />
+          <button
+            type="button"
+            aria-label={playing ? 'Pause' : 'Play'}
+            className="round-play"
+            style={{ width: 48, height: 48 }}
+            onClick={toggle}
+          >
+            {playing ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
           </button>
-          <div className="col" style={{ gap: 2 }}>
-            <div style={{ fontSize: 15, fontWeight: 500 }}>2:41 · 92 BPM · F minor</div>
-            <div className="small muted">Trimmed 0.8 s of silence. Drag the edges to adjust.</div>
-          </div>
+          {take ? (
+            <div className="col" style={{ gap: 2 }}>
+              <div style={{ fontSize: 15, fontWeight: 500 }}>
+                {clock(take.duration)} · {rateLabel(take.sampleRate)} · 24-bit WAV
+              </div>
+              <div className="small muted">
+                Trimmed {take.trimmed.toFixed(1)} s of silence.{' '}
+                <a href={take.url} download={fileName} style={{ color: 'var(--accent)' }}>Save the file</a>
+              </div>
+            </div>
+          ) : (
+            <div className="col" style={{ gap: 2 }}>
+              <div style={{ fontSize: 15, fontWeight: 500 }}>2:41 · 92 BPM · F minor</div>
+              <div className="small muted">Trimmed 0.8 s of silence. Drag the edges to adjust.</div>
+            </div>
+          )}
         </div>
+        {take && (
+          <audio
+            ref={audio}
+            src={take.url}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => setPlaying(false)}
+          />
+        )}
       </div>
 
-      <div className="row">
-        <Stat label="Peak" value="−3.2 dB" />
-        <Stat label="Loudness" value="−19 LUFS" />
-      </div>
+      {take ? (
+        <div className="row">
+          <Stat label={take.clipped ? 'Peak · clipped' : 'Peak'} value={db(take.peakDb, 1)} />
+          <Stat label="Average level" value={db(take.rmsDb, 1)} />
+        </div>
+      ) : (
+        <div className="row">
+          <Stat label="Peak" value="−3.2 dB" />
+          <Stat label="Loudness" value="−19 LUFS" />
+        </div>
+      )}
 
       <div className="foot" style={{ gap: 12 }}>
         <div className="display" style={{ fontSize: 20, letterSpacing: '-0.01em' }}>What next?</div>

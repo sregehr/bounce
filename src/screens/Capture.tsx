@@ -1,27 +1,87 @@
+import { useEffect } from 'react'
 import { Link } from 'wouter'
+import { close, meterPct, open, openIfAllowed, pairLabel, rateLabel, useCapture, wake } from '../audio/capture'
 import { Meter, NavLink, Screen, TopBar } from '../components/ui'
 
 export function Capture() {
+  const cap = useCapture()
+  const live = cap.status === 'ready' || cap.status === 'armed' || cap.status === 'recording'
+
+  useEffect(() => {
+    void openIfAllowed()
+  }, [])
+
   return (
     <Screen gap={24} padBottom={32}>
-      <TopBar left="Capture a beat" right={<NavLink to="/">Back</NavLink>} />
+      <TopBar
+        left="Capture a beat"
+        right={
+          <span onClick={close}>
+            <NavLink to="/">Back</NavLink>
+          </span>
+        }
+      />
 
       <div className="card">
         <div className="row" style={{ gap: 8 }}>
-          <div style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--accent)' }} />
-          <div className="eyebrow accent">Connected via USB-C</div>
+          <div style={{ width: 8, height: 8, borderRadius: 4, background: live ? 'var(--accent)' : 'var(--dim)' }} />
+          <div className={`eyebrow${live ? ' accent' : ''}`}>
+            {live ? 'Connected' : cap.status === 'opening' ? 'Connecting' : 'Not connected'}
+          </div>
         </div>
-        <div className="display" style={{ fontSize: 30 }}>MPC Sample</div>
-        <div className="muted" style={{ fontSize: 14 }}>48 kHz · 24-bit · stereo</div>
-        <div className="col" style={{ gap: 6 }}>
-          <Meter label="L" pct={62} />
-          <Meter label="R" pct={57} />
-        </div>
+
+        {live ? (
+          <>
+            <div className="display" style={{ fontSize: 30 }}>{cap.label}</div>
+            <div className="muted" style={{ fontSize: 14 }}>
+              {rateLabel(cap.sampleRate)} · {pairLabel(cap)}
+            </div>
+            <div className="col" style={{ gap: 6 }}>
+              <Meter label="L" pct={meterPct(cap.levelL)} />
+              <Meter label="R" pct={meterPct(cap.levelR)} />
+            </div>
+            {cap.inputs.length > 1 && (
+              <label className="col" style={{ gap: 6 }}>
+                <span className="muted" style={{ fontSize: 12 }}>Input</span>
+                <select
+                  className="field"
+                  value={cap.deviceId ?? ''}
+                  onChange={(e) => void open(e.target.value)}
+                  style={{ background: 'var(--bg)' }}
+                >
+                  {cap.inputs.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="display" style={{ fontSize: 30 }}>Plug in the MPC</div>
+            <div className="muted" style={{ fontSize: 14, lineHeight: 1.45 }}>
+              {cap.error ?? 'Connect it by USB-C, then allow audio input when the browser asks.'}
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={cap.status === 'opening'}
+              onClick={() => void open()}
+            >
+              {cap.status === 'opening' ? 'Connecting…' : cap.error ? 'Try again' : 'Connect'}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="col" style={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 20 }}>
         <Link
           href="/record"
+          onClick={(e) => {
+            if (!live) e.preventDefault()
+            else wake()
+          }}
+          aria-disabled={!live}
           className="display rec-halo"
           style={{
             width: 148,
@@ -35,6 +95,7 @@ export function Capture() {
             justifyContent: 'center',
             fontSize: 22,
             letterSpacing: 0,
+            opacity: live ? 1 : 0.35,
           }}
         >
           Arm
@@ -45,7 +106,7 @@ export function Capture() {
       </div>
 
       <div className="note" style={{ textAlign: 'center' }}>
-        Tempo and key are detected after capture, so the beat is ready to loop.
+        Silence at the start and end is trimmed after capture.
       </div>
     </Screen>
   )

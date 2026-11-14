@@ -2,7 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+import { ConvexProvider, ConvexReactClient } from 'convex/react';
+
 import BounceAudio, { AudioStatus, LatencyResult, MeterEvent, Recording } from './modules/bounce-audio';
+import { Library } from './Library';
+
+// Set by `npx convex dev` in .env.local. Without it the spike still runs, minus the library.
+const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL;
+const convex = convexUrl ? new ConvexReactClient(convexUrl, { unsavedChangesWarning: false }) : null;
 
 const C = {
   bg: '#121212',
@@ -22,6 +29,15 @@ const dB = (v: number) => (v <= -99 ? '−∞ dB' : `${v.toFixed(1)} dB`);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export default function App() {
+  if (!convex) return <Spike />;
+  return (
+    <ConvexProvider client={convex}>
+      <Spike library />
+    </ConvexProvider>
+  );
+}
+
+function Spike({ library }: { library?: boolean }) {
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [mode, setMode] = useState<Mode>('idle');
   const [meter, setMeter] = useState<MeterEvent | null>(null);
@@ -225,6 +241,8 @@ export default function App() {
           </View>
           <Button label={mode === 'mixing' ? 'Stop' : 'Play loop + take'} disabled={!beat || !take || busy('mixing')} onPress={toggleMix} />
         </Card>
+
+        {library && <Library beat={mode === 'capturing' ? null : beat} />}
       </ScrollView>
     </View>
   );

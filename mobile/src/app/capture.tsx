@@ -10,7 +10,7 @@ import { C } from '@/ui/theme';
 
 export default function Capture() {
   const input = useEngine((e) => e.input);
-  const inputId = useLibrary((l) => l.settings.inputId);
+  const inputId = useLibrary((l) => l.settings.beatInputId);
   const live = input.status === 'ready';
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function Capture() {
   }, []);
 
   const pick = (deviceId: string) => {
-    setSettings({ inputId: deviceId });
+    setSettings({ beatInputId: deviceId });
     void openInput(deviceId);
   };
 

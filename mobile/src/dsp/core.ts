@@ -244,14 +244,22 @@ export function limit(channels: Float32Array[], sampleRate: number, ceilingDb = 
   const look = Math.max(1, Math.round((sampleRate * lookaheadMs) / 1000));
   // Gain each sample needs on its own.
   const need = new Float32Array(n);
+  const a = channels[0];
+  const b = channels.length > 1 ? channels[1] : null;
+  let any = false;
   for (let i = 0; i < n; i++) {
-    let p = 0;
-    for (const ch of channels) {
-      const v = ch[i] < 0 ? -ch[i] : ch[i];
+    let p = a[i] < 0 ? -a[i] : a[i];
+    if (b) {
+      const v = b[i] < 0 ? -b[i] : b[i];
       if (v > p) p = v;
     }
-    need[i] = p > ceiling ? ceiling / p : 1;
+    if (p > ceiling) {
+      need[i] = ceiling / p;
+      any = true;
+    } else need[i] = 1;
   }
+  // Nothing reaches the ceiling: leave the audio exactly as it is.
+  if (!any) return 0;
   // Minimum over the look-ahead window (so the gain is already down when a peak arrives),
   // with an exponential release afterwards.
   const release = Math.exp(-1 / ((sampleRate * releaseMs) / 1000));
@@ -289,8 +297,11 @@ export function limit(channels: Float32Array[], sampleRate: number, ceilingDb = 
 
 export type Finalised = { lufs: number; truePeakDb: number; gainDb: number; reductionDb: number };
 
-/** Brings a mix to a loudness target under a peak ceiling. Works in place. */
-export function finalise(channels: Float32Array[], sampleRate: number, targetLufs: number | null, ceilingDb = -1, releaseMs = 80): Finalised {
+/**
+ * The work of `finalise`, pausing after each pass so a caller can let the screen breathe
+ * in between. Works in place.
+ */
+function* finaliseSteps(channels: Float32Array[], sampleRate: number, targetLufs: number | null, ceilingDb: number, releaseMs: number): Generator<void, Finalised> {
   const before = integratedLufs(channels, sampleRate);
   let gainDb = 0, reductionDb = 0;
   // The limiter works on samples, but peaks between samples can still poke through,
@@ -309,16 +320,40 @@ export function finalise(channels: Float32Array[], sampleRate: number, targetLuf
   if (hot) limitAndCheck();
   if (targetLufs !== null && before > -60) {
     // Limiting takes some loudness back, so close in on the target over a few passes.
-    for (let pass = 0; pass < 6; pass++) {
+    for (let pass = 0; pass < 5; pass++) {
+      yield;
       const now = pass === 0 && !hot ? before : integratedLufs(channels, sampleRate);
-      const step = clamp(targetLufs - now, -30, pass === 0 ? 24 : 6);
-      if (Math.abs(step) < 0.25) break;
+      // After the first pass the gap is what the limiter took back; it will take some of the
+      // next step too, so overshoot a little to get there in fewer passes.
+      const gap = targetLufs - now;
+      if (Math.abs(gap) < 0.3) break;
+      const step = clamp(pass === 0 ? gap : gap * 1.3, -30, pass === 0 ? 24 : 6);
       applyGain(channels, fromDb(step));
       gainDb += step;
       limitAndCheck();
     }
   }
+  yield;
   return { lufs: integratedLufs(channels, sampleRate), truePeakDb: truePeakDb(channels), gainDb, reductionDb };
+}
+
+/** Brings a mix to a loudness target under a peak ceiling. Works in place. */
+export function finalise(channels: Float32Array[], sampleRate: number, targetLufs: number | null, ceilingDb = -1, releaseMs = 80): Finalised {
+  const steps = finaliseSteps(channels, sampleRate, targetLufs, ceilingDb, releaseMs);
+  for (;;) {
+    const next = steps.next();
+    if (next.done) return next.value;
+  }
+}
+
+/** The same as `finalise`, calling `pause` between passes. */
+export async function finaliseGently(channels: Float32Array[], sampleRate: number, targetLufs: number | null, ceilingDb: number, releaseMs: number, pause: () => Promise<void>): Promise<Finalised> {
+  const steps = finaliseSteps(channels, sampleRate, targetLufs, ceilingDb, releaseMs);
+  for (;;) {
+    const next = steps.next();
+    if (next.done) return next.value;
+    await pause();
+  }
 }
 
 // ---------- Trimming ----------
@@ -358,21 +393,22 @@ export function reduceNoise(channels: Float32Array[], sampleRate: number, maxCut
   const attack = Math.exp(-1 / (sampleRate * 0.004));
   const release = Math.exp(-1 / (sampleRate * 0.03));
   let env = 0, gain = 1;
+  const thresholdLinear = fromDb(threshold);
   // Open fast so consonants are not clipped; close slowly so tails are not chopped.
   const gAttack = Math.exp(-1 / (sampleRate * 0.003));
   const gRelease = Math.exp(-1 / (sampleRate * 0.08));
   for (let i = 0; i < n; i++) {
     let p = 0;
-    for (const ch of channels) {
-      const v = ch[i] < 0 ? -ch[i] : ch[i];
+    for (let c = 0; c < channels.length; c++) {
+      const v = channels[c][i] < 0 ? -channels[c][i] : channels[c][i];
       if (v > p) p = v;
     }
     env = p > env ? attack * env + (1 - attack) * p : release * env + (1 - release) * p;
-    const level = toDb(env);
-    const cut = level < threshold ? Math.min(maxCutDb, (threshold - level) * 1.5) : 0;
-    const target = fromDb(-cut);
+    // Above the threshold nothing is cut, so the logarithm is only needed below it.
+    let target = 1;
+    if (env < thresholdLinear) target = fromDb(-Math.min(maxCutDb, (threshold - toDb(env)) * 1.5));
     gain = target > gain ? gAttack * gain + (1 - gAttack) * target : gRelease * gain + (1 - gRelease) * target;
-    for (const ch of channels) ch[i] *= gain;
+    for (let c = 0; c < channels.length; c++) channels[c][i] *= gain;
   }
   return threshold;
 }

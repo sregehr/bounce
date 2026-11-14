@@ -42,3 +42,6 @@ yarn-error.*
 
 # end-to-end test output
 .e2e/
+
+# self-signed certificate for phone testing
+.certs/

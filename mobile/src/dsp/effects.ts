@@ -33,24 +33,39 @@ export function compress(channels: Float32Array[], sampleRate: number, comp: Cha
   const attack = Math.exp(-1 / ((sampleRate * Math.max(0.1, comp.attack)) / 1000));
   const release = Math.exp(-1 / ((sampleRate * Math.max(1, comp.release)) / 1000));
   const makeup = fromDb(comp.makeup);
+  // Below this level the compressor does nothing, which is most of the time on a beat;
+  // checking it first avoids a logarithm for every sample.
+  const floor = fromDb(comp.threshold - knee / 2);
+  const DB = 8.685889638065035; // 20 / ln(10)
   let reduction = 0, sum = 0, active = 0;
+  // Plain indexed access to one or two channels: this loop runs for every sample of the song.
+  const a = channels[0];
+  const b = channels.length > 1 ? channels[1] : null;
   for (let i = 0; i < n; i++) {
-    let p = 0;
-    for (const ch of channels) {
-      const v = ch[i] < 0 ? -ch[i] : ch[i];
+    let p = a[i] < 0 ? -a[i] : a[i];
+    if (b) {
+      const v = b[i] < 0 ? -b[i] : b[i];
       if (v > p) p = v;
     }
-    const over = toDb(p) - comp.threshold;
     let want = 0;
-    if (over > knee / 2) want = over * slope;
-    else if (over > -knee / 2) want = (slope * (over + knee / 2) * (over + knee / 2)) / (2 * knee);
+    if (p > floor) {
+      const over = Math.log(p) * DB - comp.threshold;
+      want = over > knee / 2 ? over * slope : (slope * (over + knee / 2) * (over + knee / 2)) / (2 * knee);
+    } else if (reduction < 1e-4) {
+      if (makeup !== 1) {
+        a[i] *= makeup;
+        if (b) b[i] *= makeup;
+      }
+      continue;
+    }
     reduction = want > reduction ? attack * reduction + (1 - attack) * want : release * reduction + (1 - release) * want;
     if (reduction > 0.1) {
       sum += reduction;
       active++;
     }
-    const g = fromDb(-reduction) * makeup;
-    for (const ch of channels) ch[i] *= g;
+    const g = Math.exp(-reduction / DB) * makeup;
+    a[i] *= g;
+    if (b) b[i] *= g;
   }
   return active ? -sum / active : 0;
 }
@@ -72,15 +87,18 @@ export function deess(channels: Float32Array[], sampleRate: number, settings: Ch
   const attack = Math.exp(-1 / (sampleRate * 0.001));
   const release = Math.exp(-1 / (sampleRate * 0.06));
   let env = 0;
+  const limitLinear = fromDb(threshold);
+  const h0 = highs[0];
+  const h1 = highs.length > 1 ? highs[1] : null;
   for (let i = 0; i < n; i++) {
-    let p = 0;
-    for (const h of highs) {
-      const v = h[i] < 0 ? -h[i] : h[i];
+    let p = h0[i] < 0 ? -h0[i] : h0[i];
+    if (h1) {
+      const v = h1[i] < 0 ? -h1[i] : h1[i];
       if (v > p) p = v;
     }
     env = p > env ? attack * env + (1 - attack) * p : release * env + (1 - release) * p;
+    if (env <= limitLinear) continue;
     const over = toDb(env) - threshold;
-    if (over <= 0) continue;
     const g = fromDb(-Math.min(settings.amount, over * 0.8)) - 1;
     // Low band plus a quieter high band: the split is subtractive, so it adds back up exactly.
     for (let c2 = 0; c2 < channels.length; c2++) channels[c2][i] += highs[c2][i] * g;

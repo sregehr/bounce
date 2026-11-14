@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { detectKey, detectTempo } from '@/dsp/analysis';
 import { integratedLufs, peakOf, toDb, trimRange, wavePeaks, type Stereo } from '@/dsp/core';
-import { renderMix, renderRaw, type RenderInput, type RenderOutput } from '@/dsp/render';
+import { renderMix, renderRaw, type RenderInput, type RenderOutput, type StageCache } from '@/dsp/render';
 import { encodeWav, type Pcm } from '@/dsp/wav';
 import { decode } from '@/engine/engine';
 import type { RecordedTake } from '@/engine/types';
@@ -67,6 +67,7 @@ export async function addBeat(audio: Pcm, info: { source: Beat['source']; label:
       lufs: integratedLufs(channels, audio.sampleRate),
       clipped: !!info.clipped || peak >= 0.999,
       trimmedSec: (left.length - length) / audio.sampleRate,
+      leadSec: info.trim === false ? 0 : Math.min(0.02, range.start / audio.sampleRate),
       wave: wavePeaks(channels, 120),
       bpm: tempo ? Math.round(tempo.bpm * 100) / 100 : null,
       musicalKey: key,
@@ -90,7 +91,9 @@ export function loopSeconds(beat: Beat, loop: LoopChoice): { start: number; end:
   if (!bar || loop.bars === 0 || total < 1) return null;
   const bars = Math.min(loop.bars, total);
   const startBar = Math.max(0, Math.min(loop.startBar, total - bars));
-  return { start: startBar * bar, end: Math.min(beat.durationSec, (startBar + bars) * bar), bars, startBar };
+  // Bar one begins after the short lead-in that trimming leaves, not at the very first sample.
+  const lead = Math.min(beat.leadSec ?? 0, Math.max(0, beat.durationSec - (startBar + bars) * bar));
+  return { start: lead + startBar * bar, end: Math.min(beat.durationSec, lead + (startBar + bars) * bar), bars, startBar };
 }
 
 // ---------- Takes ----------
@@ -189,6 +192,10 @@ export async function renderInput(project: Project, options: MixOptions = {}): P
     barFrames: bar ? Math.round(bar * rate) : undefined,
     targetLufs: options.targetLufs,
     voice: take?.voice ?? undefined,
+    stageKeys: {
+      vocal: JSON.stringify([take?.id, take?.loop, project.beat.bpm, project.polish.style, project.polish.double, project.overrides.vocal ?? null]),
+      beat: JSON.stringify([project.beat.key, take?.id ?? null, take?.loop ?? null, project.beat.bpm, project.overrides.beat ?? null]),
+    },
   };
 }
 
@@ -199,13 +206,19 @@ export function mixSignature(project: Project, options: MixOptions = {}) {
 }
 
 const mixes = new Map<string, Promise<RenderOutput>>();
+// The processed vocal and beat from the last render, so that changing only the vocal level
+// or the master does not redo them.
+const stages: StageCache = {};
+let renderQueue: Promise<unknown> = Promise.resolve();
 
 /** The mastered mix for a project. Repeated calls with the same settings share one render. */
 export function getMix(project: Project, options: MixOptions = {}, onStage?: (stage: string) => void): Promise<RenderOutput> {
   const signature = mixSignature(project, options);
   const hit = mixes.get(signature);
   if (hit) return hit;
-  const work = renderInput(project, options).then((input) => renderMix(input, onStage));
+  // One render at a time: they share the stage cache, and two at once would only slow each other.
+  const work = renderQueue.then(() => renderInput(project, options)).then((input) => renderMix(input, onStage, stages));
+  renderQueue = work.catch(() => {});
   mixes.set(signature, work);
   while (mixes.size > 4) mixes.delete(mixes.keys().next().value as string);
   work.then(

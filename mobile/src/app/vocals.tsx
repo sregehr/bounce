@@ -29,7 +29,7 @@ export default function Vocals() {
   const mode = take.mode;
 
   useOnScreen(() => {
-    void inputAllowed().then((ok) => void (ok && engineState().input.status !== 'ready' && openInput(settings.inputId, false)));
+    void inputAllowed().then((ok) => void (ok && engineState().input.status !== 'ready' && openInput(settings.inputId, 'mic')));
     if (project) void loadPcm(project.beat.key).catch(() => {});
     // Leaving mid-take drops it, the same as the capture screen.
     return () => void stopTake(false);
@@ -167,6 +167,11 @@ export default function Vocals() {
           <Muted size={13}>
             Mic: {input.label}. Timing is corrected by {latencyMs} ms ({settings.latencyMs !== null ? 'measured' : 'estimated'}). Wear headphones so the beat stays out of the take.
           </Muted>
+          {!active && (
+            <NavLink size={13} style={{ minHeight: 24 }} to="/settings">
+              Change microphone or timing
+            </NavLink>
+          )}
           <View accessible={false} style={{ height: 4, borderRadius: 2, backgroundColor: C.line, overflow: 'hidden' }}>
             <View style={{ width: `${meterPct(active ? take.level : Math.max(input.levelL, input.levelR))}%`, height: 4, backgroundColor: take.clipped && active ? C.rec : C.text }} />
           </View>
@@ -174,7 +179,7 @@ export default function Vocals() {
       ) : (
         <Card style={{ padding: 16, gap: 10 }}>
           <Muted>{input.error ?? 'Connect a microphone to record. The browser will ask for permission.'}</Muted>
-          <Btn kind="outline" label={input.status === 'opening' ? 'Connecting…' : 'Connect a microphone'} busy={input.status === 'opening'} onPress={() => void openInput(settings.inputId, false)} style={{ flex: 0 }} />
+          <Btn kind="outline" label={input.status === 'opening' ? 'Connecting…' : 'Connect a microphone'} busy={input.status === 'opening'} onPress={() => void openInput(settings.inputId, 'mic')} style={{ flex: 0 }} />
         </Card>
       )}
 

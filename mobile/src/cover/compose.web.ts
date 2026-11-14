@@ -26,7 +26,12 @@ export async function normalisePhoto(photo: Blob): Promise<Blob> {
   try {
     bitmap = await createImageBitmap(photo, { imageOrientation: 'from-image' });
   } catch {
-    throw new Error('That file could not be read as a photo. Try a JPEG or PNG.');
+    try {
+      // Older browsers reject the orientation option; they apply it by themselves.
+      bitmap = await createImageBitmap(photo);
+    } catch {
+      throw new Error('That file could not be read as a photo. Try a JPEG or PNG.');
+    }
   }
   const [c, g] = canvas(COVER_W, COVER_H);
   const scale = Math.max(COVER_W / bitmap.width, COVER_H / bitmap.height);
@@ -43,6 +48,23 @@ type Vision = {
   ImageSegmenter: { createFromOptions: (files: unknown, options: object) => Promise<unknown> };
 };
 let segmenter: Promise<Segmenter> | null = null;
+
+/**
+ * The library reports its start-up on the error and warning channels ("INFO: Created…"),
+ * which the development build would show as a red banner. Those lines are dropped while it runs.
+ */
+async function quietly<T>(work: () => Promise<T> | T): Promise<T> {
+  const { error, warn } = console;
+  const chatter = (args: unknown[]) => typeof args[0] === 'string' && /^(INFO:|W\d{4} )/.test(args[0]);
+  console.error = (...args: unknown[]) => void (chatter(args) || error(...args));
+  console.warn = (...args: unknown[]) => void (chatter(args) || warn(...args));
+  try {
+    return await work();
+  } finally {
+    console.error = error;
+    console.warn = warn;
+  }
+}
 
 function loadSegmenter(): Promise<Segmenter> {
   if (!segmenter) {
@@ -73,8 +95,7 @@ export async function cutOut(photo: Blob): Promise<Blob | null> {
     const [src, sg] = canvas(bitmap.width, bitmap.height);
     sg.drawImage(bitmap, 0, 0);
     bitmap.close();
-    const seg = await loadSegmenter();
-    const masks = seg.segment(src).confidenceMasks;
+    const masks = await quietly(async () => (await loadSegmenter()).segment(src).confidenceMasks);
     if (!masks?.length) return null;
     const mask = masks[masks.length - 1];
     const values = mask.getAsFloat32Array();

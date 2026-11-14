@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 
 import { nextBeatName } from '@/data/store';
 import { addBeat, TooShort } from '@/data/studio';
 import { toDb } from '@/dsp/core';
-import { armCapture, cancelCapture, startCaptureNow, stopCapture, useEngine } from '@/engine/engine';
+import { armCapture, cancelCapture, startCaptureNow, stopCapture, takeSalvaged, useEngine } from '@/engine/engine';
+import type { Captured } from '@/engine/types';
 import { Bars, Card, Eyebrow, Foot, Meter, Muted, NavLink, Screen, StopButton, Txt, s, type Bar } from '@/ui/kit';
 import { useOnScreen } from '@/ui/hooks';
 import { C, clock, db, meterPct, rateLabel } from '@/ui/theme';
@@ -25,6 +26,27 @@ export default function Record() {
     return cancelCapture;
   });
 
+  const save = async (captured: Captured, cutShort = false) => {
+    setSaving(true);
+    try {
+      await addBeat({ channels: captured.channels, sampleRate: captured.sampleRate }, { source: 'capture', label: captured.label, name: nextBeatName(), clipped: captured.clipped });
+      router.replace('/beat');
+    } catch (e) {
+      setSaving(false);
+      setNotice(e instanceof TooShort ? e.message : 'That capture could not be saved. Storage on this device may be full.');
+      if (cutShort) router.replace('/capture');
+      else armCapture();
+    }
+  };
+
+  // If the cable comes out mid-capture, keep what was recorded up to that point.
+  useEffect(() => {
+    if (input.status === 'ready' || saving) return;
+    const captured = takeSalvaged();
+    if (captured) void save(captured, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input.status]);
+
   if (input.status !== 'ready' && !saving) return <Redirect href="/capture" />;
 
   const recent = cap.wave.slice(-BAR_COUNT);
@@ -36,15 +58,7 @@ export default function Record() {
       router.replace('/capture');
       return;
     }
-    setSaving(true);
-    try {
-      await addBeat({ channels: captured.channels, sampleRate: captured.sampleRate }, { source: 'capture', label: captured.label, name: nextBeatName(), clipped: captured.clipped });
-      router.replace('/beat');
-    } catch (e) {
-      setSaving(false);
-      setNotice(e instanceof TooShort ? e.message : 'That capture could not be saved. Storage on this device may be full.');
-      armCapture();
-    }
+    await save(captured);
   };
 
   return (

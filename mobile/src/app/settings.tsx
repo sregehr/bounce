@@ -72,13 +72,13 @@ export default function Settings() {
               onPair={setPair}
               onPick={(deviceId) => {
                 setSettings({ inputId: deviceId });
-                void openInput(deviceId, false);
+                void openInput(deviceId, 'mic');
               }}
             />
           ) : (
             <>
               <Muted>{input.error ?? 'Connect to choose which input Bounce records from and to see its level.'}</Muted>
-              <Btn kind="outline" label="Connect an input" busy={input.status === 'opening'} onPress={() => void openInput(settings.inputId, false)} style={{ flex: 0 }} />
+              <Btn kind="outline" label="Connect an input" busy={input.status === 'opening'} onPress={() => void openInput(settings.inputId, 'mic')} style={{ flex: 0 }} />
             </>
           )}
         </Card>

@@ -35,7 +35,11 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "tsx test/dsp.test.ts && tsx test/render.test.ts",
-    "e2e": "node test/e2e.mjs"
+    "e2e": "node test/e2e.mjs",
+    "build:web": "expo export -p web",
+    "serve": "node scripts/serve.mjs",
+    "serve:phone": "node scripts/serve.mjs --phone",
+    "typecheck": "tsc --noEmit"
   },
   "private": true
 }

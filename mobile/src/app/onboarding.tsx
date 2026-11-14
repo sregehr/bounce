@@ -102,7 +102,7 @@ export default function Onboarding() {
           <Foot>
             <Btn label="Get started" onPress={next} />
             <Muted size={13} center>
-              Your recordings stay on this device.
+              Everything is saved on this device. Backup can be turned off in Settings.
             </Muted>
           </Foot>
         </>
@@ -158,7 +158,7 @@ export default function Onboarding() {
             ) : (
               <>
                 <Muted>{input.error ?? 'The browser will ask for permission. Bounce only listens while you are capturing or recording.'}</Muted>
-                <Btn label={input.error ? 'Try again' : 'Connect an input'} busy={input.status === 'opening'} onPress={() => void openInput(settings.inputId, false)} />
+                <Btn label={input.error ? 'Try again' : 'Connect an input'} busy={input.status === 'opening'} onPress={() => void openInput(settings.inputId, 'mic')} />
               </>
             )}
           </Card>

@@ -9,7 +9,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { startBackup } from '@/data/backup';
 import { loadLibrary, useLibrary, useReady } from '@/data/store';
+import { closeInput } from '@/engine/engine';
 import { C } from '@/ui/theme';
+
+const LISTENING = ['/onboarding', '/capture', '/record', '/vocals', '/settings'];
 
 export default function Layout() {
   const [fontsLoaded, fontError] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, SpaceGrotesk_500Medium, SpaceGrotesk_700Bold });
@@ -23,6 +26,11 @@ export default function Layout() {
     return startBackup();
   }, []);
 
+  // The microphone is only held open on the screens that use it.
+  useEffect(() => {
+    if (!LISTENING.includes(pathname)) closeInput();
+  }, [pathname]);
+
   // On a desktop browser, show the app in a phone-sized frame, as the original design does.
   const framed = Platform.OS === 'web' && width >= 520 && height >= 880;
   const loaded = ready && (fontsLoaded || !!fontError);
@@ -35,7 +43,7 @@ export default function Layout() {
           {!loaded ? null : !onboarded && pathname !== '/onboarding' ? (
             <Redirect href="/onboarding" />
           ) : (
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }} />
+            <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }} />
           )}
         </View>
       </View>

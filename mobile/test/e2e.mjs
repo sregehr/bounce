@@ -369,6 +369,38 @@ async function library() {
   await expectText('Beat imported', 'an imported file becomes a beat', 30000);
   await expectText(/\d+ BPM/, 'a tempo is found for it');
   await shot('27-imported');
+
+  // A beat at a different sample rate from the microphone: the audio clock is rebuilt at the
+  // beat's rate, and recording and playback still have to work.
+  const rate = 48000, bpm = 100, beatSec = 60 / bpm;
+  const pcm = new Int16Array(rate * 10);
+  for (let b = 0; b < 16; b++) {
+    const at = Math.round(b * beatSec * rate);
+    for (let i = 0; i < 6000 && at + i < pcm.length; i++) pcm[at + i] += Math.round(22000 * Math.sin((2 * Math.PI * (b % 2 ? 180 : 55) * i) / rate) * Math.exp(-i / 900));
+    const off = Math.round((b + 0.5) * beatSec * rate);
+    for (let i = 0; i < 900 && off + i < pcm.length; i++) pcm[off + i] += Math.round(6000 * (((i * 7919) % 13) / 13 - 0.5) * Math.exp(-i / 200));
+  }
+  const wav48 = Buffer.alloc(44 + pcm.length * 2);
+  wav48.write('RIFF', 0); wav48.writeUInt32LE(36 + pcm.length * 2, 4); wav48.write('WAVEfmt ', 8); wav48.writeUInt32LE(16, 16);
+  wav48.writeUInt16LE(1, 20); wav48.writeUInt16LE(1, 22); wav48.writeUInt32LE(rate, 24); wav48.writeUInt32LE(rate * 2, 28);
+  wav48.writeUInt16LE(2, 32); wav48.writeUInt16LE(16, 34); wav48.write('data', 36); wav48.writeUInt32LE(pcm.length * 2, 40);
+  Buffer.from(pcm.buffer).copy(wav48, 44);
+  fs.writeFileSync(path.join(DOWNLOADS, 'Basement tape.wav'), wav48);
+  await tap('Home');
+  await choose('Import a file', path.join(DOWNLOADS, 'Basement tape.wav'));
+  await expectText('Beat imported', 'a 48 kHz file is imported', 30000);
+  await expectText('100 BPM', 'its tempo is found');
+  await expectText('48 kHz');
+  await tap('Freestyle over it', { exact: false });
+  await expectText('Mic: Fake', 'the microphone reconnects for the new beat', 10000);
+  await tap('Start recording');
+  await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 8000);
+  await sleep(3500);
+  await tap('Done, hear it back');
+  await expectText('Take 1', 'the take opens in playback', 10000);
+  await expectText(/ready in [\d.]+ s/, 'and is polished', 30000);
+  log(await transportPlaying(), 'and plays');
+  await shot('28-playback-48k');
 }
 
 const flows = { onboarding, song, finish, library };

@@ -1,5 +1,5 @@
 import { measureVoice, tonalBalance, type VoiceStats } from './analysis';
-import { clamp, finalise, fromDb, integratedLufs, peakOf, reduceNoise, rmsDb, toDb, truePeakDb, type Stereo } from './core';
+import { clamp, finaliseGently, fromDb, integratedLufs, peakOf, reduceNoise, rmsDb, toDb, truePeakDb, type Stereo } from './core';
 import { doubleTrack, highpass, lowpass, reverb, runChain, saturate, wobble } from './effects';
 import { autoBeatChain, autoVocalChain, masterPlan, vocalExtras, type Chain, type MasterPlan, type MasterSettings, type Polish } from './presets';
 
@@ -22,7 +22,16 @@ export type RenderInput = {
   targetLufs?: number | null;
   /** Saved measurements of the take, to skip measuring it again. */
   voice?: VoiceStats;
+  /**
+   * Names for the vocal and beat stages' inputs. When a cache is passed and a name matches
+   * the last render, that stage's result is reused, so changing only the master is quick.
+   */
+  stageKeys?: { vocal: string; beat: string };
 };
+
+type VocalStage = { bus: Stereo; chain: Chain; voice: VoiceStats; noiseReduced: boolean; body: number };
+type BeatStage = { bus: Stereo; chain: Chain; level: number };
+export type StageCache = { vocalKey?: string; vocal?: VocalStage; beatKey?: string; beat?: BeatStage };
 
 export type RenderOutput = {
   channels: Stereo;
@@ -113,68 +122,82 @@ export function renderRaw(input: RenderInput): Stereo {
 }
 
 /** The polished, mastered song. */
-export async function renderMix(input: RenderInput, onStage?: (stage: string) => void): Promise<RenderOutput> {
+export async function renderMix(input: RenderInput, onStage?: (stage: string) => void, cache?: StageCache): Promise<RenderOutput> {
   const sr = input.sampleRate;
   const include = input.include ?? 'mix';
-  onStage?.('Laying out the beat');
-  const beat = arrangeBeat(input);
-  const length = beat[0].length;
-  await tick();
+  const keys = cache ? input.stageKeys : undefined;
+  const length = songLength(input);
 
   // ----- Vocal -----
-  let vocalBus: Stereo | null = null;
-  let vocalChain: Chain | null = null;
-  let voice: VoiceStats | null = null;
-  let noiseReduced = false;
-  let vocalGainDb = 0;
+  let vocal: VocalStage | null = null;
   if (input.take && include !== 'instrumental') {
-    onStage?.('Cleaning up the take');
-    const dry = [fitted(input.take.mono, length)];
-    highpass(dry, sr, 80);
-    noiseReduced = reduceNoise(dry, sr) > -170;
-    await tick();
-    voice = input.voice ?? measureVoice(dry, sr);
-    vocalChain = input.overrides?.vocal ?? autoVocalChain(voice, input.polish.style);
-    onStage?.('Fitting the chain to your voice');
-    const extras = vocalExtras(input.polish.style);
-    runChain(dry, sr, vocalChain);
-    saturate(dry, extras.saturation);
-    await tick();
-    const mono = dry[0];
-    vocalBus = [mono.slice(), mono.slice()];
-    if (input.polish.double) addInto(vocalBus, doubleTrack(mono, sr));
-    if (extras.reverb > 0.01) addInto(vocalBus, reverb(mono, sr), extras.reverb * 3);
-    await tick();
+    if (keys && cache?.vocalKey === keys.vocal && cache.vocal) {
+      vocal = cache.vocal;
+    } else {
+      onStage?.('Cleaning up the take');
+      const dry = [fitted(input.take.mono, length)];
+      highpass(dry, sr, 80);
+      const noiseReduced = reduceNoise(dry, sr) > -170;
+      await tick();
+      const voice = input.voice ?? measureVoice(dry, sr);
+      const chain = input.overrides?.vocal ?? autoVocalChain(voice, input.polish.style);
+      onStage?.('Fitting the chain to your voice');
+      const extras = vocalExtras(input.polish.style);
+      runChain(dry, sr, chain);
+      saturate(dry, extras.saturation);
+      await tick();
+      const mono = dry[0];
+      const bus: Stereo = [mono.slice(), mono.slice()];
+      if (input.polish.double) addInto(bus, doubleTrack(mono, sr));
+      if (extras.reverb > 0.01) addInto(bus, reverb(mono, sr), extras.reverb * 3);
+      vocal = { bus, chain, voice, noiseReduced, body: measureVoice([bus[0]], sr).bodyDb };
+      if (cache && keys) {
+        cache.vocalKey = keys.vocal;
+        cache.vocal = vocal;
+      }
+      await tick();
+    }
   }
 
   // ----- Beat -----
-  onStage?.('Balancing the beat');
-  const beatChain = input.overrides?.beat ?? autoBeatChain(rmsDb(beat), !!vocalBus);
-  const beatBus: Float32Array[] = [beat[0], beat[1]];
-  runChain(beatBus, sr, beatChain);
-  await tick();
-
-  if (vocalBus) {
-    // Sit the voice a little above the beat, then apply the vocal level slider.
-    const body = measureVoice([vocalBus[0]], sr).bodyDb;
-    const beatLevel = rmsDb(beatBus);
-    const lift = vocalExtras(input.polish.style).lift;
-    vocalGainDb = body > -70 ? clamp(beatLevel + 3 + lift - body + (input.polish.vocalLevel - 68) * 0.25, -24, 24) : 0;
-    const g = fromDb(vocalGainDb);
-    for (const ch of vocalBus) for (let i = 0; i < ch.length; i++) ch[i] *= g;
+  let beatStage: BeatStage;
+  if (keys && cache?.beatKey === keys.beat && cache.beat) {
+    beatStage = cache.beat;
+  } else {
+    onStage?.('Balancing the beat');
+    const beat = arrangeBeat(input);
+    const chain = input.overrides?.beat ?? autoBeatChain(rmsDb(beat), !!input.take);
+    const bus: Float32Array[] = [beat[0], beat[1]];
+    runChain(bus, sr, chain);
+    beatStage = { bus: [bus[0], bus[1]], chain, level: rmsDb(bus) };
+    if (cache && keys) {
+      cache.beatKey = keys.beat;
+      cache.beat = beatStage;
+    }
+    await tick();
   }
+  const beatBus = beatStage.bus;
+  const beatChain = beatStage.chain;
+
+  // Sit the voice a little above the beat, then apply the vocal level slider.
+  let vocalGainDb = 0;
+  if (vocal && vocal.body > -70) vocalGainDb = clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - vocal.body + (input.polish.vocalLevel - 68) * 0.25, -24, 24);
+  const vocalGain = fromDb(vocalGainDb);
 
   // ----- Mix -----
+  // The stages above may be shared with later renders, so everything from here works on copies.
   const full: Stereo = [beatBus[0].slice(), beatBus[1].slice()];
-  if (vocalBus) addInto(full, vocalBus);
+  if (vocal) addInto(full, vocal.bus, vocalGain);
   const measured = { balance: tonalBalance(full, sr), lufs: integratedLufs(full, sr) };
   const plan: MasterPlan = masterPlan(input.master, measured);
   const masterChain = input.overrides?.master ?? plan.chain;
   await tick();
 
   let out: Float32Array[];
-  if (include === 'vocals') out = vocalBus ? [vocalBus[0], vocalBus[1]] : [new Float32Array(length), new Float32Array(length)];
-  else if (include === 'instrumental') out = [beatBus[0], beatBus[1]];
+  if (include === 'vocals') {
+    out = [new Float32Array(length), new Float32Array(length)];
+    if (vocal) addInto(out as Stereo, vocal.bus, vocalGain);
+  } else if (include === 'instrumental') out = [beatBus[0].slice(), beatBus[1].slice()];
   else out = [full[0], full[1]];
 
   // ----- Master -----
@@ -197,7 +220,7 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
     }
     await tick();
     const target = input.targetLufs !== undefined ? input.targetLufs : plan.targetLufs;
-    const done = finalise(out, sr, target, masterChain.limiter.ceiling, masterChain.limiter.release);
+    const done = await finaliseGently(out, sr, target, masterChain.limiter.ceiling, masterChain.limiter.release, tick);
     limiterDb = done.reductionDb;
     result = done;
   }
@@ -208,10 +231,10 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
     durationSec: length / sr,
     lufs: result.lufs,
     truePeakDb: result.truePeakDb,
-    chains: { vocal: vocalChain, beat: beatChain, master: masterChain },
+    chains: { vocal: vocal?.chain ?? null, beat: beatChain, master: masterChain },
     note: plan.note,
-    voice,
-    did: { noiseReduced, vocalGainDb, limiterDb },
+    voice: vocal?.voice ?? null,
+    did: { noiseReduced: !!vocal?.noiseReduced, vocalGainDb, limiterDb },
   };
 }
 

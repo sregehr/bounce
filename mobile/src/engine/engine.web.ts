@@ -50,6 +50,8 @@ async function context(rate?: number): Promise<AudioContext> {
     detachInput();
     await ctx.close().catch(() => {});
     ctx = null;
+    // Nodes belong to the context that made them, so the playback gains are made again too.
+    gains = null;
   }
   if (!ctx) {
     try {
@@ -63,7 +65,10 @@ async function context(rate?: number): Promise<AudioContext> {
     analyser.smoothingTimeConstant = 0.75;
     master.connect(analyser).connect(ctx.destination);
     worklet = ctx.audioWorklet.addModule('/capture-worklet.js');
-    if (stream) await attachInput();
+    if (stream) {
+      await attachInput();
+      set('input', { sampleRate: ctx.sampleRate });
+    }
   }
   await worklet;
   if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
@@ -151,16 +156,23 @@ export async function inputAllowed(): Promise<boolean> {
   }
 }
 
-/** Opens an input and starts metering. With no id, a connected MPC is preferred. */
-export function openInput(deviceId?: string | null, preferMpc = true): Promise<void> {
+const MUSIC_GEAR = /mpc|akai|rane|serato|pioneer|traktor|blackhole|loopback|soundflower|aggregate/i;
+const MICROPHONE = /microphone|\bmic\b|airpods|headset|headphones|webcam|facetime/i;
+
+/**
+ * Opens an input and starts metering. With no id, the kind of input the caller wants is
+ * looked for first: an MPC for capturing beats, or a microphone (rather than DJ or studio
+ * gear that happens to be the system default) for vocals.
+ */
+export function openInput(deviceId?: string | null, prefer: 'mpc' | 'mic' = 'mpc'): Promise<void> {
   if (opening) return opening;
-  opening = doOpen(deviceId, preferMpc).finally(() => {
+  opening = doOpen(deviceId, prefer).finally(() => {
     opening = null;
   });
   return opening;
 }
 
-async function doOpen(deviceId: string | null | undefined, preferMpc: boolean) {
+async function doOpen(deviceId: string | null | undefined, prefer: 'mpc' | 'mic') {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
     set('input', { status: 'error', error: 'This browser cannot record audio here. The page has to be opened over HTTPS or on localhost.' });
     return;
@@ -177,18 +189,26 @@ async function doOpen(deviceId: string | null | undefined, preferMpc: boolean) {
       else throw e;
     }
     const inputs = await listInputs();
-    if (!deviceId && preferMpc) {
-      const mpc = inputs.find((d) => /mpc|akai/i.test(d.label));
-      const current = s.getAudioTracks()[0].getSettings().deviceId;
-      if (mpc && mpc.deviceId !== current) {
+    if (!deviceId) {
+      const track0 = s.getAudioTracks()[0];
+      const current = track0.getSettings().deviceId;
+      const better =
+        prefer === 'mpc'
+          ? inputs.find((d) => /mpc|akai/i.test(d.label))
+          : MUSIC_GEAR.test(track0.label)
+            ? inputs.find((d) => MICROPHONE.test(d.label) && !MUSIC_GEAR.test(d.label))
+            : undefined;
+      if (better && better.deviceId !== current) {
         s.getTracks().forEach((t) => t.stop());
-        s = await navigator.mediaDevices.getUserMedia(constraints(mpc.deviceId));
+        s = await navigator.mediaDevices.getUserMedia(constraints(better.deviceId));
       }
     }
     stream = s;
     const track = s.getAudioTracks()[0];
     const settings = track.getSettings();
     track.onended = () => {
+      // Keep whatever was being captured when the cable came out.
+      salvaged = stopCapture();
       closeInput(true);
       set('input', { status: 'idle', error: 'The input was disconnected.', levelL: 0, levelR: 0 });
     };
@@ -210,6 +230,15 @@ async function doOpen(deviceId: string | null | undefined, preferMpc: boolean) {
     closeInput(true);
     set('input', { status: 'error', error: describe(e) });
   }
+}
+
+let salvaged: Captured | null = null;
+
+/** A capture that was cut short by the input disconnecting, handed over once. */
+export function takeSalvaged(): Captured | null {
+  const out = salvaged;
+  salvaged = null;
+  return out;
 }
 
 export function closeInput(quiet = false) {
@@ -566,7 +595,8 @@ export async function startTake(mode: 'listening' | 'recording', beat: { channel
   if (state.input.status !== 'ready') throw new Error('Connect a microphone first.');
   endRun();
   stopTransport();
-  const c = await context();
+  // Run the audio clock at the beat's own rate, so the take is recorded at that rate too.
+  const c = await context(beat.sampleRate);
   if (c.state !== 'running') throw new Error('The browser has paused audio. Tap the page and try again.');
   const src = c.createBufferSource();
   src.buffer = buffer(c, beat);

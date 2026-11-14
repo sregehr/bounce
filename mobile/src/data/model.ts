@@ -13,6 +13,8 @@ export type Beat = AudioInfo & {
   trimmedSec: number;
   /** Normalised peaks for drawing the waveform. */
   wave: number[];
+  /** Silence left before the first sound when the beat was trimmed, so bar one is found exactly. */
+  leadSec: number;
   bpm: number | null;
   /** Musical key, such as "F minor". */
   musicalKey: string | null;
@@ -77,7 +79,10 @@ export type Project = {
 export type Profile = { artist: string; producer: string; onboarded: boolean };
 
 export type Settings = {
+  /** The microphone used for vocals. */
   inputId: string | null;
+  /** The input beats are captured from (the MPC, usually). */
+  beatInputId: string | null;
   /** Round-trip delay measured on this device, or null to use what the browser reports. */
   latencyMs: number | null;
   backup: boolean;
@@ -92,5 +97,5 @@ export type Library = { version: 1; profile: Profile; settings: Settings; projec
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 export function emptyLibrary(): Library {
-  return { version: 1, profile: { artist: '', producer: '', onboarded: false }, settings: { inputId: null, latencyMs: null, backup: true, deviceId: newId() + newId() }, projects: [], currentId: null, coverPhotoKey: null };
+  return { version: 1, profile: { artist: '', producer: '', onboarded: false }, settings: { inputId: null, beatInputId: null, latencyMs: null, backup: true, deviceId: newId() + newId() }, projects: [], currentId: null, coverPhotoKey: null };
 }

@@ -2,7 +2,7 @@ import { detectKey, detectTempo, measureVoice, strongestStretch, tonalBalance } 
 import { finalise, integratedLufs, limit, peakOf, reduceNoise, toDb, trimRange, truePeakDb, wavePeaks, rmsDb } from '../src/dsp/core';
 import { DEMO, makeDemoBeat } from '../src/dsp/demoBeat';
 import { encodeWav, parseWav } from '../src/dsp/wav';
-import { analyseClicks, makeClickTrain } from '../src/dsp/latency';
+import { analyseClicks, analyseTaps, makeClickTrain, TAPS } from '../src/dsp/latency';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail: string) {
@@ -115,6 +115,14 @@ for (let i = 0; i < heard.length; i++) heard[i] += (((i * 48271) % 2147483647) /
 const lat = analyseClicks(heard, 48000);
 check('latency test', lat.detected === 6 && lat.medianMs !== null && near(lat.medianMs, 37.5, 0.3), `${lat.medianMs?.toFixed(2)} ms from ${lat.detected} clicks`);
 check('latency test in silence', analyseClicks(new Float32Array(train.length), 48000).medianMs === null, 'not detected');
+
+// Tapping along: clicks every 600 ms, heard 180 ms late, tapped with a wandering finger and one wild tap.
+const clicksAt = Array.from({ length: TAPS.count }, (_, k) => 5000 + k * TAPS.spacing * 1000);
+const wander = [260, -18, 12, -25, 20, 4, -9, 15];
+const tapped = analyseTaps(clicksAt, clicksAt.map((t, k) => t + 180 + wander[k]));
+check('tap-along timing', tapped.matched === 8 && tapped.medianMs !== null && near(tapped.medianMs, 180, 15), `${tapped.medianMs?.toFixed(0)} ms from ${tapped.matched} taps`);
+check('tap-along with too few taps', analyseTaps(clicksAt, [clicksAt[0] + 180, clicksAt[3] + 170]).medianMs === null, 'not used');
+check('tap-along with random taps', analyseTaps(clicksAt, clicksAt.map((t, k) => t + [20, 380, 150, 460, 60, 300, 410, 110][k])).medianMs === null, 'not used');
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);

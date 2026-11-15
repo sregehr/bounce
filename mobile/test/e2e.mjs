@@ -144,6 +144,27 @@ async function onboarding() {
   await tap('Play the clicks');
   await expectText(/Heard all the clicks|clicks came back/i, 'latency check finishes', 12000);
   await shot('04-timing');
+
+  // The earbud route: tap along to the pulse instead of letting the mic listen for it.
+  await tap('Wearing earbuds? Tap along instead');
+  await expectText('0 of 8 taps', 'the tap-along check opens');
+  const pad = await page.evaluate(() => {
+    const r = document.querySelector('[aria-label="Tap on each click"]').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await sleep(1150); // the first click comes 1.3 s after the pulse starts
+  for (let k = 0; k < 8; k++) {
+    const next = Date.now() + 600;
+    await page.mouse.move(pad.x, pad.y);
+    await page.mouse.down();
+    if (k === 3) await shot('04b-tap-along');
+    await page.mouse.up();
+    await sleep(Math.max(0, next - Date.now()));
+  }
+  await expectText(/Measured from [5-8] of 8 taps/, 'tapping along measures the timing', 8000);
+  await tap('Run it again');
+  await expectText(/Heard all the clicks|clicks came back/i, 'the click check still runs afterwards', 12000);
+
   await tap('Continue');
   await expectText('Ready, Kai Rivers.');
   await shot('05-first-beat');

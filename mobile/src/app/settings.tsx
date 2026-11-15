@@ -10,7 +10,7 @@ import { setProfile, setSettings, update, useLibrary } from '@/data/store';
 import { closeInput, measureLatency, openInput, reportedLatencyMs, setPair, stopTransport, useEngine } from '@/engine/engine';
 import { Btn, Card, Chip, Eyebrow, Field, Muted, NavLink, Option, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useArmed, useTask } from '@/ui/hooks';
-import { InputPanel } from '@/ui/parts';
+import { InputPanel, TapCheck, type TapOutcome } from '@/ui/parts';
 import { C, plural } from '@/ui/theme';
 
 const mb = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
@@ -23,6 +23,7 @@ export default function Settings() {
   const backup = useBackup();
   const check = useTask();
   const [heard, setHeard] = useState<string | null>(null);
+  const [tapping, setTapping] = useState(false);
   const [space, setSpace] = useState<{ used: number; quota: number } | null>(null);
   const [armed, arm] = useArmed(4000);
   const live = input.status === 'ready';
@@ -42,6 +43,16 @@ export default function Settings() {
       setSettings({ latencyMs: Math.round(result.medianMs) });
       setHeard(`Measured ${Math.round(result.medianMs)} ms from ${result.detected} clicks.`);
     });
+
+  const tapped = (outcome: TapOutcome) => {
+    setTapping(false);
+    if (outcome.ms === null) {
+      setHeard(`Only ${outcome.matched} of ${outcome.clicks} taps lined up, so nothing was changed. Try again, tapping right on each click.`);
+      return;
+    }
+    setSettings({ latencyMs: Math.min(500, outcome.ms) });
+    setHeard(`Measured ${Math.min(500, outcome.ms)} ms from ${outcome.matched} taps. Nudge it with −5 and +5 if takes still sit early or late.`);
+  };
 
   const wipe = async () => {
     if (!armed) return arm();
@@ -103,11 +114,28 @@ export default function Settings() {
             {check.error ?? heard}
           </Txt>
         )}
-        <View style={[s.row, { gap: 10 }]}>
-          <Btn kind="outline" label="Play the clicks" busy={check.busy} disabled={!live} onPress={runCheck} style={{ flex: 1 }} />
-          {settings.latencyMs !== null && <Btn kind="outline" label="Use the estimate" onPress={() => (setSettings({ latencyMs: null }), setHeard(null))} style={{ flex: 1 }} />}
-        </View>
-        {!live && <Muted size={13}>Connect an input above to run the check.</Muted>}
+        {tapping ? (
+          <Card style={{ padding: 16 }}>
+            <TapCheck onDone={tapped} onCancel={() => setTapping(false)} />
+          </Card>
+        ) : (
+          <>
+            <View style={[s.row, { gap: 10 }]}>
+              <Btn kind="outline" label="Play the clicks" busy={check.busy} disabled={!live} onPress={runCheck} style={{ flex: 1 }} />
+              <Btn kind="outline" label="Tap along" disabled={!live || check.busy} onPress={() => (setHeard(null), setTapping(true))} style={{ flex: 1 }} />
+            </View>
+            {live ? (
+              <Muted size={13}>Wearing earbuds? The mic cannot hear the clicks through them, so tap along instead.</Muted>
+            ) : (
+              <Muted size={13}>Connect an input above to run a check.</Muted>
+            )}
+            {settings.latencyMs !== null && (
+              <NavLink size={14} onPress={() => (setSettings({ latencyMs: null }), setHeard(null))}>
+                Use the estimate
+              </NavLink>
+            )}
+          </>
+        )}
       </View>
 
       <View style={{ gap: 4 }}>

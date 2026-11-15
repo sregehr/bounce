@@ -8,7 +8,7 @@ import { setProfile, setSettings, useLibrary } from '@/data/store';
 import { measureLatency, openInput, reportedLatencyMs, setPair, useEngine } from '@/engine/engine';
 import { Btn, Card, Eyebrow, Field, Foot, Muted, NavLink, Screen, TickIcon, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
-import { InputPanel } from '@/ui/parts';
+import { InputPanel, TapCheck, type TapOutcome } from '@/ui/parts';
 import { C } from '@/ui/theme';
 
 const STEPS = ['Welcome', 'Names', 'Sound check', 'Timing', 'First beat'] as const;
@@ -49,7 +49,8 @@ export default function Onboarding() {
   const [step, setStep] = useState(0);
   const [artist, setArtist] = useState(profile.artist);
   const [producer, setProducer] = useState(profile.producer);
-  const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number } | null>(null);
+  const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number; of: number; taps?: boolean } | null>(null);
+  const [tapping, setTapping] = useState(false);
   const check = useTask();
   const start = useTask();
   const live = input.status === 'ready';
@@ -64,8 +65,14 @@ export default function Onboarding() {
       const result = await measureLatency();
       const ms = result.medianMs !== null ? Math.round(result.medianMs) : reportedLatencyMs();
       setSettings({ latencyMs: result.medianMs !== null ? ms : null });
-      setTiming({ ms, measured: result.medianMs !== null, heard: result.detected });
+      setTiming({ ms, measured: result.medianMs !== null, heard: result.detected, of: result.clicks });
     });
+  const tapped = (outcome: TapOutcome) => {
+    setTapping(false);
+    const ms = outcome.ms !== null ? Math.min(500, outcome.ms) : reportedLatencyMs();
+    setSettings({ latencyMs: outcome.ms !== null ? ms : null });
+    setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, taps: true });
+  };
   const finish = (work?: () => Promise<Project | null>, to: '/beat' | '/capture' | '/demos' | '/' = '/beat') =>
     start.run(async () => {
       if (work && !(await work())) return;
@@ -187,18 +194,31 @@ export default function Onboarding() {
             <Txt size={44} w="display" lh={1}>
               {timing ? `${timing.ms} ms` : `~${reportedLatencyMs()} ms`}
             </Txt>
-            <Muted>
-              {check.error ??
-                (timing
-                  ? timing.measured
-                    ? `Heard all the clicks it needed (${timing.heard} of 6). Your takes will be moved ${timing.ms} ms earlier.`
-                    : `Only ${timing.heard} of 6 clicks came back, so the browser's own estimate is used. With headphones on, hold one ear cup to the mic and try again.`
-                  : 'Turn the volume up and take your headphones off, or hold one ear cup to the mic. The clicks are short and loud.')}
-            </Muted>
-            <Btn kind={timing ? 'outline' : 'primary'} label={timing ? 'Run it again' : 'Play the clicks'} busy={check.busy} onPress={runCheck} style={timing ? { flex: 0 } : undefined} />
+            {tapping ? (
+              <TapCheck onDone={tapped} onCancel={() => setTapping(false)} />
+            ) : (
+              <>
+                <Muted>
+                  {check.error ??
+                    (timing
+                      ? timing.measured
+                        ? timing.taps
+                          ? `Measured from ${timing.heard} of ${timing.of} taps. Your takes will be moved ${timing.ms} ms earlier.`
+                          : `Heard all the clicks it needed (${timing.heard} of ${timing.of}). Your takes will be moved ${timing.ms} ms earlier.`
+                        : timing.taps
+                          ? `Only ${timing.heard} of ${timing.of} taps lined up, so the browser's own estimate is used. Try again, tapping right on each click.`
+                          : `Only ${timing.heard} of ${timing.of} clicks came back, so the browser's own estimate is used. With headphones on, hold one ear cup to the mic and try again, or tap along instead.`
+                      : 'Turn the volume up and take your headphones off, or hold one ear cup to the mic. The clicks are short and loud.')}
+                </Muted>
+                <Btn kind={timing ? 'outline' : 'primary'} label={timing ? 'Run it again' : 'Play the clicks'} busy={check.busy} onPress={runCheck} style={timing ? { flex: 0 } : undefined} />
+                <NavLink center size={14} onPress={() => !check.busy && setTapping(true)}>
+                  Wearing earbuds? Tap along instead
+                </NavLink>
+              </>
+            )}
           </Card>
           <Foot>
-            <Btn label="Continue" onPress={next} disabled={check.busy} />
+            <Btn label="Continue" onPress={next} disabled={check.busy || tapping} />
             {!timing && (
               <NavLink center size={14} onPress={next}>
                 Skip: use the estimate

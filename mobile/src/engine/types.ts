@@ -71,4 +71,7 @@ export type PlayOptions = {
   autoplay?: boolean;
 };
 
+/** A tap-along timing check in progress: when each click was sent (on the `performance.now()` clock) and the input's own delay. */
+export type TapRun = { clicksAt: number[]; endsAt: number; inputMs: number; stop: () => void };
+
 export type { LatencyResult };

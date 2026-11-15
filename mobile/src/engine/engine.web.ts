@@ -2,10 +2,10 @@
 // Everything shares one AudioContext, so playback and recording run on the same clock.
 import { useSyncExternalStore } from 'react';
 
-import { analyseClicks, clickTrainSeconds, makeClickTrain, type LatencyResult } from '@/dsp/latency';
+import { analyseClicks, clickTrainSeconds, makeClickTrain, TAPS, tapTrainSeconds, type LatencyResult } from '@/dsp/latency';
 import { parseWav } from '@/dsp/wav';
 
-import type { Captured, EngineState, InputDevice, PlayOptions, RecordedTake } from './types';
+import type { Captured, EngineState, InputDevice, PlayOptions, RecordedTake, TapRun } from './types';
 
 const SILENCE = 0.003; // about −50 dBFS
 const PREROLL_BLOCKS = 4;
@@ -658,9 +658,43 @@ export function stopTake(keep = true): RecordedTake | null {
 export function reportedLatencyMs(): number {
   if (!ctx) return 30;
   const out = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+  return Math.round(out * 1000 + inputLatencyMs());
+}
+
+/** The input's share of the delay, as the browser reports it. */
+function inputLatencyMs(): number {
   const track = stream?.getAudioTracks()[0];
-  const input = (track?.getSettings() as { latency?: number } | undefined)?.latency ?? 0.01;
-  return Math.round((out + input) * 1000);
+  return ((track?.getSettings() as { latency?: number } | undefined)?.latency ?? 0.01) * 1000;
+}
+
+/**
+ * Plays a steady pulse for tapping along to, for setups where the input cannot hear the output (earbuds).
+ * Returns when each click was sent, on the `performance.now()` clock that taps are stamped with.
+ */
+export async function startTapCheck(): Promise<TapRun> {
+  endRun();
+  stopTransport();
+  const c = await context();
+  const src = c.createBufferSource();
+  src.buffer = buffer(c, { channels: [makeClickTrain(c.sampleRate, TAPS)], sampleRate: c.sampleRate });
+  src.connect(master!);
+  // Read both clocks together so audio time can be turned into the clock taps arrive on.
+  const audioNow = c.currentTime;
+  const clockNow = performance.now();
+  const when = audioNow + 0.1;
+  src.start(when);
+  const startsAt = clockNow + (when - audioNow) * 1000;
+  return {
+    clicksAt: Array.from({ length: TAPS.count }, (_, k) => startsAt + (TAPS.first + TAPS.spacing * k) * 1000),
+    endsAt: startsAt + tapTrainSeconds * 1000,
+    inputMs: inputLatencyMs(),
+    stop: () => {
+      try {
+        src.stop();
+      } catch {}
+      src.disconnect();
+    },
+  };
 }
 
 /** Plays clicks and times how long they take to come back in through the input. */

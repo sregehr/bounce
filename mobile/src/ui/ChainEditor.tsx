@@ -7,7 +7,7 @@ import type { Project } from '@/data/model';
 import { activeTake, patchProject, setSettings, useLibrary } from '@/data/store';
 import type { useSong } from '@/data/song';
 import { biquad, responseDb } from '@/dsp/core';
-import { summarise, type Band, type Chain } from '@/dsp/presets';
+import { MASTER_STYLES, summarise, type Band, type Chain, type MasterSettings } from '@/dsp/presets';
 import { Btn, Chip, Disclosure, Muted, NavLink, Segmented, SliderRow, s } from './kit';
 import { C, db } from './theme';
 
@@ -56,6 +56,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const [band, setBand] = useState(1);
   // Values being dragged: applied to the sound when the slider is let go.
   const [draft, setDraft] = useState<Chain | null>(null);
+  const [amount, setAmount] = useState<number | null>(null);
 
   const key = KEY[tab];
   const resolved = project.overrides[key] ?? song.mix?.chains[key] ?? null;
@@ -69,6 +70,12 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
     setDraft(null);
     patchProject(project.id, (p) => ({ overrides: { ...p.overrides, [key]: undefined } }));
   };
+  // Choosing a master style or its intensity replaces any master chain set by hand below.
+  const setMaster = (patch: Partial<MasterSettings>) => {
+    setDraft(null);
+    setAmount(null);
+    patchProject(project.id, (p) => ({ master: { ...p.master, ...patch }, overrides: { ...p.overrides, master: undefined } }));
+  };
   const toggle = (sec: Section) => () => setOpen(open === sec ? '' : sec);
 
   /** A slider bound to one value in the chain. */
@@ -81,6 +88,18 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   return (
     <View style={{ gap: 10 }}>
       <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setTab(v))} />
+
+      {tab === 'Master' && (
+        <View style={{ gap: 6 }}>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            {MASTER_STYLES.map((style) => (
+              <Chip key={style} label={style} on={style === project.master.style && !edited} onPress={() => setMaster({ style })} />
+            ))}
+          </View>
+          <SliderRow label="Intensity" value={amount ?? project.master.amount} min={0} max={100} step={1} display={`${amount ?? project.master.amount}%`} onChange={setAmount} onCommit={(v) => setMaster({ amount: v })} />
+          {!edited && song.mix?.note ? <Muted size={13}>{song.mix.note}</Muted> : null}
+        </View>
+      )}
 
       <View style={[s.row, s.between, { minHeight: 28 }]}>
         <Muted size={13} style={{ flex: 1 }}>

@@ -93,16 +93,7 @@ export default function Master() {
             </Txt>
           </View>
         </View>
-        {project.saved ? (
-          <Btn label="Export" to="/export" disabled={!mix} />
-        ) : (
-          <>
-            <Btn label="Next: name and cover" to="/cover?finish=1" disabled={!mix} />
-            <NavLink to="/export" center size={14}>
-              Export without saving
-            </NavLink>
-          </>
-        )}
+        <Btn label="Export" to="/export" disabled={!mix} />
       </Foot>
     </Screen>
   );

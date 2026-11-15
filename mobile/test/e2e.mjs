@@ -323,18 +323,16 @@ async function song() {
   await slide('Gain', 0.7);
   await shot('12-advanced-master');
 
-  await tap('Finish song');
-  await expectText('Set by hand', 'master screen says the chain was set by hand');
+  // The master is chosen here too: a style and how hard it is pushed. Choosing one replaces the chain set by hand.
+  await expectText('Set by hand', 'the master chain is marked as set by hand');
   await tap('Punchy');
-  await expectText('Slower compressor attack', 'choosing a style explains itself', 20000);
+  await expectText('Slower compressor attack', 'choosing a master style explains itself', 20000);
+  await expectText('Starting from the Punchy master');
   await slide('Intensity', 1);
   await expectText('100%');
-  await slide('Low', 0.75);
-  await expectText(/−\d+\.\d LUFS/, 'loudness is reported', 30000);
-  await sleep(1500);
-  await shot('13-master');
-  await tap('Original');
-  await tap('Mastered');
+  await expectText(/Polished\s/, 'the mix renders with the master', 30000);
+  await sleep(800);
+  await shot('13-mix-master');
 }
 
 const DOWNLOADS = path.join(SHOTS, 'downloads-' + Date.now());
@@ -383,8 +381,12 @@ async function finish() {
   const stemZip = (await waitDownloads(1)).find((f) => f.endsWith('stems.zip'));
   const stemNames = stemZip ? unzipNames(path.join(DOWNLOADS, stemZip)) : [];
   log(stemNames.length === 3, 'the stems ZIP holds the beat and both vocals', stemNames.join(', '));
+  // Finish song goes straight to naming it; there is no second mixing step in between.
   await tap('Finish song');
-  await expectText('Next: name and cover', 'finishing starts with the master');
+  await expectText('Save to the Vault', 'Finish song opens the last step directly');
+  await expectText('Add a photo of yourself');
+  await tap('Back');
+  await expectText('Export without saving', 'Back returns to the mix');
   await tap('Export without saving');
   await expectText('Loud, for socials and demos', 'export screen opens');
   await tap('Loud, for socials and demos');

@@ -44,7 +44,7 @@ export default function Export() {
 
   return (
     <Screen>
-      <TopBar left="Export" right={<NavLink to="/master" back>Back</NavLink>} />
+      <TopBar left="Export" right={<NavLink to={project.saved ? '/master' : '/playback'} back>Back</NavLink>} />
 
       <Card style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ gap: 2, flex: 1 }}>

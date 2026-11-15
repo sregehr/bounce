@@ -140,6 +140,9 @@ export default function Playback() {
             <View style={{ paddingTop: 10, paddingBottom: 6 }}>
               <ChainEditor project={project} song={song} />
             </View>
+            <NavLink size={14} to="/export">
+              Export without saving
+            </NavLink>
             <NavLink size={14} onPress={() => !stems.busy && sendStems()}>
               {stems.busy ? 'Gathering the stems…' : 'Send stems to an engineer'}
             </NavLink>
@@ -166,7 +169,7 @@ export default function Playback() {
 
       {/* The last step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
-        <Btn label="Finish song" to="/master" style={{ flex: 0, minHeight: 52 }} />
+        <Btn label="Finish song" to="/cover?finish=1" style={{ flex: 0, minHeight: 52 }} />
       </View>
     </View>
   );

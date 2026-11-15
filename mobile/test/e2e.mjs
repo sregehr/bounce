@@ -224,6 +224,15 @@ async function song() {
   await expectText('Take 1', 'playback opens on the new take', 10000);
   await expectText(/Polished\s/, 'polish finishes', 30000);
   log(await transportPlaying(), 'the polished take plays by itself');
+  // The take is a few seconds long; with Repeat on, the mix is still going well after it would have ended.
+  await sleep(9000);
+  log(await transportPlaying(), 'the mix repeats while it is being shaped');
+  await tap('Repeat');
+  await sleep(9000);
+  log(!(await transportPlaying()), 'with Repeat off it stops at the end');
+  await tap('Repeat');
+  await tap('Play');
+  await sleep(500);
   await shot('09-playback');
   await tap('Compare with raw');
   await sleep(300);

@@ -11,7 +11,7 @@ import type { Project } from './model';
 import { activeTake } from './store';
 import { getRaw, useMix, type MixOptions } from './studio';
 
-export function useSong(project: Project | null, options: { autoplay?: boolean; compare?: boolean; mix?: MixOptions } = {}) {
+export function useSong(project: Project | null, options: { autoplay?: boolean; compare?: boolean; repeat?: boolean; mix?: MixOptions } = {}) {
   const id = `song:${project?.id}`;
   const state = useMix(project, options.mix);
   const t = useTransport(id);
@@ -55,7 +55,7 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     first.current = false;
     load(autoplay);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.mix, raw, id, focused]);
+  }, [state.mix, raw, id, focused, options.repeat]);
 
   /** Puts the mix on the transport. Something else may have taken it over since, such as a take being previewed. */
   function load(autoplay?: boolean) {
@@ -67,6 +67,8 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
       // Asked to play, it starts from the top; otherwise a re-render carries on from where it was.
       keepPosition: autoplay !== true,
       autoplay,
+      // The song runs to the end of a bar, so it repeats in time.
+      loop: options.repeat,
     }).catch((e) => setError(e instanceof Error ? e.message : 'Could not play.'));
   }
 

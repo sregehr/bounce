@@ -23,7 +23,9 @@ const FINISH_HEIGHT = 62;
 export default function Playback() {
   const project = useProject();
   const take = activeTake(project);
-  const song = useSong(take ? project : null, { compare: true });
+  // The mix keeps coming round while it is being shaped, unless Repeat is turned off.
+  const [repeat, setRepeat] = useState(true);
+  const song = useSong(take ? project : null, { compare: true, repeat });
   const [detail, setDetail] = useState(false);
   const insets = useSafeAreaInsets();
   const [level, setLevel] = useState<number | null>(null);
@@ -95,9 +97,21 @@ export default function Playback() {
         </View>
 
         <View style={{ gap: 12 }}>
-          <View style={[s.row, { gap: 12 }]}>
+          <View style={[s.row, { gap: 8 }]}>
             <RoundPlay playing={t.playing} onPress={song.toggle} disabled={!mix} />
             <SeekTrack peaks={take.wave} height={44} progress={progress} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" style={{ flex: 1 }} />
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel="Repeat"
+              accessibilityState={{ checked: repeat }}
+              onPress={() => setRepeat(!repeat)}
+              hitSlop={6}
+              style={{ minHeight: 36, paddingHorizontal: 12, borderRadius: 18, borderWidth: 1, borderColor: repeat ? C.accent : C.borderStrong, justifyContent: 'center' }}
+            >
+              <Txt size={13} w="semi" color={repeat ? C.accent : C.text}>
+                Repeat
+              </Txt>
+            </Pressable>
             <Pressable
               accessibilityRole="switch"
               accessibilityLabel="Compare with raw"

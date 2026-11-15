@@ -7,12 +7,12 @@ import type { Project } from '@/data/model';
 import { activeTake, patchProject, setSettings, useLibrary } from '@/data/store';
 import type { useSong } from '@/data/song';
 import { biquad, responseDb } from '@/dsp/core';
-import { MASTER_STYLES, summarise, type Band, type Chain, type MasterSettings } from '@/dsp/presets';
+import { DEFAULT_ROOM_CUT, MASTER_STYLES, styleReverb, summarise, type Band, type Chain, type MasterSettings, type Send } from '@/dsp/presets';
 import { Btn, Chip, Disclosure, Muted, NavLink, Segmented, SliderRow, s } from './kit';
 import { C, db } from './theme';
 
 type Tab = 'Vocal' | 'Beat' | 'Master';
-type Section = 'eq' | 'comp' | 'deess' | 'lim' | '';
+type Section = 'space' | 'eq' | 'comp' | 'deess' | 'lim' | '';
 const KEY = { Vocal: 'vocal', Beat: 'beat', Master: 'master' } as const;
 
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')} kHz` : `${Math.round(v)} Hz`);
@@ -57,6 +57,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   // Values being dragged: applied to the sound when the slider is let go.
   const [draft, setDraft] = useState<Chain | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
+  const [spaceDraft, setSpaceDraft] = useState<{ send: Send; roomCut: number } | null>(null);
 
   const key = KEY[tab];
   const resolved = project.overrides[key] ?? song.mix?.chains[key] ?? null;
@@ -76,6 +77,19 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
     setAmount(null);
     patchProject(project.id, (p) => ({ master: { ...p.master, ...patch }, overrides: { ...p.overrides, master: undefined } }));
   };
+  // Reverb and echo for this part of the mix. The vocal's reverb follows its style until it is set here.
+  const space = spaceDraft ?? {
+    send: { reverb: project.space?.[key]?.reverb ?? (tab === 'Vocal' ? styleReverb(project.polish.style) : 0), echo: project.space?.[key]?.echo ?? 0 },
+    roomCut: project.space?.roomCut ?? DEFAULT_ROOM_CUT,
+  };
+  const commitSpace = (next: typeof space) => {
+    setSpaceDraft(null);
+    patchProject(project.id, (p) => ({ space: { ...p.space, [key]: next.send, ...(tab === 'Vocal' ? { roomCut: next.roomCut } : null) } }));
+  };
+  const pct = (v: number) => (v > 0 ? `${Math.round(v)}%` : 'Off');
+  const spaceRow = (label: string, value: number, display: string, apply: (v: number) => typeof space) => (
+    <SliderRow key={`${tab}-space-${label}`} label={label} value={value} min={0} max={100} step={1} display={display} onChange={(v) => setSpaceDraft(apply(v))} onCommit={(v) => commitSpace(apply(v))} />
+  );
   const toggle = (sec: Section) => () => setOpen(open === sec ? '' : sec);
 
   /** A slider bound to one value in the chain. */
@@ -87,7 +101,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
 
   return (
     <View style={{ gap: 10 }}>
-      <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setTab(v))} />
+      <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setSpaceDraft(null), setTab(v))} />
 
       {tab === 'Master' && (
         <View style={{ gap: 6 }}>
@@ -111,6 +125,21 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
           </NavLink>
         )}
       </View>
+
+      <Disclosure title="Reverb and echo" summary={`Reverb ${pct(space.send.reverb ?? 0).toLowerCase()} · Echo ${pct(space.send.echo ?? 0).toLowerCase()}`} open={open === 'space'} onToggle={toggle('space')}>
+        <View style={{ paddingBottom: 8 }}>
+          {spaceRow('Reverb', space.send.reverb ?? 0, pct(space.send.reverb ?? 0), (v) => ({ ...space, send: { ...space.send, reverb: v } }))}
+          {spaceRow('Echo', space.send.echo ?? 0, pct(space.send.echo ?? 0), (v) => ({ ...space, send: { ...space.send, echo: v } }))}
+          {tab === 'Vocal' && spaceRow('Room cut', space.roomCut, space.roomCut > 0 ? db((-24 * space.roomCut) / 100) : 'Off', (v) => ({ ...space, roomCut: v }))}
+          <Muted size={13}>
+            {tab === 'Vocal'
+              ? 'Reverb starts where the vocal style puts it; zero is fully dry. Room cut turns down the room and the beat bleed between phrases.'
+              : tab === 'Beat'
+                ? 'Added to the beat only. The bass is kept out of it, so the low end stays tight.'
+                : 'Added to the vocal and beat together, on top of what each has. The bass is kept out of it.'}
+          </Muted>
+        </View>
+      </Disclosure>
 
       {!chain || !sums || !b ? (
         <Muted>{song.error ? 'The chain could not be worked out.' : 'Listening to the track to work out a starting point…'}</Muted>

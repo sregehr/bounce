@@ -384,7 +384,9 @@ export function reduceNoise(channels: Float32Array[], sampleRate: number, maxCut
     for (const ch of channels) for (let i = start; i < start + frame; i++) sum += ch[i] * ch[i];
     levels.push(toDb(Math.sqrt(sum / (frame * channels.length))));
   }
-  const sorted = [...levels].sort((a, b) => a - b);
+  // Digital silence (the padding out to the bar line) is not the room: leave it out of the estimate.
+  const sorted = levels.filter((l) => l > -110).sort((a, b) => a - b);
+  if (sorted.length < 10) return -180;
   const floor = sorted[Math.floor(sorted.length * 0.1)];
   const body = sorted[Math.floor(sorted.length * 0.9)];
   // Nothing to gain when the take is already clean or has no quiet parts.

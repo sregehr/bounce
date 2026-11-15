@@ -1,5 +1,5 @@
 import type { VoiceStats } from '@/dsp/analysis';
-import type { Chain, MasterSettings, Polish } from '@/dsp/presets';
+import type { Chain, MasterSettings, Polish, Space } from '@/dsp/presets';
 
 /** A stored audio file: `key` finds it in the blob store. */
 export type AudioInfo = { key: string; durationSec: number; sampleRate: number; channels: number };
@@ -68,6 +68,8 @@ export type Project = {
   master: MasterSettings;
   /** Chains edited by hand on the Mix page. */
   overrides: { vocal?: Chain; beat?: Chain; master?: Chain };
+  /** Reverb and echo set by hand on the Mix page. */
+  space?: Space;
   exporting: ExportChoice;
   snippet: SnippetChoice;
   cover: Cover;

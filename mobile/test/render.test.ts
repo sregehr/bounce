@@ -81,6 +81,27 @@ const run = async () => {
   const width = (c: Float32Array[]) => { let d = 0, s = 0; for (let i = 0; i < c[0].length; i += 7) { d += (c[0][i] - c[1][i]) ** 2; s += (c[0][i] + c[1][i]) ** 2; } return d / (s || 1); };
   check('double track widens', width(dbl.channels) > width(single.channels) * 2, `side/mid ${width(single.channels).toFixed(4)} → ${width(dbl.channels).toFixed(4)}`);
 
+  // Reverb and echo, set by hand for each part of the mix.
+  const energy = (c: Float32Array[], from = 0, to = c[0].length) => { let e = 0; for (let i = from; i < to; i++) e += c[0][i] ** 2 + c[1][i] ** 2; return e; };
+  const differs = (a: Float32Array[], b: Float32Array[]) => { let d = 0; for (let i = 0; i < a[0].length; i += 3) d += (a[0][i] - b[0][i]) ** 2; return d / (energy(a) || 1); };
+  const stem = (space: RenderInput['space']) => renderMix({ ...base, polish: { ...DEFAULT_POLISH, double: false }, space, include: 'vocals' });
+  const dryV = await stem({ vocal: { reverb: 0 } });
+  const wetV = await stem({ vocal: { reverb: 100 } });
+  const styleV = await stem(undefined);
+  const fromDry = (o: { channels: Float32Array[] }) => differs(o.channels, dryV.channels);
+  check('vocal reverb slider', fromDry(wetV) > fromDry(styleV) * 4 && fromDry(styleV) > 0, `differs from dry: style ${fromDry(styleV).toExponential(1)}, full ${fromDry(wetV).toExponential(1)}`);
+  const echoV = await stem({ vocal: { reverb: 0, echo: 80 } });
+  check('vocal echo', finite(echoV.channels) && differs(echoV.channels, dryV.channels) > 0.01, `differs from dry by ${differs(echoV.channels, dryV.channels).toFixed(3)}`);
+  const noCut = await stem({ vocal: { reverb: 0 }, roomCut: 0 });
+  const hardCut = await stem({ vocal: { reverb: 0 }, roomCut: 100 });
+  // Between the stand-in vocal's syllables there is only background noise: that is what the cut turns down.
+  const between = (c: Float32Array[]) => { let e = 0; for (let i = 0; i < voice.length; i++) if (Math.sin((2 * Math.PI * 3.1 * i) / sr) < -0.6) e += c[0][i] ** 2; return e; };
+  check('room cut', !noCut.did.noiseReduced && between(hardCut.channels) < between(dryV.channels) && between(dryV.channels) < between(noCut.channels) * 0.7, `noise between syllables: off ${between(noCut.channels).toExponential(1)}, auto ${between(dryV.channels).toExponential(1)}, full ${between(hardCut.channels).toExponential(1)}`);
+  const plainBeat = await renderMix({ ...base, include: 'instrumental', targetLufs: null });
+  const wetBeat = await renderMix({ ...base, include: 'instrumental', targetLufs: null, space: { beat: { reverb: 60, echo: 40 } } });
+  const wetAll = await renderMix({ ...base, include: 'instrumental', targetLufs: null, space: { master: { reverb: 60 } } });
+  check('beat and master reverb', finite(wetBeat.channels) && finite(wetAll.channels) && differs(wetBeat.channels, plainBeat.channels) > 0.001 && differs(wetAll.channels, plainBeat.channels) > 0.0003 && wetBeat.truePeakDb <= -0.95, `beat differs by ${differs(wetBeat.channels, plainBeat.channels).toFixed(4)}, master by ${differs(wetAll.channels, plainBeat.channels).toFixed(4)}`);
+
   const inst = await renderMix({ ...base, include: 'instrumental' });
   check('instrumental', finite(inst.channels) && inst.chains.vocal === null, `${inst.lufs.toFixed(1)} LUFS`);
   const stream = await renderMix({ ...base, targetLufs: -14 });

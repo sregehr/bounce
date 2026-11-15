@@ -125,7 +125,7 @@ export default function Playback() {
               </Txt>
             </Pressable>
           </View>
-          <Chips options={VOCAL_STYLES} value={polish.style} onChange={(style) => patchProject(project.id, (p) => ({ polish: { ...p.polish, style }, overrides: { ...p.overrides, vocal: undefined } }))} />
+          <Chips options={VOCAL_STYLES} value={polish.style} onChange={(style) => patchProject(project.id, (p) => ({ polish: { ...p.polish, style }, overrides: { ...p.overrides, vocal: undefined }, space: p.space && { ...p.space, vocal: { ...p.space.vocal, reverb: undefined } } }))} />
         </View>
 
         {/* The mix controls are always on show; the deeper chain editing is one tap further. */}

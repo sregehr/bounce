@@ -376,6 +376,13 @@ async function finish() {
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'the mix opens from the song', 30000);
   await shot('13c-mix');
+  await expectText(/Reverb 60% · Echo off/i, 'the vocal reverb starts where the style puts it');
+  await tap('Reverb and echo', { exact: false });
+  await expectText('Room cut', 'reverb, echo and room cut are on the mix page');
+  await slide('Echo', 0.3);
+  await expectText(/Echo 30%/i, 'echo can be added to the vocal');
+  await expectText(/Polished\s/, 'and the mix renders with it', 30000);
+  await tap('Reverb and echo', { exact: false });
   await tap('Send stems to an engineer');
   await expectText('stems.zip to your downloads', 'stems are saved from the song page', 30000);
   const stemZip = (await waitDownloads(1)).find((f) => f.endsWith('stems.zip'));

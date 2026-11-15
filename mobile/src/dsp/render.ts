@@ -1,7 +1,7 @@
 import { measureVoice, tonalBalance, type VoiceStats } from './analysis';
 import { clamp, finaliseGently, fromDb, integratedLufs, peakOf, reduceNoise, rmsDb, toDb, truePeakDb, type Stereo } from './core';
-import { doubleTrack, highpass, lowpass, reverb, runChain, saturate, wobble } from './effects';
-import { autoBeatChain, autoVocalChain, masterPlan, vocalExtras, type Chain, type MasterPlan, type MasterSettings, type Polish } from './presets';
+import { doubleTrack, echo, highpass, lowpass, reverb, runChain, saturate, wobble } from './effects';
+import { autoBeatChain, autoVocalChain, DEFAULT_ROOM_CUT, masterPlan, styleReverb, vocalExtras, type Chain, type MasterPlan, type MasterSettings, type Polish, type Send, type Space } from './presets';
 
 export type RenderInput = {
   sampleRate: number;
@@ -15,6 +15,8 @@ export type RenderInput = {
   master: MasterSettings;
   /** Chains the user has edited by hand; anything missing is worked out automatically. */
   overrides?: { vocal?: Chain; beat?: Chain; master?: Chain };
+  /** Reverb and echo set by hand; anything missing is automatic. */
+  space?: Space;
   include?: 'mix' | 'instrumental' | 'vocals';
   /** Frames in one bar, when the tempo is known, so the song ends on a bar line. */
   barFrames?: number;
@@ -106,6 +108,34 @@ function addInto(target: Stereo, source: [Float32Array, Float32Array], gain = 1)
   }
 }
 
+/** The echo repeats on the eighth note when the tempo is known, and about a fifth of a second apart otherwise. */
+const echoFrames = (input: Pick<RenderInput, 'barFrames' | 'sampleRate'>) =>
+  clamp(input.barFrames && input.barFrames > 0 ? input.barFrames / 8 : input.sampleRate * 0.22, input.sampleRate * 0.09, input.sampleRate * 0.5);
+
+/**
+ * Adds reverb and echo to a bus, in place. `source` is what feeds them; a full-range bus sends
+ * only what is above the bass, so the low end stays tight.
+ */
+function addSpace(bus: Stereo, source: Float32Array, send: Send | undefined, input: Pick<RenderInput, 'barFrames' | 'sampleRate'>, fullRange: boolean) {
+  const wet = clamp(send?.reverb ?? 0, 0, 100) / 100;
+  const repeats = clamp(send?.echo ?? 0, 0, 100) / 100;
+  if (wet <= 0 && repeats <= 0) return;
+  let feed = source;
+  if (fullRange) {
+    const cut = [source.slice()];
+    highpass(cut, input.sampleRate, 220);
+    feed = cut[0];
+  }
+  if (wet > 0) addInto(bus, reverb(feed, input.sampleRate), wet);
+  if (repeats > 0) addInto(bus, echo(feed, input.sampleRate, echoFrames(input)), repeats * 0.7);
+}
+
+const monoOf = (bus: Stereo) => {
+  const out = new Float32Array(bus[0].length);
+  for (let i = 0; i < out.length; i++) out[i] = (bus[0][i] + bus[1][i]) * 0.5;
+  return out;
+};
+
 /** The take over the beat with nothing done to either, for the "Raw take" side of the comparison. */
 export function renderRaw(input: RenderInput): Stereo {
   const mix = arrangeBeat(input);
@@ -137,7 +167,8 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
       onStage?.('Cleaning up the take');
       const dry = [fitted(input.take.mono, length)];
       highpass(dry, sr, 80);
-      const noiseReduced = reduceNoise(dry, sr) > -170;
+      const roomCut = clamp(input.space?.roomCut ?? DEFAULT_ROOM_CUT, 0, 100);
+      const noiseReduced = roomCut > 0 && reduceNoise(dry, sr, (24 * roomCut) / 100) > -170;
       await tick();
       const voice = input.voice ?? measureVoice(dry, sr);
       const chain = input.overrides?.vocal ?? autoVocalChain(voice, input.polish.style);
@@ -149,7 +180,8 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
       const mono = dry[0];
       const bus: Stereo = [mono.slice(), mono.slice()];
       if (input.polish.double) addInto(bus, doubleTrack(mono, sr));
-      if (extras.reverb > 0.01) addInto(bus, reverb(mono, sr), extras.reverb * 3);
+      // The style sets the reverb unless it has been set by hand; echo is only ever added by hand.
+      addSpace(bus, mono, { reverb: input.space?.vocal?.reverb ?? styleReverb(input.polish.style), echo: input.space?.vocal?.echo }, input, false);
       vocal = { bus, chain, voice, noiseReduced, body: measureVoice([bus[0]], sr).bodyDb };
       if (cache && keys) {
         cache.vocalKey = keys.vocal;
@@ -169,6 +201,7 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
     const chain = input.overrides?.beat ?? autoBeatChain(rmsDb(beat), !!input.take);
     const bus: Float32Array[] = [beat[0], beat[1]];
     runChain(bus, sr, chain);
+    addSpace([bus[0], bus[1]], monoOf([bus[0], bus[1]]), input.space?.beat, input, true);
     beatStage = { bus: [bus[0], bus[1]], chain, level: rmsDb(bus) };
     if (cache && keys) {
       cache.beatKey = keys.beat;
@@ -193,6 +226,7 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   // The stages above may be shared with later renders, so everything from here works on copies.
   const full: Stereo = [beatBus[0].slice(), beatBus[1].slice()];
   if (vocal) addInto(full, vocal.bus, vocalGain);
+  addSpace(full, monoOf(full), input.space?.master, input, true);
   const measured = { balance: tonalBalance(full, sr), lufs: integratedLufs(full, sr) };
   const plan: MasterPlan = masterPlan(input.master, measured);
   const masterChain = input.overrides?.master ?? plan.chain;
@@ -202,7 +236,10 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   if (include === 'vocals') {
     out = [new Float32Array(length), new Float32Array(length)];
     if (vocal) addInto(out as Stereo, vocal.bus, vocalGain);
-  } else if (include === 'instrumental') out = [beatBus[0].slice(), beatBus[1].slice()];
+  } else if (include === 'instrumental') {
+    out = [beatBus[0].slice(), beatBus[1].slice()];
+    addSpace(out as Stereo, monoOf(out as Stereo), input.space?.master, input, true);
+  }
   else out = [full[0], full[1]];
 
   // ----- Master -----

@@ -157,6 +157,31 @@ export function wobble(channels: Float32Array[], sampleRate: number) {
   for (let c = 0; c < channels.length; c++) channels[c] = wanderingDelay(channels[c], sampleRate, 4, 0.9, 0.7, c * 0.2);
 }
 
+/**
+ * A repeating echo that bounces between the sides, each repeat quieter and duller than the last.
+ * Mono in, stereo wet signal out.
+ */
+export function echo(mono: Float32Array, sampleRate: number, delayFrames: number, feedback = 0.42): [Float32Array, Float32Array] {
+  const n = mono.length;
+  const size = Math.max(1, Math.round(delayFrames));
+  const left = new Float32Array(n), right = new Float32Array(n);
+  const bufL = new Float32Array(size), bufR = new Float32Array(size);
+  // One-pole low-pass around 3.5 kHz in the loop, so repeats sink behind the dry signal.
+  const damp = Math.exp((-2 * Math.PI * 3500) / sampleRate);
+  let at = 0, lowL = 0, lowR = 0;
+  for (let i = 0; i < n; i++) {
+    const l = bufL[at], r = bufR[at];
+    lowL = l * (1 - damp) + lowL * damp;
+    lowR = r * (1 - damp) + lowR * damp;
+    bufL[at] = mono[i] + lowR * feedback;
+    bufR[at] = lowL * feedback;
+    if (++at === size) at = 0;
+    left[i] = lowL;
+    right[i] = lowR;
+  }
+  return [left, right];
+}
+
 /** A small room reverb (the classic comb-and-allpass design). Mono in, stereo wet signal out. */
 export function reverb(mono: Float32Array, sampleRate: number, roomSize = 0.78, damping = 0.35): [Float32Array, Float32Array] {
   const scale = sampleRate / 44100;

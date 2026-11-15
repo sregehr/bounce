@@ -188,13 +188,14 @@ export async function renderInput(project: Project, options: MixOptions = {}): P
     polish: project.polish,
     master: project.master,
     overrides: project.overrides,
+    space: project.space,
     include: options.include,
     barFrames: bar ? Math.round(bar * rate) : undefined,
     targetLufs: options.targetLufs,
     voice: take?.voice ?? undefined,
     stageKeys: {
-      vocal: JSON.stringify([take?.id, take?.loop, project.beat.bpm, project.polish.style, project.polish.double, project.overrides.vocal ?? null]),
-      beat: JSON.stringify([project.beat.key, take?.id ?? null, take?.loop ?? null, project.beat.bpm, project.overrides.beat ?? null]),
+      vocal: JSON.stringify([take?.id, take?.loop, project.beat.bpm, project.polish.style, project.polish.double, project.overrides.vocal ?? null, project.space?.vocal ?? null, project.space?.roomCut ?? null]),
+      beat: JSON.stringify([project.beat.key, take?.id ?? null, take?.loop ?? null, project.beat.bpm, project.overrides.beat ?? null, project.space?.beat ?? null]),
     },
   };
 }
@@ -202,7 +203,7 @@ export async function renderInput(project: Project, options: MixOptions = {}): P
 /** Changes whenever something that affects the sound changes. */
 export function mixSignature(project: Project, options: MixOptions = {}) {
   const take = options.withTake === false ? null : activeTake(project);
-  return JSON.stringify([project.id, project.beat.key, project.beat.bpm, take?.id ?? null, take?.loop ?? null, project.polish, project.master, project.overrides, options.include ?? 'mix', options.targetLufs === undefined ? 'style' : options.targetLufs]);
+  return JSON.stringify([project.id, project.beat.key, project.beat.bpm, take?.id ?? null, take?.loop ?? null, project.polish, project.master, project.overrides, project.space ?? null, options.include ?? 'mix', options.targetLufs === undefined ? 'style' : options.targetLufs]);
 }
 
 const mixes = new Map<string, Promise<RenderOutput>>();

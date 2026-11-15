@@ -24,6 +24,23 @@ export type MasterSettings = { style: MasterStyle; amount: number; low: number; 
 export const DEFAULT_POLISH: Polish = { style: 'Upfront', double: true, vocalLevel: 68 };
 export const DEFAULT_MASTER: MasterSettings = { style: 'Auto', amount: 70, low: 0, mid: 0, high: 0, comp: 45 };
 
+/** How much reverb and echo one part of the mix gets, each 0–100. */
+export type Send = { reverb?: number; echo?: number };
+/**
+ * Reverb and echo for the vocal, the beat and the whole mix. Anything left out is automatic:
+ * the vocal's reverb follows its style, everything else is off.
+ */
+export type Space = {
+  vocal?: Send;
+  beat?: Send;
+  master?: Send;
+  /** How hard the room and bleed between phrases are turned down, 0–100. 50 is the automatic 12 dB. */
+  roomCut?: number;
+};
+export const DEFAULT_ROOM_CUT = 50;
+/** The reverb a vocal style comes with, on the same 0–100 scale as the slider. */
+export const styleReverb = (style: VocalStyle) => Math.round(vocalExtras(style).reverb * 300);
+
 /** Extras that go with a vocal style but are not part of the editable chain. */
 export type VocalExtras = { reverb: number; saturation: number; lift: number };
 

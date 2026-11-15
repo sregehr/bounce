@@ -15,7 +15,7 @@ const HOLD_SECONDS = 60;
 type Block = { l: Float32Array; r: Float32Array; frame: number };
 
 let state: EngineState = {
-  input: { status: 'idle', error: null, inputs: [], deviceId: null, label: '', sampleRate: 0, channels: 0, pair: 0, levelL: 0, levelR: 0 },
+  input: { status: 'idle', error: null, inputs: [], deviceId: null, label: '', output: '', sampleRate: 0, channels: 0, pair: 0, levelL: 0, levelR: 0 },
   capture: { status: 'idle', elapsed: 0, peak: 0, clipped: false, wave: [] },
   transport: { id: null, playing: false, position: 0, duration: 0, side: 'a' },
   take: { mode: 'idle', elapsed: 0, held: 0, level: 0, clipped: false, ended: false },
@@ -115,6 +115,24 @@ async function listInputs(): Promise<InputDevice[]> {
   return all
     .filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
     .map((d) => ({ deviceId: d.deviceId, label: cleanLabel(d.label) || 'Audio input' }));
+}
+
+/** The speaker or headphones in use. Safari on a phone lists none, and then this is empty. */
+async function outputLabel(): Promise<string> {
+  const outs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput');
+  const current = outs.find((d) => d.deviceId === 'default') ?? (outs.length === 1 ? outs[0] : undefined);
+  return current ? cleanLabel(current.label) : '';
+}
+
+// Plugging in or pairing something changes the timing, so the setup is read again.
+if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    if (state.input.status !== 'ready') return;
+    void Promise.all([listInputs(), outputLabel()]).then(([inputs, output]) => {
+      const label = stream?.getAudioTracks()[0]?.label;
+      set('input', { inputs, output, ...(label ? { label: cleanLabel(label) } : {}) });
+    });
+  });
 }
 
 function describe(e: unknown) {
@@ -222,6 +240,7 @@ async function doOpen(deviceId: string | null | undefined, prefer: 'mpc' | 'mic'
       inputs,
       deviceId: settings.deviceId ?? deviceId ?? null,
       label: cleanLabel(track.label) || 'Audio input',
+      output: await outputLabel().catch(() => ''),
       sampleRate: c.sampleRate,
       channels: settings.channelCount ?? 0,
       pair: 0,

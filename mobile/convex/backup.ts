@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
@@ -91,5 +92,22 @@ export const summary = query({
       .withIndex("by_device_key", (q) => q.eq("deviceId", deviceId))
       .take(2000);
     return { projects: projects.length, files: files.length, bytes: files.reduce((n, f) => n + f.size, 0) };
+  },
+});
+
+/** Links this device's backup to whoever is signed in on it. */
+export const claim = mutation({
+  args: { deviceId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { deviceId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const existing = await ctx.db
+      .query("devices")
+      .withIndex("by_device", (q) => q.eq("deviceId", deviceId))
+      .unique();
+    // A device stays with the first account that claimed it: its id alone is not proof of ownership.
+    if (!existing) await ctx.db.insert("devices", { deviceId, userId });
+    return null;
   },
 });

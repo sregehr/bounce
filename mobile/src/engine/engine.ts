@@ -5,7 +5,7 @@ import type { LatencyResult } from '@/dsp/latency';
 import type { Captured, EngineState, PlayOptions, RecordedTake, ClapRun } from './types';
 
 const state: EngineState = {
-  input: { status: 'error', error: 'Recording on the phone app is not connected yet.', inputs: [], deviceId: null, label: '', sampleRate: 0, channels: 0, pair: 0, levelL: 0, levelR: 0 },
+  input: { status: 'error', error: 'Recording on the phone app is not connected yet.', inputs: [], deviceId: null, label: '', output: '', sampleRate: 0, channels: 0, pair: 0, levelL: 0, levelR: 0 },
   capture: { status: 'idle', elapsed: 0, peak: 0, clipped: false, wave: [] },
   transport: { id: null, playing: false, position: 0, duration: 0, side: 'a' },
   take: { mode: 'idle', elapsed: 0, held: 0, level: 0, clipped: false, ended: false },

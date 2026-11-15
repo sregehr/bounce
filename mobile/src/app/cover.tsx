@@ -3,17 +3,20 @@ import { Image, Pressable, View } from 'react-native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
-import { composeScene, cutOut, normalisePhoto } from '@/cover/compose';
+import { backendAvailable } from '@/auth/backend';
+import { AiScene } from '@/cover/AiScene';
+import { composeScene, coverSupported, cutOut, normalisePhoto } from '@/cover/compose';
 import { blobUrl, blobs } from '@/data/db';
 import { newId, SCENES, type SceneId } from '@/data/model';
-import { dropBlob, finishSong, patchProject, update, useLibrary, useProject } from '@/data/store';
+import { dropBlob, finishSong, patchProject, setProfile, update, useLibrary, useProject } from '@/data/store';
 import { Btn, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
 import { C } from '@/ui/theme';
 
-const LABEL: Record<SceneId, string> = { photo: 'As taken', studio: 'Studio', stage: 'Stage', rooftop: 'Rooftop' };
+const LABEL: Record<SceneId | 'ai', string> = { photo: 'As taken', studio: 'Studio', stage: 'Stage', rooftop: 'Rooftop', ai: 'AI scene' };
 
-type Made = Record<SceneId, { blob: Blob; url: string }>;
+type Picture = { blob: Blob; url: string };
+type Made = Record<SceneId, Picture>;
 
 export default function Cover() {
   const project = useProject();
@@ -22,9 +25,13 @@ export default function Cover() {
   const [title, setTitle] = useState(project?.name ?? '');
   const lastPhoto = useLibrary((l) => l.coverPhotoKey);
   const ownName = useLibrary((l) => l.profile.artist);
+  // The producer is the person holding the phone, so the credit carries over to the next song.
+  const producer = useLibrary((l) => l.profile.producer);
   const task = useTask();
   const [made, setMade] = useState<Made | null>(null);
-  const [scene, setScene] = useState<SceneId>(project?.cover.scene ?? 'photo');
+  // A scene made from a description. It is kept apart from the drawn ones, and needs no photo.
+  const [ai, setAi] = useState<Picture | null>(null);
+  const [scene, setScene] = useState<SceneId | 'ai'>(project?.cover.scene ?? 'photo');
   const [hasCutout, setHasCutout] = useState(true);
   const [stage, setStage] = useState('');
   const urls = useRef<string[]>([]);
@@ -43,6 +50,13 @@ export default function Cover() {
     setStage('');
   };
 
+  const showAi = (blob: Blob) => {
+    const url = blobUrl(blob);
+    urls.current.push(url);
+    setAi({ blob, url });
+    setScene('ai');
+  };
+
   /** Loads a stored photo and its cut-out and builds the scenes from them. */
   const loadStored = (photoKey: string, cutoutKey: string | null) =>
     task.run(async () => {
@@ -53,6 +67,8 @@ export default function Cover() {
 
   useEffect(() => {
     if (project?.cover.photoKey) void loadStored(project.cover.photoKey, project.cover.cutoutKey);
+    // A cover that is an AI scene is shown again as it was saved.
+    if (project?.cover.scene === 'ai' && project.cover.imageKey) void blobs.get(project.cover.imageKey).then((blob) => blob && showAi(blob));
     return () => urls.current.forEach((u) => URL.revokeObjectURL?.(u));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -96,12 +112,16 @@ export default function Cover() {
       await build(photo, cutoutKey ? ((await blobs.get(cutoutKey)) ?? null) : null);
     });
 
+  // What the big preview shows: the AI scene when that is chosen, otherwise one of the drawn ones.
+  const shown: Picture | null = scene === 'ai' ? ai : (made?.[scene] ?? null);
+  const hasAi = backendAvailable && coverSupported;
+
   const apply = () =>
-    (made || finishing) &&
+    (shown || finishing) &&
     task.run(async () => {
-      if (made) {
+      if (shown) {
         const imageKey = `cover-${newId()}`;
-        await blobs.put(imageKey, made[scene].blob);
+        await blobs.put(imageKey, shown.blob);
         const old = cover.imageKey;
         patchProject(project.id, (p) => ({ cover: { ...p.cover, scene, imageKey } }));
         if (old) void dropBlob(old);
@@ -135,9 +155,16 @@ export default function Cover() {
         <Field label="Artist on this song" value={project.artist ?? ''} onChangeText={(name) => patchProject(project.id, { artist: name }, false)} placeholder={ownName || 'Who is on the mic?'} maxLength={40} autoCapitalize="words" returnKeyType="done" />
       </View>
 
+      <View style={{ gap: 6 }}>
+        <Txt size={12} color={C.muted}>
+          Produced by
+        </Txt>
+        <Field label="Produced by" value={producer} onChangeText={(name) => setProfile({ producer: name })} placeholder="Who made the beat? (optional)" maxLength={40} autoCapitalize="words" returnKeyType="done" />
+      </View>
+
       <View style={{ height: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
-        {made ? (
-          <Image source={{ uri: made[scene].url }} accessibilityLabel={`Cover preview: ${LABEL[scene]}`} style={{ width: '100%', height: 320 }} resizeMode="cover" />
+        {shown ? (
+          <Image source={{ uri: shown.url }} accessibilityLabel={`Cover preview: ${LABEL[scene]}`} style={{ width: '100%', height: 320 }} resizeMode="cover" />
         ) : (
           <Pressable accessibilityRole="button" accessibilityLabel="Take a photo of the artist" disabled={working} onPress={() => pick('camera')} style={{ alignItems: 'center', gap: 8, padding: 24 }}>
             <Txt size={22} w="display" center>
@@ -150,7 +177,7 @@ export default function Cover() {
 
       <View style={[s.row, s.between]}>
         <Muted style={{ flex: 1 }}>
-          {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? 'The photo never leaves this device.' : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
+          {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? (ai ? 'Add a photo to put the artist in the scene.' : hasAi ? 'The photo stays on this device unless you choose to send it to AI.' : 'The photo never leaves this device.') : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
         </Muted>
         {made && (
           <View style={[s.row, { gap: 16 }]}>
@@ -166,9 +193,9 @@ export default function Cover() {
 
       {made ? (
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          {SCENES.map((id) => (
+          {[...SCENES, ...(ai ? (['ai'] as const) : [])].map((id) => (
             <Pressable key={id} accessibilityRole="button" accessibilityLabel={LABEL[id]} accessibilityState={{ selected: id === scene }} onPress={() => setScene(id)} style={{ flex: 1, gap: 6 }}>
-              <Image source={{ uri: made[id].url }} style={{ width: '100%', height: 72, borderRadius: 12, borderWidth: 3, borderColor: id === scene ? C.accent : C.bg }} resizeMode="cover" />
+              <Image source={{ uri: (id === 'ai' ? ai! : made[id]).url }} style={{ width: '100%', height: 72, borderRadius: 12, borderWidth: 3, borderColor: id === scene ? C.accent : C.bg }} resizeMode="cover" />
               <Txt size={12} w="semi" center>
                 {LABEL[id]}
               </Txt>
@@ -191,12 +218,14 @@ export default function Cover() {
         )
       )}
 
+      {hasAi && <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} onMade={showAi} />}
+
       <Foot gap={8}>
         <Muted size={13} lh={1.4}>
           {`The cover goes out with the song when you share it, so pick one ${who} is happy with.`}
         </Muted>
-        <Btn label={finishing ? 'Save to the Vault' : 'Set as cover and backdrop'} disabled={!made && !finishing} busy={working && (!!made || finishing)} onPress={apply} />
-        {finishing && !made && !working && <Muted size={13} center>No photo? It is saved with a plain cover you can change later.</Muted>}
+        <Btn label={finishing ? 'Save to the Vault' : 'Set as cover and backdrop'} disabled={!shown && !finishing} busy={working && (!!shown || finishing)} onPress={apply} />
+        {finishing && !shown && !working && <Muted size={13} center>No photo? It is saved with a plain cover you can change later.</Muted>}
       </Foot>
     </Screen>
   );

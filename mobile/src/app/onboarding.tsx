@@ -2,18 +2,24 @@ import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
+import { AccountStep } from '@/auth/account';
+import { backendAvailable } from '@/auth/backend';
 import { importBeat } from '@/data/beats';
 import type { Project } from '@/data/model';
 import { setProfile, setSettings, useLibrary } from '@/data/store';
 import { measureLatency, openInput, reportedLatencyMs, setPair, useEngine } from '@/engine/engine';
 import { Btn, Card, Eyebrow, Field, Foot, Muted, NavLink, Screen, TickIcon, TopBar, Txt, s } from '@/ui/kit';
+import { useTiming } from '@/ui/timing';
 import { useTask } from '@/ui/hooks';
 import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
 import { C } from '@/ui/theme';
 
-const STEPS = ['Welcome', 'Names', 'Sound check', 'Timing', 'First beat'] as const;
+type StepId = 'welcome' | 'names' | 'account' | 'sound' | 'timing' | 'first';
+// The account step is only there when the build has a server to sign in to.
+const STEPS: StepId[] = backendAvailable ? ['welcome', 'names', 'account', 'sound', 'timing', 'first'] : ['welcome', 'names', 'sound', 'timing', 'first'];
 
-function Dots({ step }: { step: number }) {
+function Dots({ at }: { at: StepId }) {
+  const step = STEPS.indexOf(at);
   return (
     <View accessibilityLabel={`Step ${step + 1} of ${STEPS.length}`} style={[s.row, { gap: 6 }]}>
       {STEPS.map((name, i) => (
@@ -46,10 +52,12 @@ export default function Onboarding() {
   const profile = useLibrary((l) => l.profile);
   const settings = useLibrary((l) => l.settings);
   const input = useEngine((e) => e.input);
-  // Opened from Settings, this is just the two setup steps (sound check, timing) and then back again.
-  const setup = !!useLocalSearchParams<{ setup?: string }>().setup;
-  const [step, setStep] = useState(setup ? 2 : 0);
-  const leave = () => (router.canGoBack() ? router.back() : router.replace('/settings'));
+  // Opened from the mic screen, this is just the two setup steps (sound check, timing) and then back again.
+  const params = useLocalSearchParams<{ setup?: string; step?: string }>();
+  const setup = !!params.setup;
+  // Signing in on the web leaves the page and comes back to the account step.
+  const [step, setStep] = useState<StepId>(setup ? 'sound' : params.step === 'account' && backendAvailable ? 'account' : 'welcome');
+  const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
   const [artist, setArtist] = useState(profile.artist);
   const [producer, setProducer] = useState(profile.producer);
   const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number; of: number; taps?: boolean } | null>(null);
@@ -58,22 +66,24 @@ export default function Onboarding() {
   const start = useTask();
   const live = input.status === 'ready';
 
-  const next = () => setStep((n) => Math.min(STEPS.length - 1, n + 1));
+  const next = () => setStep((at) => STEPS[Math.min(STEPS.length - 1, STEPS.indexOf(at) + 1)]);
+  const back = () => setStep((at) => STEPS[Math.max(0, STEPS.indexOf(at) - 1)]);
   const saveNames = () => {
     setProfile({ artist: artist.trim(), producer: producer.trim() });
     next();
   };
+  const route = useTiming();
   const runCheck = () =>
     check.run(async () => {
       const result = await measureLatency();
       const ms = result.medianMs !== null ? Math.round(result.medianMs) : reportedLatencyMs();
-      setSettings({ latencyMs: result.medianMs !== null ? ms : null });
+      route.set(result.medianMs !== null ? ms : null);
       setTiming({ ms, measured: result.medianMs !== null, heard: result.detected, of: result.clicks });
     });
   const clapped = (outcome: ClapOutcome) => {
     setTapping(false);
     const ms = outcome.ms !== null ? Math.min(500, outcome.ms) : reportedLatencyMs();
-    setSettings({ latencyMs: outcome.ms !== null ? ms : null });
+    route.set(outcome.ms !== null ? ms : null);
     setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, taps: true });
   };
   const finish = (work?: () => Promise<Project | null>, to: '/beat' | '/capture' | '/demos' | '/' = '/beat') =>
@@ -85,9 +95,9 @@ export default function Onboarding() {
 
   return (
     <Screen gap={20} padBottom={32}>
-      {setup ? <TopBar left="Setup" right={<NavLink onPress={leave}>Done</NavLink>} /> : <Dots step={step} />}
+      {setup ? <TopBar left="Setup" right={<NavLink onPress={leave}>Done</NavLink>} /> : <Dots at={step} />}
 
-      {step === 0 && (
+      {step === 'welcome' && (
         <>
           <View style={{ gap: 12, paddingTop: 40 }}>
             <Txt size={64} w="display" ls={-0.04} lh={1}>
@@ -118,7 +128,7 @@ export default function Onboarding() {
         </>
       )}
 
-      {step === 1 && (
+      {step === 'names' && (
         <>
           <View style={{ gap: 8, paddingTop: 24 }}>
             <Txt size={34} w="display" lh={1.05}>
@@ -136,14 +146,16 @@ export default function Onboarding() {
           </View>
           <Foot>
             <Btn label="Continue" onPress={saveNames} />
-            <NavLink center size={14} onPress={() => setStep(0)}>
+            <NavLink center size={14} onPress={() => setStep('welcome')}>
               Back
             </NavLink>
           </Foot>
         </>
       )}
 
-      {step === 2 && (
+      {step === 'account' && <AccountStep onNext={next} onBack={back} />}
+
+      {step === 'sound' && (
         <>
           <View style={{ gap: 8, paddingTop: 24 }}>
             <Txt size={34} w="display" lh={1.05}>
@@ -174,9 +186,9 @@ export default function Onboarding() {
           </Card>
           {live && <Muted size={13}>Make some noise: the meters should move. Wear headphones when you record vocals, so the beat stays out of the mic.</Muted>}
           <Foot>
-            <Btn label="Continue" onPress={() => (live ? setStep(3) : setup ? leave() : setStep(4))} disabled={input.status === 'opening' || (setup && !live)} />
+            <Btn label="Continue" onPress={() => (live ? setStep('timing') : setup ? leave() : setStep('first'))} disabled={input.status === 'opening' || (setup && !live)} />
             {!live && !setup && (
-              <NavLink center size={14} onPress={() => setStep(4)}>
+              <NavLink center size={14} onPress={() => setStep('first')}>
                 Skip for now
               </NavLink>
             )}
@@ -184,7 +196,7 @@ export default function Onboarding() {
         </>
       )}
 
-      {step === 3 && (
+      {step === 'timing' && (
         <>
           <View style={{ gap: 8, paddingTop: 24 }}>
             <Txt size={34} w="display" lh={1.05}>
@@ -223,7 +235,7 @@ export default function Onboarding() {
           <Foot>
             <Btn label={setup ? 'Done' : 'Continue'} onPress={setup ? leave : next} disabled={check.busy || tapping} />
             {setup && (
-              <NavLink center size={14} onPress={() => setStep(2)}>
+              <NavLink center size={14} onPress={() => setStep('sound')}>
                 Back to the sound check
               </NavLink>
             )}
@@ -236,7 +248,7 @@ export default function Onboarding() {
         </>
       )}
 
-      {step === 4 && (
+      {step === 'first' && (
         <>
           <View style={{ gap: 8, paddingTop: 24 }}>
             <Txt size={34} w="display" lh={1.05}>

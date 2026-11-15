@@ -13,3 +13,9 @@ export async function cutOut(_photo: Blob): Promise<Blob | null> {
 export async function composeScene(_scene: SceneId, photo: Blob, _cutout: Blob | null): Promise<Blob> {
   return photo;
 }
+export async function composeBackdrop(backdrop: Blob, _cutout: Blob | null): Promise<Blob> {
+  return backdrop;
+}
+export async function toDataUrl(_photo: Blob): Promise<string> {
+  return '';
+}

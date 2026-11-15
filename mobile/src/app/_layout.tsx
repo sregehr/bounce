@@ -7,13 +7,14 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-goog
 import { SpaceGrotesk_500Medium, SpaceGrotesk_700Bold } from '@expo-google-fonts/space-grotesk';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { Backend } from '@/auth/Provider';
 import { startBackup } from '@/data/backup';
 import { loadLibrary, useLibrary, useReady } from '@/data/store';
 import { closeInput } from '@/engine/engine';
 import { TabBar, TopNav } from '@/ui/TabBar';
 import { C } from '@/ui/theme';
 
-const LISTENING = ['/onboarding', '/capture', '/record', '/vocals', '/settings'];
+const LISTENING = ['/onboarding', '/capture', '/record', '/vocals'];
 
 export default function Layout() {
   const [fontsLoaded, fontError] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, SpaceGrotesk_500Medium, SpaceGrotesk_700Bold });
@@ -38,6 +39,7 @@ export default function Layout() {
 
   return (
     <SafeAreaProvider>
+      <Backend>
       <StatusBar style="light" />
       <View style={{ flex: 1, backgroundColor: framed ? '#000' : C.bg, alignItems: framed ? 'center' : 'stretch', justifyContent: framed ? 'center' : 'flex-start' }}>
         <View style={framed ? { width: 390, height: 844, borderRadius: 32, overflow: 'hidden', backgroundColor: C.bg } : { flex: 1, backgroundColor: C.bg, width: '100%', maxWidth: 430, alignSelf: 'center' }}>
@@ -52,6 +54,7 @@ export default function Layout() {
           )}
         </View>
       </View>
+      </Backend>
     </SafeAreaProvider>
   );
 }

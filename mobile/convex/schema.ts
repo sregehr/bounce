@@ -1,9 +1,39 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// There is no owner on these tables yet: accounts come next, and every table gets
-// an owner field and index before this is deployed anywhere shared.
 export default defineSchema({
+  // People who have signed in. Sessions and the Google and Apple account links are kept by
+  // the auth components; this table is the app's own record of each person.
+  users: defineTable({
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    image: v.optional(v.string()),
+    /** Set by the in-app purchase once there is one: lifts the limit on AI features. */
+    pro: v.optional(v.boolean()),
+    /** AI images counted against the free allowance. */
+    aiUsed: v.optional(v.number()),
+  }).index("by_email", ["email"]),
+
+  // Every AI image asked for: what was asked, with which model, and what it cost.
+  aiImages: defineTable({
+    userId: v.id("users"),
+    kind: v.union(v.literal("backdrop"), v.literal("restyle")),
+    prompt: v.string(),
+    model: v.string(),
+    status: v.union(v.literal("pending"), v.literal("made"), v.literal("failed")),
+    costUsd: v.optional(v.number()),
+  }).index("by_user", ["userId"]),
+
+  // Which account each device's backup belongs to, recorded when someone signs in on it.
+  devices: defineTable({
+    deviceId: v.string(),
+    userId: v.id("users"),
+  })
+    .index("by_device", ["deviceId"])
+    .index("by_user", ["userId"]),
+
+  // The beats and takes tables below have no owner yet; they get an owner field and index
+  // before this is deployed anywhere shared.
   beats: defineTable({
     name: v.string(),
     audio: v.id("_storage"),
@@ -17,8 +47,9 @@ export default defineSchema({
     key: v.optional(v.string()),
   }),
 
-  // Backup of the app's local library. Until there are accounts, a random id made on each
-  // device stands in for the owner; anyone holding that id can read that device's backup.
+  // Backup of the app's local library, kept under a random id made on each device. Signing
+  // in links that id to the account (the devices table); restoring onto another device is
+  // not built yet. Anyone holding the id can still read that device's backup.
   backupProjects: defineTable({
     deviceId: v.string(),
     localId: v.string(),

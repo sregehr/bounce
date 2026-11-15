@@ -163,6 +163,11 @@ async function onboarding() {
   await type('Producer name', 'Lowkey');
   await shot('02-names');
   await tap('Continue');
+  // A build with a server offers an account next; it is optional.
+  if (await waitFor('Keep it yours', 3000)) {
+    await shot('02b-account');
+    await tap('Not now');
+  }
   await expectText('Sound check');
   await tap('Connect an input');
   await expectText('Connected', 'input connects');
@@ -213,7 +218,7 @@ async function song() {
   await tap('Mix');
   await expectText('Nothing to mix yet', 'Mix leads to recording when there are no takes');
   await expectText('Always listening', 'vocals screen opens');
-  await expectText('Mic: Fake', 'microphone connects by itself once allowed', 8000);
+  await expectText(/Fake .* ms (estimated|measured)/, 'microphone connects by itself once allowed', 8000);
   await shot('07-vocals-idle');
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass', 5000);
@@ -502,20 +507,24 @@ async function library() {
   await expectText('beat details', 'a beat opens its song', 10000);
   await tap('Home');
   await tap('Settings');
-  await expectText('Timing');
+  await expectText('Storage');
   await expectText('Everything is backed up', 'the library is backed up to the server', 30000);
   await shot('24-settings');
 
-  // The same guided setup the welcome ends with can be run again from Settings.
+  // The microphone and its timing are set where recording happens, with the guided setup one tap away.
+  await tap('Freestyle over Night bus');
+  await tap('Microphone and timing', { exact: false });
+  await expectText('Play the clicks', 'the mic screen holds the microphone and timing');
+  await shot('24a-mic-setup');
   await tap('Walk me through the setup again');
-  await expectText('Sound check', 'setup opens from Settings');
+  await expectText('Sound check', 'setup opens from the mic screen');
   await tap('Connect an input', { optional: true });
   await expectText('Connected', 'input connects in setup');
   await tap('Continue');
   await expectText('Line up your takes');
   await shot('24b-setup-timing');
   await tap('Done');
-  await expectText('Backup', 'setup returns to Settings');
+  await expectText('Always listening', 'setup returns to the mic screen');
   await tap('Home');
 
   // Everything survives a reload.
@@ -574,7 +583,7 @@ async function library() {
   await expectText('100 BPM', 'its tempo is found');
   await expectText('48 kHz');
   await tap('Freestyle over it', { exact: false });
-  await expectText('Mic: Fake', 'the microphone reconnects for the new beat', 10000);
+  await expectText(/Fake .* ms (estimated|measured)/, 'the microphone reconnects for the new beat', 10000);
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 8000);
   await sleep(3500);

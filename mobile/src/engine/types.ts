@@ -8,6 +8,8 @@ export type InputState = {
   inputs: InputDevice[];
   deviceId: string | null;
   label: string;
+  /** What the beat plays out of, where the browser says; empty when it does not. */
+  output: string;
   sampleRate: number;
   channels: number;
   /** Zero-based stereo pair being captured: 0 is channels 1–2. */

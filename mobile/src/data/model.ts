@@ -42,7 +42,8 @@ export const SCENES = ['photo', 'studio', 'stage', 'rooftop'] as const;
 export type SceneId = (typeof SCENES)[number];
 
 export type Cover = {
-  scene: SceneId;
+  /** One of the drawn scenes, or 'ai' for a scene made from a description. */
+  scene: SceneId | 'ai';
   /** The photo as taken. */
   photoKey: string | null;
   /** The person cut out of the photo, when that worked. */
@@ -91,6 +92,8 @@ export type Settings = {
   beatInputId: string | null;
   /** Round-trip delay measured on this device, or null to use what the browser reports. */
   latencyMs: number | null;
+  /** Delay measured for each setup, keyed by the microphone and what the beat plays out of. See data/timing. */
+  timing?: Record<string, number>;
   backup: boolean;
   /** Identifies this browser to the backup until there are accounts. */
   deviceId: string;

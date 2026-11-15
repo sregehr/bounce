@@ -1,5 +1,6 @@
 import { DEFAULT_MASTER, DEFAULT_POLISH } from '../src/dsp/presets';
 import { emptyLibrary, type Library, type Project, type Take } from '../src/data/model';
+import { routeKey, timingFor, withTiming } from '../src/data/timing';
 import { beatsIn, carryOver, loadedSong, makeSong, micLead, mixLead, songLead, songsIn, workBeat } from '../src/data/songs';
 
 let failed = 0;
@@ -63,6 +64,20 @@ const moved = carryOver(old);
 check('songs with lyrics or a cover are carried into the Vault', songsIn(moved.projects).map((p) => p.saved?.from).sort().join() === 'cover,lyric', songsIn(moved.projects).map((p) => p.saved?.from).join());
 check('every beat stays where it was', beatsIn(moved.projects).length === 4);
 check('carrying over happens once', carryOver(moved) === moved && moved.vault === 1);
+
+// Timing follows the setup: each microphone and speaker pair keeps its own figure.
+const phone = { input: 'iPhone Microphone', output: '' };
+const speaker = { input: 'iPhone Microphone', output: 'JBL Flip 6' };
+const fresh = { latencyMs: null as number | null };
+check('an unmeasured setup uses what the browser reports', timingFor(fresh, phone, 42).ms === 42 && !timingFor(fresh, phone, 42).measured);
+check('a wireless speaker is estimated long when the browser under-reports it', timingFor(fresh, speaker, 42).ms === 230);
+check('a long reported delay is trusted as it is', timingFor(fresh, speaker, 190).ms === 190);
+const onPhone = withTiming(fresh, phone, 42, 80);
+const onBoth = { ...onPhone, ...withTiming(onPhone, speaker, 42, 228) };
+check('each setup keeps its own measurement', timingFor(onBoth, phone, 42).ms === 80 && timingFor(onBoth, speaker, 42).ms === 228 && timingFor(onBoth, phone, 42).measured);
+check('a hidden speaker still counts as another setup when the delay is long', routeKey(phone, 42) !== routeKey(phone, 200) && timingFor(onBoth, phone, 200).ms === 200);
+check('a figure from before setups were told apart still applies', timingFor({ latencyMs: 95 }, phone, 42).ms === 95);
+check('forgetting a measurement goes back to the estimate', timingFor({ ...onBoth, ...withTiming(onBoth, speaker, 42, null) }, speaker, 42).ms === 230);
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);

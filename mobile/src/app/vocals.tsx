@@ -6,8 +6,10 @@ import { tempoLine } from '@/data/labels';
 import type { LoopChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studio';
-import { engineState, inputAllowed, openInput, reportedLatencyMs, startTake, stopTake, useEngine, wake } from '@/engine/engine';
-import { Btn, Card, Chip, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, StopButton, Txt, s } from '@/ui/kit';
+import { engineState, inputAllowed, openInput, startTake, stopTake, useEngine, wake } from '@/engine/engine';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, StopButton, Txt, s } from '@/ui/kit';
+import { MicSetup } from '@/ui/MicSetup';
+import { useTiming } from '@/ui/timing';
 import { useOnScreen, useTask } from '@/ui/hooks';
 import { Guide } from '@/ui/parts';
 import { C, clock, meterPct, plural } from '@/ui/theme';
@@ -25,6 +27,7 @@ export default function Vocals() {
   const task = useTask();
   const [punch, setPunch] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  const [setup, setSetup] = useState(false);
   const finishing = useRef(false);
   const live = input.status === 'ready';
   const mode = take.mode;
@@ -44,7 +47,8 @@ export default function Vocals() {
   const cells = loop ? loop.bars : 16;
   const canPunch = !!loop && !!bar && !!previous && previous.phaseSec < 0.001 && previous.loop.bars === project?.loop.bars && previous.loop.startBar === project?.loop.startBar;
   const punchBar = loop ? Math.floor(loop.bars / 2) : 0;
-  const latencyMs = settings.latencyMs ?? reportedLatencyMs();
+  const timing = useTiming();
+  const latencyMs = timing.ms;
 
   const finish = async (then?: () => void) => {
     if (!project || finishing.current) return;
@@ -53,7 +57,7 @@ export default function Vocals() {
     const recorded = stopTake(true);
     await task.run(async () => {
       if (!recorded) throw new Error('Nothing was recorded. Check the microphone level and try again.');
-      if (recorded.peak < 0.003) throw new Error('That take was silent. Check that the right microphone is picked in Settings, then try again.');
+      if (recorded.peak < 0.003) throw new Error('That take was silent. Check that the right microphone is picked under Microphone and timing, then try again.');
       const made = await saveTake(project.id, recorded, { latencyMs, origin: wasListening ? 'kept' : 'recorded', punchAtSec: !wasListening && punch && canPunch && bar ? punchBar * bar : undefined });
       if (!made) throw new Error('That take was too short to keep.');
       setSaved(`Take ${made.number} saved · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
@@ -162,25 +166,29 @@ export default function Vocals() {
         <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: mode === 'listening' && take.held >= 2 ? 1 : 0.35 }} onPress={() => mode === 'listening' && take.held >= 2 && finish(() => router.push('/playback'))} />
       </View>
 
-      {live ? (
-        <View style={{ gap: 8 }}>
-          <Muted size={13}>
-            Mic: {input.label}. Timing is corrected by {latencyMs} ms ({settings.latencyMs !== null ? 'measured' : 'estimated'}). Wear headphones so the beat stays out of the take.
-          </Muted>
-          {!active && (
-            <NavLink size={13} style={{ minHeight: 24 }} to="/settings">
-              Change microphone or timing
-            </NavLink>
-          )}
-          <View accessible={false} style={{ height: 4, borderRadius: 2, backgroundColor: C.line, overflow: 'hidden' }}>
-            <View style={{ width: `${meterPct(active ? take.level : Math.max(input.levelL, input.levelR))}%`, height: 4, backgroundColor: take.clipped && active ? C.rec : C.text }} />
-          </View>
+      {live && (
+        <View accessible={false} style={{ height: 4, borderRadius: 2, backgroundColor: C.line, overflow: 'hidden' }}>
+          <View style={{ width: `${meterPct(active ? take.level : Math.max(input.levelL, input.levelR))}%`, height: 4, backgroundColor: take.clipped && active ? C.rec : C.text }} />
         </View>
+      )}
+      {active ? (
+        <Muted size={13}>
+          Mic: {input.label}. Timing is corrected by {latencyMs} ms.
+        </Muted>
       ) : (
-        <Card style={{ padding: 16, gap: 10 }}>
-          <Muted>{input.error ?? 'Connect a microphone to record. The browser will ask for permission.'}</Muted>
-          <Btn kind="outline" label={input.status === 'opening' ? 'Connecting…' : 'Connect a microphone'} busy={input.status === 'opening'} onPress={() => void openInput(settings.inputId, 'mic')} style={{ flex: 0 }} />
-        </Card>
+        <View>
+          <Disclosure
+            title="Microphone and timing"
+            summary={live ? `${input.label} · ${latencyMs} ms ${timing.measured ? 'measured' : 'estimated'}` : 'Not connected'}
+            open={setup || !live}
+            onToggle={() => setSetup(!setup)}
+            last
+            size={15}
+          >
+            <MicSetup />
+          </Disclosure>
+          {live && !setup && <Muted size={13} style={{ paddingTop: 8 }}>Wear headphones so the beat stays out of the take.</Muted>}
+        </View>
       )}
 
       {(task.error || saved) && (

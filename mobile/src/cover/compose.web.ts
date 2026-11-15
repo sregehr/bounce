@@ -306,6 +306,16 @@ export async function composeScene(scene: SceneId, photo: Blob, cutout: Blob | n
     return toBlob(c, 'image/jpeg', 0.9);
   }
   look.draw(g, W, H);
+  await placePerson(g, cutout, look);
+  finish(g, W, H);
+  return toBlob(c, 'image/jpeg', 0.9);
+}
+
+type Light = { tint: string; rim: string; grade: string };
+
+/** Draws the cut-out person over whatever is on the canvas, lit to sit in it. */
+async function placePerson(g: CanvasRenderingContext2D, cutout: Blob, look: Light) {
+  const W = COVER_W, H = COVER_H;
   const person = await createImageBitmap(cutout);
   // Tint the person towards the scene's light, on a copy so the scene is untouched.
   const [p, pg] = canvas(W, H);
@@ -332,8 +342,54 @@ export async function composeScene(scene: SceneId, photo: Blob, cutout: Blob | n
   g.drawImage(halo, 0, 0);
   g.restore();
   g.drawImage(p, 0, 0);
+}
+
+/** The average colour of the middle of a picture, as "r, g, b": the light a person standing there would catch. */
+function ambient(source: CanvasImageSource): string {
+  const [c, g] = canvas(8, 8);
+  g.drawImage(source, 0, 0, 8, 8);
+  const d = g.getImageData(1, 1, 6, 6).data;
+  let r = 0, gr = 0, b = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    r += d[i];
+    gr += d[i + 1];
+    b += d[i + 2];
+  }
+  const n = d.length / 4;
+  return `${Math.round(r / n)}, ${Math.round(gr / n)}, ${Math.round(b / n)}`;
+}
+
+/**
+ * A cover from a painted backdrop (an AI scene): the backdrop fills the cover and, when there
+ * is a cut-out, the person is placed on it, tinted towards the backdrop's own colours.
+ */
+export async function composeBackdrop(backdrop: Blob, cutout: Blob | null): Promise<Blob> {
+  const W = COVER_W, H = COVER_H;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(backdrop);
+  } catch {
+    throw new Error('The picture that came back could not be read. Try again.');
+  }
+  const [c, g] = canvas(W, H);
+  const scale = Math.max(W / bitmap.width, H / bitmap.height);
+  g.drawImage(bitmap, (W - bitmap.width * scale) / 2, (H - bitmap.height * scale) / 2, bitmap.width * scale, bitmap.height * scale);
+  bitmap.close();
+  if (!cutout) return toBlob(c, 'image/jpeg', 0.92);
+  const light = ambient(c);
+  await placePerson(g, cutout, { tint: `rgba(${light}, 0.14)`, rim: `rgba(${light}, 0.5)`, grade: 'rgba(0, 0, 0, 0.25)' });
   finish(g, W, H);
   return toBlob(c, 'image/jpeg', 0.9);
+}
+
+/** A stored picture as a data URL, small enough to send. */
+export async function toDataUrl(photo: Blob): Promise<string> {
+  const bitmap = await createImageBitmap(photo);
+  const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+  const [c, g] = canvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+  g.drawImage(bitmap, 0, 0, c.width, c.height);
+  bitmap.close();
+  return c.toDataURL('image/jpeg', 0.88);
 }
 
 export const coverSupported = true;

@@ -4,16 +4,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tempoLine } from '@/data/labels';
 import type { Take } from '@/data/model';
-import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
+import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { Btn, Eyebrow, Muted, RoundPlay, Screen, SeekTrack, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
-import { Status } from '@/ui/parts';
+import { Status, SwipeRow } from '@/ui/parts';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
 
-// Height of the pinned next step, without the gap that keeps it clear of the mic button.
-const NEXT_HEIGHT = 72;
+// Height of the pinned next step, above the floating bar.
+const NEXT_HEIGHT = 62;
 
 /** The song being worked on: its beat, every take recorded over it, and its lyrics. Picking a take here is what Mix then shapes. */
 export default function Song() {
@@ -67,7 +67,8 @@ export default function Song() {
             {[...project.takes].reverse().map((k) => {
               const on = k.id === take.id;
               return (
-                <Pressable key={k.id} accessibilityRole="radio" accessibilityLabel={`Take ${k.number}`} accessibilityState={{ checked: on }} onPress={() => pick(k)} style={[s.row, s.between, { minHeight: 48 }, s.divided]}>
+                <SwipeRow key={k.id} label={`Delete take ${k.number}`} onDelete={() => void deleteTake(project.id, k.id)}>
+                <Pressable accessibilityRole="radio" accessibilityLabel={`Take ${k.number}`} accessibilityState={{ checked: on }} onPress={() => pick(k)} style={[s.row, s.between, { minHeight: 48 }, s.divided]}>
                   <Txt size={15} w="semi" color={on ? C.accent : C.text}>
                     Take {k.number}
                   </Txt>
@@ -75,6 +76,7 @@ export default function Song() {
                     {on ? `${about(k)} · picked` : about(k)}
                   </Txt>
                 </Pressable>
+                </SwipeRow>
               );
             })}
           </View>
@@ -99,9 +101,9 @@ export default function Song() {
         {take && <View style={{ height: NEXT_HEIGHT }} />}
       </Screen>
 
-      {/* The next step stays in reach however far the page is scrolled. It ends clear of the raised mic button. */}
+      {/* The next step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
       {take && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: TAB_BAR_HEIGHT + insets.bottom, height: NEXT_HEIGHT + 22, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
           <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, minHeight: 52 }} />
         </View>
       )}

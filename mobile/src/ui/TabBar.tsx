@@ -9,7 +9,7 @@ import { setCurrent, useLibrary } from '@/data/store';
 import { useEngine } from '@/engine/engine';
 
 import { MicIcon, Txt } from './kit';
-import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, tabFor, type Tab } from './tabs';
+import { TOP_NAV_HEIGHT, tabFor, type Tab } from './tabs';
 import { C } from './theme';
 
 type IconProps = { on: boolean; color: string };
@@ -83,7 +83,7 @@ function GearGlyph({ color }: { color: string }) {
  * Opens where a tab leads. Tabs sit one level above the home screen, so the stack never grows
  * as you move between them. A lead may carry a hint for the screen to show.
  */
-function follow(lead: Lead | { to: '/vault' | '/settings'; id?: null; hint?: undefined }, from: string) {
+function follow(lead: Lead | { to: '/vault' | '/settings' | '/new'; id?: null; hint?: undefined }, from: string) {
   if (lead.id) setCurrent(lead.id);
   if (lead.to === from) return router.setParams({ hint: lead.hint });
   const href = { pathname: lead.to, params: lead.hint ? { hint: lead.hint } : {} } as const;
@@ -93,27 +93,39 @@ function follow(lead: Lead | { to: '/vault' | '/settings'; id?: null; hint?: und
 }
 
 function Item({ label, on, onPress, Icon }: { label: string; on: boolean; onPress: () => void; Icon: (p: IconProps) => ReactNode }) {
-  const color = on ? C.accent : C.muted;
+  const color = on ? C.text : 'rgba(255,255,255,0.74)';
   return (
     <Pressable
       accessibilityRole="tab"
       accessibilityLabel={label}
       accessibilityState={{ selected: on }}
       onPress={onPress}
-      style={({ pressed }) => ({ flex: 1, height: TAB_BAR_HEIGHT, alignItems: 'center', justifyContent: 'center', gap: 3, opacity: pressed ? 0.55 : 1 })}
+      // The tab in view sits in a darker well inside the capsule.
+      style={({ pressed }) => ({ flex: 1, height: BAR_HEIGHT - 12, borderRadius: (BAR_HEIGHT - 12) / 2, alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: on ? 'rgba(0,0,0,0.42)' : 'transparent', opacity: pressed ? 0.55 : 1 })}
     >
       <Icon on={on} color={color} />
-      <Txt size={10} w={on ? 'semi' : 'medium'} ls={0.01} color={color}>
+      <Txt size={10.5} w={on ? 'semi' : 'medium'} ls={0.01} color={color}>
         {label}
       </Txt>
     </Pressable>
   );
 }
 
-// Content scrolls beneath the bar; the web build blurs it as iOS does, native falls back to a near-solid fill.
+// Content scrolls beneath the navigation; the web build blurs it as iOS does, native falls back to a near-solid fill.
 const glass = (Platform.OS === 'web'
   ? { backgroundColor: 'rgba(18,18,18,0.72)', backdropFilter: 'saturate(180%) blur(24px)', WebkitBackdropFilter: 'saturate(180%) blur(24px)' }
   : { backgroundColor: 'rgba(18,18,18,0.96)' }) as ViewStyle;
+
+// The floating bar: a lighter, more translucent glass with a bright rim, lifted off the page by a shadow.
+const BAR_HEIGHT = 64;
+const floating = {
+  ...(Platform.OS === 'web'
+    ? { backgroundColor: 'rgba(58,58,62,0.62)', backdropFilter: 'saturate(180%) blur(28px)', WebkitBackdropFilter: 'saturate(180%) blur(28px)' }
+    : { backgroundColor: 'rgba(52,52,56,0.96)' }),
+  borderWidth: 0.5,
+  borderColor: 'rgba(255,255,255,0.22)',
+  boxShadow: '0 10px 28px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.14)',
+} as ViewStyle;
 
 /** Where the navigation is, and what is lit. It steps aside while a recording is running, so a stray tap cannot end a take. */
 function useNav() {
@@ -124,7 +136,7 @@ function useNav() {
   return { path, library, tab: recording ? null : tab };
 }
 
-/** The logo and Settings, above every screen after the welcome. */
+/** The logo, the plus that starts a new song, and Settings, above every screen after the welcome. */
 export function TopNav() {
   const { path, tab } = useNav();
   const insets = useSafeAreaInsets();
@@ -138,6 +150,18 @@ export function TopNav() {
             Bounce
           </Txt>
         </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="New song"
+          accessibilityState={{ selected: path === '/new' }}
+          onPress={() => follow({ to: '/new' }, path)}
+          style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.55 : 1 })}
+        >
+          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+            <Path d="M12 5v14M5 12h14" stroke={path === '/new' ? C.accent : C.text} strokeWidth={2} strokeLinecap="round" />
+          </Svg>
+        </Pressable>
         <Pressable
           accessibilityRole="link"
           accessibilityLabel="Settings"
@@ -147,12 +171,17 @@ export function TopNav() {
         >
           <GearGlyph color={on ? C.accent : C.muted} />
         </Pressable>
+        </View>
       </View>
     </View>
   );
 }
 
-/** Bottom navigation: Home, Song, the mic, Mix, Vault. Every tab always works; one with nothing to show yet leads to the step that gets there. */
+/**
+ * Bottom navigation, floating over the page: a glass capsule with Home, Song, Mix and Vault, and
+ * the mic as its own round button beside it. Every tab always works; one with nothing to show
+ * yet leads to the step that gets there.
+ */
 export function TabBar() {
   const { path, library, tab } = useNav();
   const insets = useSafeAreaInsets();
@@ -162,38 +191,34 @@ export function TabBar() {
   const beat = mic.id ? library.projects.find((p) => p.id === mic.id) : null;
 
   return (
-    <View accessibilityRole="tablist" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom, borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.14)' }, glass]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', height: TAB_BAR_HEIGHT, paddingHorizontal: 4 }}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, right: 14, bottom: Math.max(12, insets.bottom), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View accessibilityRole="tablist" style={[{ flex: 1, height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
         <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
         <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
-        <View style={{ width: 76, height: TAB_BAR_HEIGHT, alignItems: 'center' }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
-            accessibilityState={{ selected: is('mic') }}
-            hitSlop={6}
-            onPress={() => follow(mic, path)}
-            style={({ pressed }) => ({
-              position: 'absolute',
-              top: -18,
-              width: 62,
-              height: 62,
-              borderRadius: 31,
-              backgroundColor: C.accent,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: is('mic') ? 2 : 0.5,
-              borderColor: is('mic') ? C.text : 'rgba(255,255,255,0.28)',
-              boxShadow: '0 8px 22px rgba(255,176,32,0.28), 0 2px 6px rgba(0,0,0,0.5)',
-              transform: [{ scale: pressed ? 0.93 : 1 }],
-            })}
-          >
-            <MicIcon size={28} color={C.bg} />
-          </Pressable>
-        </View>
         <Item label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
         <Item label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
       </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
+        accessibilityState={{ selected: is('mic') }}
+        hitSlop={6}
+        onPress={() => follow(mic, path)}
+        style={({ pressed }) => ({
+          width: BAR_HEIGHT,
+          height: BAR_HEIGHT,
+          borderRadius: BAR_HEIGHT / 2,
+          backgroundColor: C.accent,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: is('mic') ? 2 : 0.5,
+          borderColor: is('mic') ? C.text : 'rgba(255,255,255,0.4)',
+          boxShadow: '0 10px 28px rgba(0,0,0,0.5), 0 6px 18px rgba(255,176,32,0.25), inset 0 1px 0 rgba(255,255,255,0.35)',
+          transform: [{ scale: pressed ? 0.93 : 1 }],
+        })}
+      >
+        <MicIcon size={28} color={C.bg} />
+      </Pressable>
     </View>
   );
 }

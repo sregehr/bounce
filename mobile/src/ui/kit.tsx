@@ -106,7 +106,7 @@ export function Screen({
   scroll?: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  // On tabbed screens the content runs under the bar, so it ends clear of it (and of the raised mic button).
+  // On tabbed screens the content runs under the floating bar, so it ends clear of it.
   const tabbed = tabFor(usePathname()) !== null;
   const top = Math.max(60, insets.top + 16);
   const content: ViewStyle = {
@@ -114,7 +114,7 @@ export function Screen({
     gap,
     paddingHorizontal: padX,
     paddingTop: tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top,
-    paddingBottom: tabbed ? TAB_BAR_HEIGHT + insets.bottom + 28 : (padBottom ?? Math.max(28, insets.bottom + 12)),
+    paddingBottom: tabbed ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
   };
   if (!scroll) return <View style={[{ flex: 1, backgroundColor: C.bg }, content, style]}>{children}</View>;
   return (

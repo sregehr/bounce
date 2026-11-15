@@ -5,11 +5,11 @@ import { importBeat } from '@/data/beats';
 import { tempoLine } from '@/data/labels';
 import type { Project } from '@/data/model';
 import { beatsIn } from '@/data/songs';
-import { setCurrent, useLibrary, useSaveError } from '@/data/store';
+import { deleteProject, setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { loopSeconds } from '@/data/studio';
 import { Btn, Eyebrow, Foot, MicIcon, Muted, NavLink, Screen, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
-import { Guide } from '@/ui/parts';
+import { Guide, SwipeRow } from '@/ui/parts';
 import { C, plural } from '@/ui/theme';
 
 function loopLine(p: Project) {
@@ -76,7 +76,8 @@ export default function Home() {
             <Eyebrow>Your beats</Eyebrow>
           </View>
           {projects.map((p, i) => (
-            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, '/song')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
+            <SwipeRow key={p.id} label={`Delete ${p.name}${p.takes.length ? ' and its takes' : ''}`} onDelete={() => void deleteProject(p.id)}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, '/song')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
               <Txt size={16} w="semi" numberOfLines={1} style={{ flexShrink: 1 }}>
                 {p.name}
               </Txt>
@@ -84,6 +85,7 @@ export default function Home() {
                 {[p.beat.bpm ? `${Math.round(p.beat.bpm)} BPM` : null, p.takes.length ? plural(p.takes.length, 'take') : 'no takes yet'].filter(Boolean).join(' · ')}
               </Txt>
             </Pressable>
+            </SwipeRow>
           ))}
         </View>
       )}

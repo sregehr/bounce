@@ -112,6 +112,33 @@ async function slide(label, fraction) {
   await sleep(200);
 }
 const state = (expr) => page.evaluate(expr);
+/** Drags a row (found by its label) to the left, as a finger would, to show its Delete button. */
+async function swipeLeft(label) {
+  const box = await page.evaluate((label) => {
+    const n = [...document.querySelectorAll('[role=button],[role=radio]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    if (!n) return null;
+    n.scrollIntoView({ block: 'center' });
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, label);
+  if (!box) return log(false, `swipe "${label}"`, 'no such row');
+  const y = box.y + box.h / 2;
+  if (process.env.SWIPE === 'mouse') {
+    await page.mouse.move(box.x + box.w - 30, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.w - 180, y, { steps: 8 });
+    await page.mouse.up();
+  } else {
+    const finger = await page.touchscreen.touchStart(box.x + box.w - 30, y);
+    for (let i = 1; i <= 8; i++) {
+      await finger.move(box.x + box.w - 30 - i * 19, y);
+      await sleep(16);
+    }
+    await finger.end();
+  }
+  await sleep(400);
+}
+const enabled = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=button]')].some((n) => n.getAttribute('aria-label') === label && n.getAttribute('aria-disabled') !== 'true' && n.getBoundingClientRect().width > 0), label);
 const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
 async function tapTrack(label, fraction) {
   const box = await page.evaluate((label) => {
@@ -231,6 +258,16 @@ async function song() {
   await tap('Song');
   await expectText('3 takes', 'Song lists the takes');
   await expectText(/kept · picked/, 'and marks the one that is picked');
+  // Swiping a take shows Delete without deleting; tapping the row closes it again.
+  log(!(await enabled('Delete take 2')), 'Delete is out of reach until a take is swiped');
+  await swipeLeft('Take 2');
+  log(await enabled('Delete take 2'), 'swiping a take shows Delete');
+  log(/kept · picked/.test(await text()), 'and does not also pick the take');
+  await shot('10a-swipe-take');
+  await tap('Close');
+  await sleep(300);
+  log(!(await enabled('Delete take 2')), 'tapping the row closes it');
+  await expectText('3 takes', 'and nothing was deleted');
   await tap('Take 1');
   await expectText('Take 1, polished over the beat', 'picking a take renders it', 30000);
   let started = false;
@@ -241,6 +278,15 @@ async function song() {
   await tap('Pause', { optional: true });
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'switching takes renders', 30000);
+  // The part of the beat under the take can be changed in the mix.
+  await expectText('on loop', 'the mix shows which bars of the beat are looping');
+  await tap('Whole beat');
+  await expectText('whole beat, once through', 'the beat section can be changed');
+  await expectText(/Polished\s/, 'and the mix renders with it', 30000);
+  await tap('8 bars');
+  await expectText('on loop');
+  await expectText(/Polished\s/, 'the loop is put back', 30000);
+  await sleep(400);
   await tap('Pause', { optional: true });
   await tapTrack('Position in take', 0.75);
   let at = await trackAt('Position in take');
@@ -418,6 +464,14 @@ async function library() {
   await expectText('FREESTYLE OVER', 'home shows the latest beat');
   await expectText('3 takes');
   await shot('23-home');
+  // The plus in the top bar starts a new song from anywhere.
+  await tap('New song');
+  await expectText('Every song starts with a beat', 'the plus opens the ways to start a song');
+  await shot('23b-new-song');
+  await tap('Pick a demo song');
+  await expectText('Ready-made beats', 'and leads into one of them');
+  await tap('Home');
+  await expectText('Add a beat');
   await tap('Open Night bus');
   await expectText('beat details', 'a beat opens its song', 10000);
   await tap('Home');
@@ -503,6 +557,22 @@ async function library() {
   await expectText(/Polished\s/, 'and is polished', 30000);
   log(await transportPlaying(), 'and plays');
   await shot('28-playback-48k');
+
+  // Swipe to delete: a take from the song, then the beat from Home.
+  await tap('Song');
+  await expectText('1 take', 'Song shows the new take');
+  await swipeLeft('Take 1');
+  await tap('Delete take 1');
+  await expectText('No takes yet', 'swiping and tapping Delete removes a take', 10000);
+  await tap('Home');
+  await expectText('Add a beat', 'Home opens');
+  await sleep(600); // let the screen change settle before dragging on it
+  await swipeLeft('Open Basement tape');
+  await shot('29-swipe-beat');
+  await tap('Delete Basement tape');
+  await sleep(600);
+  log(!/Basement tape/.test(await text()), 'swiping and tapping Delete removes a beat');
+  await expectText('Night bus', 'and leaves the others');
 }
 
 const flows = { onboarding, song, finish, library };

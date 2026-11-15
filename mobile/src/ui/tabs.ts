@@ -8,6 +8,7 @@ const TABS: Record<string, Tab> = {
   '/capture': 'home',
   '/record': 'home',
   '/demos': 'home',
+  '/new': 'home',
   // Recording over it: the mic button in the middle.
   '/vocals': 'mic',
   // The song being worked on: its takes and lyrics.
@@ -22,8 +23,8 @@ const TABS: Record<string, Tab> = {
 // The player itself is full screen, with no navigation around it.
 const EITHER = ['/master', '/cover', '/export', '/snippet'];
 
-/** Height of the bar's row of tabs, not counting the home-indicator inset below it. */
-export const TAB_BAR_HEIGHT = 54;
+/** Room the floating bottom bar takes up, with the gap around it, not counting the home-indicator inset below it. */
+export const TAB_BAR_HEIGHT = 84;
 /** Height of the top bar with the logo, not counting the status-bar inset above it. */
 export const TOP_NAV_HEIGHT = 48;
 

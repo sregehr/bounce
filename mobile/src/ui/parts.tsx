@@ -1,15 +1,17 @@
 // Larger building blocks shared by several screens.
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Animated, PanResponder, Pressable, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
+import type { Beat, LoopChoice } from '@/data/model';
 import type { Hint } from '@/data/songs';
+import { barSeconds, barsIn, loopSeconds } from '@/data/studio';
 
 import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
-import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
+import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Segmented, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
 
 export function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
@@ -228,5 +230,105 @@ export function Status({ label, tone = 'plain', onPress, expanded, hint }: { lab
         {onPress ? (expanded ? '  ▴' : '  ▾') : ''}
       </Txt>
     </Pressable>
+  );
+}
+
+const DELETE_WIDTH = 92;
+// In a browser, dragging with a mouse would otherwise start selecting the row's text, which ends the swipe.
+const NO_SELECT = { userSelect: 'none' } as object;
+
+/**
+ * A list row that slides left to show a Delete button, as iOS lists do. The swipe only shows
+ * the button; tapping it is what deletes. Swiping back, or tapping the row, closes it again.
+ */
+export function SwipeRow({ children, label, onDelete }: { children: ReactNode; label: string; onDelete: () => void }) {
+  const x = useRef(new Animated.Value(0)).current;
+  const [open, setOpen] = useState(false);
+  const from = useRef(0);
+  // A mouse drag ends with a click on whatever was pressed, which is the row itself. While dragging,
+  // the row's content takes no pointer events, so that click lands on the wrapper and opens nothing.
+  const [dragging, setDragging] = useState(false);
+  const settle = (show: boolean) => {
+    setOpen(show);
+    from.current = show ? -DELETE_WIDTH : 0;
+    Animated.spring(x, { toValue: from.current, useNativeDriver: false, bounciness: 0, speed: 20 }).start();
+  };
+  const pan = useRef(
+    PanResponder.create({
+      // Only a sideways drag is taken, so the page still scrolls and a tap still reaches the row.
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderGrant: () => setDragging(true),
+      onPanResponderMove: (_, g) => x.setValue(Math.max(-DELETE_WIDTH - 24, Math.min(0, from.current + g.dx))),
+      onPanResponderRelease: (_, g) => {
+        settle(from.current + g.dx < -DELETE_WIDTH / 2);
+        setTimeout(() => setDragging(false), 80);
+      },
+      onPanResponderTerminate: () => {
+        settle(false);
+        setDragging(false);
+      },
+    }),
+  ).current;
+  return (
+    <View style={{ overflow: 'hidden' }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityElementsHidden={!open}
+        importantForAccessibility={open ? 'yes' : 'no-hide-descendants'}
+        aria-hidden={!open}
+        tabIndex={open ? 0 : -1}
+        disabled={!open}
+        onPress={() => {
+          settle(false);
+          onDelete();
+        }}
+        style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: DELETE_WIDTH, backgroundColor: C.rec, alignItems: 'center', justifyContent: 'center', opacity: open ? 1 : 0 }}
+      >
+        <Txt size={14} w="semi" color={C.text}>
+          Delete
+        </Txt>
+      </Pressable>
+      <Animated.View {...pan.panHandlers} style={[{ backgroundColor: C.bg, transform: [{ translateX: x }] }, NO_SELECT]}>
+        {/* While the button is showing, a tap on the row closes it instead of opening the row. */}
+        <View pointerEvents={open || dragging ? 'none' : 'auto'}>{children}</View>
+        {open && <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => settle(false)} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />}
+      </Animated.View>
+    </View>
+  );
+}
+
+const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
+
+/** Which part of the beat plays: a loop of 8 or 16 bars starting on a chosen bar, or the whole beat once through. */
+export function BeatSection({ beat, loop, onChange }: { beat: Beat; loop: LoopChoice; onChange: (loop: LoopChoice) => void }) {
+  const region = loopSeconds(beat, loop);
+  const total = barsIn(beat);
+  const first = (region?.startBar ?? 0) + 1;
+  const length = loop.bars === 8 ? '8 bars' : loop.bars === 16 ? '16 bars' : 'Whole beat';
+  if (!barSeconds(beat.bpm)) return <Muted size={13}>Set the tempo in the beat details to loop 8 or 16 bars of the beat. Until then the whole beat plays through.</Muted>;
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={[s.row, s.between]}>
+        <Txt size={15} w="semi">
+          Beat
+        </Txt>
+        <Txt size={13} color={C.muted}>
+          {region ? `bars ${first}–${first + region.bars - 1} on loop` : 'whole beat, once through'}
+        </Txt>
+      </View>
+      <Segmented options={LENGTHS} value={length} onChange={(l) => onChange({ ...loop, bars: l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0 })} variant="inset" />
+      {region && total > region.bars && (
+        <View style={[s.row, s.between]}>
+          <NavLink size={13} style={{ minHeight: 28 }} onPress={() => onChange({ ...loop, startBar: Math.max(0, region.startBar - 4) })}>
+            Start 4 bars earlier
+          </NavLink>
+          <NavLink size={13} style={{ minHeight: 28 }} onPress={() => onChange({ ...loop, startBar: Math.min(total - region.bars, region.startBar + 4) })}>
+            Start 4 bars later
+          </NavLink>
+        </View>
+      )}
+    </View>
   );
 }

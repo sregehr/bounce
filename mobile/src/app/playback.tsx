@@ -13,12 +13,12 @@ import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
 import { Btn, Chips, NavLink, Option, RoundPlay, Screen, SeekTrack, SliderRow, TickIcon, Txt, s } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
-import { Status } from '@/ui/parts';
+import { BeatSection, Status } from '@/ui/parts';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { C, clock } from '@/ui/theme';
 
-// Height of the pinned last step, without the gap that keeps it clear of the mic button.
-const FINISH_HEIGHT = 72;
+// Height of the pinned last step, above the floating bar.
+const FINISH_HEIGHT = 62;
 
 export default function Playback() {
   const project = useProject();
@@ -120,6 +120,10 @@ export default function Playback() {
             <Option label="Double track, nudged and panned" w="regular" checked={polish.double} onChange={(double) => setPolish({ double })} minHeight={46} />
             <SliderRow label="Vocal level" value={level ?? polish.vocalLevel} onChange={setLevel} onCommit={(v) => (setLevel(null), setPolish({ vocalLevel: v }))} labelWidth={92} minHeight={44} fontSize={15} display={`${level ?? polish.vocalLevel}`} valueWidth={30} />
             <View style={{ paddingTop: 10, paddingBottom: 6 }}>
+              {/* The take keeps the bars it was recorded over until another part of the beat is chosen here. */}
+              <BeatSection beat={project.beat} loop={take.loop} onChange={(loop) => patchProject(project.id, (p) => ({ takes: p.takes.map((k) => (k.id === take.id ? { ...k, loop } : k)) }))} />
+            </View>
+            <View style={{ paddingTop: 10, paddingBottom: 6 }}>
               <ChainEditor project={project} song={song} />
             </View>
             <NavLink size={14} onPress={() => !stems.busy && sendStems()}>
@@ -146,8 +150,8 @@ export default function Playback() {
         <View style={{ height: FINISH_HEIGHT }} />
       </Screen>
 
-      {/* The last step stays in reach however far the page is scrolled. It ends clear of the raised mic button. */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: TAB_BAR_HEIGHT + insets.bottom, height: FINISH_HEIGHT + 22, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+      {/* The last step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
         <Btn label="Finish song" to="/master" style={{ flex: 0, minHeight: 52 }} />
       </View>
     </View>

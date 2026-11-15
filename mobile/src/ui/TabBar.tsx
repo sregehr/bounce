@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { setCurrent, useLibrary, useProject } from '@/data/store';
+import { useEngine } from '@/engine/engine';
 
 import { MicIcon, Txt } from './kit';
 import { TAB_BAR_HEIGHT, tabFor, type Tab } from './tabs';
@@ -95,14 +96,15 @@ const glass = (Platform.OS === 'web'
   ? { backgroundColor: 'rgba(18,18,18,0.72)', backdropFilter: 'saturate(180%) blur(24px)', WebkitBackdropFilter: 'saturate(180%) blur(24px)' }
   : { backgroundColor: 'rgba(18,18,18,0.96)' }) as ViewStyle;
 
-/** Bottom navigation for the app's main areas. Hidden on the focused screens (recording, polishing, exporting). */
+/** Bottom navigation, on every screen after the welcome. It steps aside while a recording is running, so a stray tap cannot end a take. */
 export function TabBar() {
   const path = usePathname();
   const tab = tabFor(path);
   const insets = useSafeAreaInsets();
   const projects = useLibrary((l) => l.projects);
   const current = useProject();
-  if (!tab) return null;
+  const recording = useEngine((e) => e.take.mode !== 'idle' || e.capture.status !== 'idle');
+  if (!tab || recording) return null;
 
   const beat = current ?? projects[0];
   const ready = (p: (typeof projects)[number]) => p.takes.length > 0 || !!p.stats;
@@ -119,7 +121,7 @@ export function TabBar() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
-            accessibilityState={{ disabled: !beat }}
+            accessibilityState={{ disabled: !beat, selected: is('mic') }}
             disabled={!beat}
             hitSlop={6}
             onPress={() => {
@@ -136,8 +138,8 @@ export function TabBar() {
               backgroundColor: beat ? C.accent : C.dim,
               alignItems: 'center',
               justifyContent: 'center',
-              borderWidth: 0.5,
-              borderColor: 'rgba(255,255,255,0.28)',
+              borderWidth: is('mic') ? 2 : 0.5,
+              borderColor: is('mic') ? C.text : 'rgba(255,255,255,0.28)',
               boxShadow: beat ? '0 8px 22px rgba(255,176,32,0.28), 0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.5)',
               transform: [{ scale: pressed ? 0.93 : 1 }],
             })}

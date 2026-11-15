@@ -118,6 +118,7 @@ const glass = (Platform.OS === 'web'
 
 // The floating bar: a lighter, more translucent glass with a bright rim, lifted off the page by a shadow.
 const BAR_HEIGHT = 64;
+const MIC = 64;
 const floating = {
   ...(Platform.OS === 'web'
     ? { backgroundColor: 'rgba(58,58,62,0.62)', backdropFilter: 'saturate(180%) blur(28px)', WebkitBackdropFilter: 'saturate(180%) blur(28px)' }
@@ -179,8 +180,8 @@ export function TopNav() {
 
 /**
  * Bottom navigation, floating over the page: a glass capsule with Home, Song, Mix and Vault, and
- * the mic as its own round button beside it. Every tab always works; one with nothing to show
- * yet leads to the step that gets there.
+ * the mic raised in the middle of it. Every tab always works; one with nothing to show yet leads
+ * to the step that gets there.
  */
 export function TabBar() {
   const { path, library, tab } = useNav();
@@ -191,34 +192,37 @@ export function TabBar() {
   const beat = mic.id ? library.projects.find((p) => p.id === mic.id) : null;
 
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, right: 14, bottom: Math.max(12, insets.bottom), flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <View accessibilityRole="tablist" style={[{ flex: 1, height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
-        <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
-        <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
-        <Item label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
-        <Item label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
+    <View accessibilityRole="tablist" style={[{ position: 'absolute', left: 14, right: 14, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
+      <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
+      <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
+      {/* The mic sits in the middle, raised out of the capsule. */}
+      <View style={{ width: MIC + 12, height: BAR_HEIGHT, alignItems: 'center' }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
+          accessibilityState={{ selected: is('mic') }}
+          hitSlop={6}
+          onPress={() => follow(mic, path)}
+          style={({ pressed }) => ({
+            position: 'absolute',
+            top: -14,
+            width: MIC,
+            height: MIC,
+            borderRadius: MIC / 2,
+            backgroundColor: C.accent,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: is('mic') ? 2 : 0.5,
+            borderColor: is('mic') ? C.text : 'rgba(255,255,255,0.4)',
+            boxShadow: '0 10px 28px rgba(0,0,0,0.5), 0 6px 18px rgba(255,176,32,0.25), inset 0 1px 0 rgba(255,255,255,0.35)',
+            transform: [{ scale: pressed ? 0.93 : 1 }],
+          })}
+        >
+          <MicIcon size={28} color={C.bg} />
+        </Pressable>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
-        accessibilityState={{ selected: is('mic') }}
-        hitSlop={6}
-        onPress={() => follow(mic, path)}
-        style={({ pressed }) => ({
-          width: BAR_HEIGHT,
-          height: BAR_HEIGHT,
-          borderRadius: BAR_HEIGHT / 2,
-          backgroundColor: C.accent,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderWidth: is('mic') ? 2 : 0.5,
-          borderColor: is('mic') ? C.text : 'rgba(255,255,255,0.4)',
-          boxShadow: '0 10px 28px rgba(0,0,0,0.5), 0 6px 18px rgba(255,176,32,0.25), inset 0 1px 0 rgba(255,255,255,0.35)',
-          transform: [{ scale: pressed ? 0.93 : 1 }],
-        })}
-      >
-        <MicIcon size={28} color={C.bg} />
-      </Pressable>
+      <Item label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
+      <Item label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
     </View>
   );
 }

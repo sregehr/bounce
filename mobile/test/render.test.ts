@@ -69,6 +69,13 @@ const run = async () => {
   const up = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 100 }, include: 'vocals' });
   const down = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 20 }, include: 'vocals' });
   check('vocal level slider', up.did.vocalGainDb > down.did.vocalGainDb + 15, `${down.did.vocalGainDb.toFixed(1)} → ${up.did.vocalGainDb.toFixed(1)} dB`);
+  const muted = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 0 }, include: 'vocals' });
+  check('vocal level at 0 is silence', peakOf(muted.channels) === 0, `peak ${peakOf(muted.channels)}`);
+  // A quiet take needs all the lift the automatic balance allows; the slider must still work on top of it.
+  const quiet = { ...base, take: { mono: voice.map((v) => v * 0.01), phase: 0 } };
+  const quietUp = await renderMix({ ...quiet, polish: { ...DEFAULT_POLISH, vocalLevel: 100 }, include: 'vocals' });
+  const quietDown = await renderMix({ ...quiet, polish: { ...DEFAULT_POLISH, vocalLevel: 20 }, include: 'vocals' });
+  check('vocal level slider on a quiet take', quietUp.did.vocalGainDb > quietDown.did.vocalGainDb + 15, `${quietDown.did.vocalGainDb.toFixed(1)} → ${quietUp.did.vocalGainDb.toFixed(1)} dB`);
   const dbl = await renderMix({ ...base, include: 'vocals' });
   const single = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, double: false, style: 'Gritty' }, include: 'vocals' });
   const width = (c: Float32Array[]) => { let d = 0, s = 0; for (let i = 0; i < c[0].length; i += 7) { d += (c[0][i] - c[1][i]) ** 2; s += (c[0][i] + c[1][i]) ** 2; } return d / (s || 1); };

@@ -179,10 +179,15 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   const beatBus = beatStage.bus;
   const beatChain = beatStage.chain;
 
-  // Sit the voice a little above the beat, then apply the vocal level slider.
+  // Sit the voice a little above the beat. The automatic balance is limited on its own, so that a
+  // quiet take that needs all of that lift still leaves the slider its full travel.
   let vocalGainDb = 0;
-  if (vocal && vocal.body > -70) vocalGainDb = clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - vocal.body + (input.polish.vocalLevel - 68) * 0.25, -24, 24);
-  const vocalGain = fromDb(vocalGainDb);
+  if (vocal && vocal.body > -70) vocalGainDb = clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - vocal.body, -24, 24);
+  // Then the vocal level slider, shaped like a fader: 68 is the automatic balance, 100 is about
+  // 7 dB above it, half way down is 12 dB below, and the bottom is silence.
+  const level = clamp(input.polish.vocalLevel, 0, 100);
+  vocalGainDb = level > 0 ? vocalGainDb + 40 * Math.log10(level / 68) : -120;
+  const vocalGain = level > 0 ? fromDb(vocalGainDb) : 0;
 
   // ----- Mix -----
   // The stages above may be shared with later renders, so everything from here works on copies.

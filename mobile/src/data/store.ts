@@ -135,10 +135,10 @@ export async function dropBlob(key: string) {
   await blobs.delete(key).catch(() => {});
 }
 
-/** Loads a finished song into the Player. */
+/** Makes a finished song the one the player shows. */
 export const openSong = (id: string) => update((l) => (l.currentId === id && l.songId === id ? l : { ...l, currentId: id, songId: id }));
 
-/** Saves the take and settings a beat has now as a finished song in the Vault, and loads it into the Player. */
+/** Saves the take and settings a beat has now as a finished song in the Vault, ready to play. */
 export function finishSong(projectId: string, title: string): Project | null {
   const project = getProject(projectId);
   if (!project) return null;

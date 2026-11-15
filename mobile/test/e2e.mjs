@@ -179,11 +179,12 @@ async function onboarding() {
 const transportPlaying = () => state(() => !![...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).find((n) => n.getAttribute('aria-label') === 'Pause'));
 
 async function song() {
-  // Nothing is recorded yet, so Mix and Player both lead to the mic and say why.
+  // Nothing is recorded yet: Song opens the song and says so, and Mix leads to the mic and says why.
+  await tap('Song');
+  await expectText('No takes yet', 'Song opens the song before anything is recorded');
+  await shot('06b-song-empty');
   await tap('Mix');
   await expectText('Nothing to mix yet', 'Mix leads to recording when there are no takes');
-  await tap('Player');
-  await expectText('Nothing to play yet', 'Player leads to recording when there are no takes');
   await expectText('Always listening', 'vocals screen opens');
   await expectText('Mic: Fake', 'microphone connects by itself once allowed', 8000);
   await shot('07-vocals-idle');
@@ -223,16 +224,22 @@ async function song() {
   await sleep(3500);
   await tap('Keep that');
   await expectText('Take 3', 'kept take opens in playback', 10000);
-  await expectText(/0:0\d · kept/, 'the page shows the take in the mix');
+  await expectText(/Take 3 · 0:0\d/, 'the mix is of the kept take');
   await expectText(/Polished\s/, 'kept take is polished', 30000);
-  // The other takes are behind "Change": each can be heard on its own, then chosen.
-  await tap('Change take');
-  await expectText('Previews play the raw vocal', 'the takes open as a list to choose from');
-  await tap('Preview take 2');
-  await sleep(500);
-  log(await state(() => !!document.querySelector('[aria-label="Stop take 2"]')), 'a take can be previewed before it is chosen');
-  await shot('10b-take-picker');
+  await tap('Pause', { optional: true });
+  // The Song tab lists every take; tapping one picks it and plays it polished over the beat.
+  await tap('Song');
+  await expectText('3 takes', 'Song lists the takes');
+  await expectText(/kept · picked/, 'and marks the one that is picked');
   await tap('Take 1');
+  await expectText('Take 1, polished over the beat', 'picking a take renders it', 30000);
+  let started = false;
+  for (const until = Date.now() + 30000; Date.now() < until && !(started = await transportPlaying()); ) await sleep(200);
+  log(started, 'and plays it once it is ready');
+  await shot('10b-song');
+  await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
+  await tap('Pause', { optional: true });
+  await tap('Mix take 1');
   await expectText(/Polished\s/, 'switching takes renders', 30000);
   await tap('Pause', { optional: true });
   await tapTrack('Position in take', 0.75);
@@ -310,12 +317,12 @@ async function finish() {
   await tap('Vault');
   await expectText('Nothing finished yet', 'the Vault starts empty');
   await shot('13b-vault-empty');
-  await tap('Finish a song');
-  await expectText('Not in the Vault yet', 'the Vault leads to the song page, which says the song is not finished');
-  await tap('Change take');
-  await expectText('in the mix', 'the song page lists the takes');
-  await tap('Change take');
-  await shot('13c-song-page');
+  await tap('Open your song');
+  await expectText('Not in the Vault yet', 'the Vault leads to the song, which says it is not finished');
+  await expectText('Has lyrics');
+  await tap('Mix take 1');
+  await expectText(/Polished\s/, 'the mix opens from the song', 30000);
+  await shot('13c-mix');
   await tap('Send stems to an engineer');
   await expectText('stems.zip to your downloads', 'stems are saved from the song page', 30000);
   const stemZip = (await waitDownloads(1)).find((f) => f.endsWith('stems.zip'));
@@ -369,7 +376,8 @@ async function finish() {
   log(await transportPlaying(), 'the song plays in the player');
   await shot('20-player');
   await tap('Lyrics');
-  await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
+  const carried = await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Lyrics').pop()?.value ?? '');
+  log(carried.includes('Every red light is a breath I use'), 'the lyrics written on the song came with it', carried.slice(0, 60));
   await tap('Done');
   await tap('Pause');
 
@@ -384,20 +392,25 @@ async function finish() {
   await tap('Done, back to the Vault');
   await expectText('Search your songs', 'vault opens');
   await expectText('Snippet made');
-  await expectText('In the player', 'the Vault marks the loaded song');
+  await expectText('Last played', 'the Vault marks the song played last');
   await shot('22-vault');
   await type('Search your songs', 'red light');
   await expectText('Has lyrics', 'search finds a word in the lyrics');
   await type('Search your songs', 'zzzz');
   await expectText('Nothing in the vault matches');
   await type('Search your songs', '');
-  // The finished song is its own copy: the beat keeps all three takes, and the tabs know which is which.
+  // A finished song opens in the full-screen player, with no navigation around it, and closes back to the Vault.
   await tap('Open Night bus');
   await expectText('Prod. Lowkey', 'a Vault song opens in the player', 15000);
+  log(await state(() => ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Song')), 'the player is full screen');
+  await tap('Close the player');
+  await expectText('Search your songs', 'closing the player returns to the Vault');
+  // The finished song is its own copy: the beat keeps all three takes.
+  await tap('Song');
+  await expectText('3 takes', 'Song opens the beat the finished song came from', 10000);
+  await expectText('In the Vault', 'and says it has been finished');
   await tap('Mix');
-  await expectText('In the Vault', 'Mix opens the song page of the beat it came from, now marked as finished', 10000);
-  await tap('Player');
-  await expectText('Prod. Lowkey', 'Player returns to the loaded song', 15000);
+  await expectText(/Take 1 · 0:0\d/, 'Mix opens the same beat', 10000);
 }
 
 async function library() {
@@ -406,7 +419,7 @@ async function library() {
   await expectText('3 takes');
   await shot('23-home');
   await tap('Open Night bus');
-  await expectText('Finish song', 'a beat with takes opens its song page', 10000);
+  await expectText('beat details', 'a beat opens its song', 10000);
   await tap('Home');
   await tap('Settings');
   await expectText('Timing');

@@ -6,52 +6,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
-import type { Take } from '@/data/model';
 import { useSong } from '@/data/song';
 import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
-import { play, toggle as toggleTransport, useEngine } from '@/engine/engine';
 import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
 import { Btn, Chips, NavLink, Option, RoundPlay, Screen, SeekTrack, SliderRow, TickIcon, Txt, s } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
+import { Status } from '@/ui/parts';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
-import { C, clock, dayLabel, plural } from '@/ui/theme';
+import { C, clock } from '@/ui/theme';
 
 // Height of the pinned last step, without the gap that keeps it clear of the mic button.
 const FINISH_HEIGHT = 72;
-
-const TONES = { plain: C.muted, good: C.text, todo: C.accent, bad: C.recText } as const;
-
-/** A small pill that states one fact about the song. With `onPress` it also opens more detail. */
-function Status({ label, tone = 'plain', onPress, expanded, hint }: { label: string; tone?: keyof typeof TONES; onPress?: () => void; expanded?: boolean; hint?: string }) {
-  const color = TONES[tone];
-  return (
-    <Pressable
-      accessibilityRole={onPress ? 'button' : 'text'}
-      accessibilityLabel={hint ? `${label}. ${hint}` : label}
-      accessibilityState={onPress ? { expanded: !!expanded } : undefined}
-      disabled={!onPress}
-      onPress={onPress}
-      hitSlop={6}
-      style={{ minHeight: 28, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1, borderColor: tone === 'todo' || tone === 'bad' ? color : C.borderStrong, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-    >
-      {tone === 'good' && <TickIcon />}
-      <Txt size={12} w="semi" color={color}>
-        {label}
-        {onPress ? (expanded ? '  ▴' : '  ▾') : ''}
-      </Txt>
-    </Pressable>
-  );
-}
 
 export default function Playback() {
   const project = useProject();
   const take = activeTake(project);
   const song = useSong(take ? project : null, { compare: true });
   const [detail, setDetail] = useState(false);
-  const [picking, setPicking] = useState(false);
-  const transport = useEngine((e) => e.transport);
   const insets = useSafeAreaInsets();
   const [level, setLevel] = useState<number | null>(null);
   const [armed, arm] = useArmed();
@@ -71,13 +44,6 @@ export default function Playback() {
   const progress = t.duration > 0 ? t.position / t.duration : 0;
   const steps = ['Lined up with the beat', mix?.did.noiseReduced === false ? 'Take was already clean' : 'Background noise lowered', 'Chain matched to your voice', 'Levels balanced with the beat'];
   const state = song.error ? 'Could not render' : song.busy ? (mix ? 'Updating…' : 'Polishing…') : 'Polished';
-  const many = project.takes.length > 1;
-  const about = (k: Take, on: boolean) => [dayLabel(k.createdAt), clock(k.durationSec), k.origin === 'kept' ? 'kept' : k.origin === 'punched' ? 'punched in' : null, on && many ? 'in the mix' : null].filter(Boolean).join(' · ');
-  /** Plays one take's raw vocal by itself, or stops it if it is the one playing. */
-  const preview = (k: Take) => {
-    if (transport.id === `take:${k.id}`) return toggleTransport();
-    void loadPcm(k.key).then((pcm) => play(`take:${k.id}`, { a: pcm }), () => {});
-  };
   /** The untouched parts an engineer would want: the beat, the raw vocal, and the processed vocal. */
   const sendStems = () =>
     stems.run(async () => {
@@ -105,7 +71,7 @@ export default function Playback() {
           </Txt>
           {/* Where the song stands, at a glance. The polish chip opens what the automatic polish did. */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Status label={many ? plural(project.takes.length, 'take') : `Take ${take.number} · ${clock(take.durationSec)}`} />
+            <Status label={`Take ${take.number} · ${clock(take.durationSec)}`} />
             <Status label={state} tone={song.error ? 'bad' : song.busy ? 'plain' : 'good'} onPress={() => setDetail(!detail)} expanded={detail} hint="What auto polish did" />
             <Status label={vaulted === 0 ? 'Not in the Vault yet' : vaulted === 1 ? 'In the Vault' : `${vaulted} in the Vault`} tone={vaulted ? 'good' : 'todo'} />
           </View>
@@ -127,52 +93,6 @@ export default function Playback() {
             </View>
           )}
         </View>
-
-        {many && (
-          <View>
-            {/* Closed, this shows the take in the mix. Open, every take can be heard on its own before it is chosen. */}
-            <Pressable accessibilityRole="button" accessibilityLabel="Change take" accessibilityState={{ expanded: picking }} onPress={() => setPicking(!picking)} style={[s.row, s.between, { minHeight: 48, gap: 12 }, s.divided]}>
-              <Txt size={15} w="semi">
-                Take {take.number}
-              </Txt>
-              <Txt size={13} color={C.muted} style={{ flex: 1 }} numberOfLines={1}>
-                {about(take, false)}
-              </Txt>
-              <Txt size={13} w="semi" color={C.accent}>
-                {picking ? 'Close' : 'Change'}
-              </Txt>
-            </Pressable>
-            {picking &&
-              [...project.takes].reverse().map((k) => {
-                const on = k.id === take.id;
-                const hearing = transport.id === `take:${k.id}` && transport.playing;
-                return (
-                  <View key={k.id} style={[s.row, s.divided, { minHeight: 52, gap: 12 }]}>
-                    <RoundPlay size={32} icon={12} playing={hearing} label={hearing ? `Stop take ${k.number}` : `Preview take ${k.number}`} onPress={() => preview(k)} />
-                    <Pressable
-                      accessibilityRole="radio"
-                      accessibilityLabel={`Take ${k.number}`}
-                      accessibilityState={{ checked: on }}
-                      onPress={() => {
-                        setPicking(false);
-                        if (on) return song.toggle();
-                        patchProject(project.id, { takeId: k.id }, false);
-                      }}
-                      style={[s.row, s.between, { flex: 1, minHeight: 52 }]}
-                    >
-                      <Txt size={15} w="semi" color={on ? C.accent : C.text}>
-                        Take {k.number}
-                      </Txt>
-                      <Txt size={13} color={on ? C.accent : C.muted}>
-                        {about(k, on)}
-                      </Txt>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            {picking && <Txt size={12} color={C.muted} style={{ paddingTop: 8 }}>Previews play the raw vocal on its own. Tap a take to put it in the mix.</Txt>}
-          </View>
-        )}
 
         <View style={{ gap: 12 }}>
           <View style={[s.row, { gap: 12 }]}>

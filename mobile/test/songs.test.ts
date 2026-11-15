@@ -1,6 +1,6 @@
 import { DEFAULT_MASTER, DEFAULT_POLISH } from '../src/dsp/presets';
 import { emptyLibrary, type Library, type Project, type Take } from '../src/data/model';
-import { beatsIn, carryOver, loadedSong, makeSong, micLead, mixLead, playerLead, songsIn, workBeat } from '../src/data/songs';
+import { beatsIn, carryOver, loadedSong, makeSong, micLead, mixLead, songLead, songsIn, workBeat } from '../src/data/songs';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -45,17 +45,16 @@ const older = makeSong(a, 'Older', 50);
 check('beats and songs are told apart', beatsIn([song, a, older]).length === 1 && songsIn([older, a, song]).map((p) => p.name).join() === 'Night bus,Older');
 
 // Where the tabs lead.
-check('with nothing, every tab leads to adding a beat', [micLead, mixLead, playerLead].every((f) => f(lib([])).to === '/' && f(lib([])).hint === 'beat'));
+check('with nothing, every tab leads to adding a beat', [micLead, mixLead, songLead].every((f) => f(lib([])).to === '/' && f(lib([])).hint === 'beat'));
 const bare = lib([beat('b')], { currentId: 'b' });
-check('with a beat and no takes, the mic records', micLead(bare).to === '/vocals' && !micLead(bare).hint);
-check('…and Mix and Player lead to recording, each with its reason', mixLead(bare).to === '/vocals' && mixLead(bare).hint === 'mix' && playerLead(bare).to === '/vocals' && playerLead(bare).hint === 'take');
+check('with a beat and no takes, the mic records and Song opens it', micLead(bare).to === '/vocals' && !micLead(bare).hint && songLead(bare).to === '/song' && songLead(bare).id === 'b');
+check('…and Mix leads to recording, with its reason', mixLead(bare).to === '/vocals' && mixLead(bare).hint === 'mix');
 const recorded = lib([beat('b'), a], { currentId: 'b' });
 check('Mix opens a beat that has takes when the current one has none', mixLead(recorded).to === '/playback' && mixLead(recorded).id === 'a' && !mixLead(recorded).hint);
-check('with takes and no finished song, Player leads to finishing', playerLead(recorded).to === '/playback' && playerLead(recorded).hint === 'finish');
 const full = lib([song, older, a], { currentId: song.id, songId: older.id });
-check('Player opens the loaded song', playerLead(full).to === '/player' && playerLead(full).id === older.id);
-check('…or the newest when none is loaded', loadedSong({ ...full, songId: null })?.id === song.id);
-check('with a finished song open, the mic records over the beat it came from', workBeat(full)?.id === 'a' && micLead(full).id === 'a');
+check('the song played last is remembered', loadedSong(full)?.id === older.id);
+check('…or the newest when none has been', loadedSong({ ...full, songId: null })?.id === song.id);
+check('with a finished song open, Song, Mix and the mic go to the beat it came from', workBeat(full)?.id === 'a' && micLead(full).id === 'a' && songLead(full).id === 'a' && mixLead(full).id === 'a');
 check('if that beat is gone, the mic leads to adding one', micLead(lib([song], { currentId: song.id })).to === '/');
 
 // Carrying over a library from before the Vault held finished songs only.

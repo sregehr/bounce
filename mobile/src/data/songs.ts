@@ -1,5 +1,5 @@
 // Beats being worked on and finished songs live in one list. These are the rules that tell
-// them apart, and that decide where the mic and Player tabs lead.
+// them apart, and that decide where the Song, mic and Mix tabs lead.
 import { newId, type Library, type Project } from './model';
 
 export const beatsIn = (projects: Project[]) => projects.filter((p) => !p.saved);
@@ -33,15 +33,15 @@ export function workBeat(l: Library): Project | null {
   return from ?? beatsIn(l.projects)[0] ?? null;
 }
 
-/** The song the Player has loaded, or the newest one when none is. */
+/** The finished song played last, or the newest one when none has been. */
 export function loadedSong(l: Library): Project | null {
   const songs = songsIn(l.projects);
   return songs.find((s) => s.id === l.songId) ?? songs[0] ?? null;
 }
 
-export type Hint = 'beat' | 'take' | 'mix' | 'finish';
+export type Hint = 'beat' | 'mix';
 /** A screen to open, the project to make current first, and what to tell the user there. */
-export type Lead = { to: '/' | '/vocals' | '/playback' | '/player'; id: string | null; hint?: Hint };
+export type Lead = { to: '/' | '/vocals' | '/song' | '/playback'; id: string | null; hint?: Hint };
 
 /** The mic always works: it records over a beat, or leads to adding one. */
 export function micLead(l: Library): Lead {
@@ -49,21 +49,16 @@ export function micLead(l: Library): Lead {
   return beat ? { to: '/vocals', id: beat.id } : { to: '/', id: null, hint: 'beat' };
 }
 
-/** Mix always works: it opens the song page of a beat with takes, or leads to recording one. */
+/** Song always works: it opens the song being worked on, or leads to adding a beat to start one. */
+export function songLead(l: Library): Lead {
+  const beat = workBeat(l);
+  return beat ? { to: '/song', id: beat.id } : { to: '/', id: null, hint: 'beat' };
+}
+
+/** Mix always works: it opens the mix of a beat with takes, or leads to recording one. */
 export function mixLead(l: Library): Lead {
   const beat = workBeat(l);
   const recorded = beat?.takes.length ? beat : beatsIn(l.projects).find((p) => p.takes.length);
   if (recorded) return { to: '/playback', id: recorded.id };
   return beat ? { to: '/vocals', id: beat.id, hint: 'mix' } : { to: '/', id: null, hint: 'beat' };
-}
-
-/** The Player always works: it plays a finished song, or leads to the next step towards having one. */
-export function playerLead(l: Library): Lead {
-  const song = loadedSong(l);
-  if (song) return { to: '/player', id: song.id };
-  const beat = workBeat(l);
-  const recorded = beat?.takes.length ? beat : beatsIn(l.projects).find((p) => p.takes.length);
-  if (recorded) return { to: '/playback', id: recorded.id, hint: 'finish' };
-  if (beat) return { to: '/vocals', id: beat.id, hint: 'take' };
-  return { to: '/', id: null, hint: 'beat' };
 }

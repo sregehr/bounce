@@ -12,7 +12,6 @@ import { useSong } from '@/data/song';
 import { spectrum } from '@/engine/engine';
 import { Btn, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
-import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT } from '@/ui/tabs';
 import { C, F, clock, lufs } from '@/ui/theme';
 
 const BARS = 34;
@@ -54,7 +53,7 @@ export default function Player() {
   const insets = useSafeAreaInsets();
   useStopOnLeave();
 
-  if (!project) return <Redirect href="/" />;
+  if (!project) return <Redirect href="/vault" />;
 
   const { t, mix } = song;
   const take = activeTake(project);
@@ -67,6 +66,11 @@ export default function Player() {
     else song.seek(0);
   };
   const pill = { backgroundColor: C.bg } as const;
+  /** The player is full screen, opened from the Vault; closing it returns there. */
+  const close = () => {
+    if (router.canDismiss()) router.dismissAll();
+    router.push('/vault');
+  };
   const credit = [profile.artist || 'You', profile.producer ? `Prod. ${profile.producer}` : null].filter(Boolean).join(' · ');
   const onShare = () =>
     share.run(async () => {
@@ -82,10 +86,15 @@ export default function Player() {
         <CoverImage project={project} fill />
       </View>
 
-      <View style={[s.topbar, { paddingHorizontal: 16, paddingTop: insets.top + TOP_NAV_HEIGHT + 12 }]}>
+      <View style={[s.topbar, { paddingHorizontal: 16, paddingTop: Math.max(20, insets.top + 8) }]}>
         <Pressable accessibilityRole="link" accessibilityLabel="Mastering settings" onPress={() => router.push('/master')} style={[pill, { borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12 }]}>
           <Txt size={12} w="semi" ls={0.08} upper color={song.error ? C.recText : C.muted}>
             {song.error ? 'Could not render' : !mix ? song.stage || 'Mastering' : [take ? 'Mastered' : 'Beat', project.overrides.master ? 'by hand' : project.master.style, lufs(mix.lufs, 0)].join(' · ')}
+          </Txt>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close the player" onPress={close} hitSlop={8} style={[pill, { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }]}>
+          <Txt size={18} w="semi" color={C.text}>
+            ✕
           </Txt>
         </Pressable>
       </View>
@@ -93,7 +102,7 @@ export default function Player() {
       <View style={{ flexGrow: 1 }} />
       <Visualiser playing={t.playing} />
 
-      <View style={{ backgroundColor: C.bg, paddingTop: 20, paddingHorizontal: 24, paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 28, gap: 14 }}>
+      <View style={{ backgroundColor: C.bg, paddingTop: 20, paddingHorizontal: 24, paddingBottom: Math.max(28, insets.bottom + 12), gap: 14 }}>
         <View style={[s.row, { gap: 14 }]}>
           <Pressable accessibilityRole="link" accessibilityLabel="Change cover art" onPress={() => router.push('/cover')}>
             <CoverImage project={project} size={60} radius={12} />

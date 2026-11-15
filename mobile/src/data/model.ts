@@ -102,7 +102,7 @@ export type Library = {
   projects: Project[];
   currentId: string | null;
   coverPhotoKey: string | null;
-  /** The finished song the Player has loaded. */
+  /** The finished song played last. */
   songId?: string | null;
   /** Set once songs from before the Vault held only finished ones have been carried over. */
   vault?: 1;

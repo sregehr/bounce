@@ -20,6 +20,8 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
   const [took, setTook] = useState<number | null>(null);
   const started = useRef(0);
   const first = useRef(true);
+  // Set when the user asked to hear something that still has to be rendered.
+  const wanted = useRef(false);
   const take = activeTake(project);
   const rawKey = project && options.compare ? `${project.id}:${project.beat.key}:${take?.id}:${JSON.stringify(take?.loop)}:${project.beat.bpm}` : '';
 
@@ -48,7 +50,8 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     wasFocused.current = focused;
     if (!focused || !mix || (options.compare && !raw)) return;
     // Plays by itself the first time; coming back to the screen loads it paused.
-    const autoplay = first.current ? options.autoplay !== false : returning ? false : undefined;
+    const autoplay = wanted.current ? true : first.current ? options.autoplay !== false : returning ? false : undefined;
+    wanted.current = false;
     first.current = false;
     load(autoplay);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,10 +64,11 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     play(id, {
       a: { channels: mix.channels, sampleRate: mix.sampleRate },
       b: options.compare && raw ? { channels: raw, sampleRate: mix.sampleRate } : undefined,
-      keepPosition: true,
+      // Asked to play, it starts from the top; otherwise a re-render carries on from where it was.
+      keepPosition: autoplay !== true,
       autoplay,
     }).catch((e) => setError(e instanceof Error ? e.message : 'Could not play.'));
   }
 
-  return { ...state, error: state.error ?? error, t, took, id, toggle: () => (t.loaded ? toggle() : load(true)), pause, seek, setSide };
+  return { ...state, error: state.error ?? error, t, took, id, toggle: () => (t.loaded ? toggle() : load(true)), playWhenReady: () => void (wanted.current = true), pause, seek, setSide };
 }

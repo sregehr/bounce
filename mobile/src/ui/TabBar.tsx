@@ -4,8 +4,8 @@ import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
-import { micLead, mixLead, playerLead, type Lead } from '@/data/songs';
-import { openSong, setCurrent, useLibrary } from '@/data/store';
+import { micLead, mixLead, songLead, type Lead } from '@/data/songs';
+import { setCurrent, useLibrary } from '@/data/store';
 import { useEngine } from '@/engine/engine';
 
 import { MicIcon, Txt } from './kit';
@@ -44,11 +44,12 @@ function VaultGlyph({ on, color }: IconProps) {
   );
 }
 
-function PlayerGlyph({ on, color }: IconProps) {
+function SongGlyph({ on, color }: IconProps) {
   return (
     <Glyph>
-      <Circle cx={12} cy={12} r={8.6} stroke={color} fill={on ? color : 'none'} {...stroke} />
-      <Path d="M10.3 8.6v6.8l5.4-3.4z" stroke={on ? C.bg : color} fill={on ? C.bg : color} strokeWidth={1.2} strokeLinejoin="round" />
+      <Path d="M9.5 17.5V6.2l9-2v11.3" stroke={color} {...stroke} />
+      <Circle cx={7} cy={17.5} r={2.5} stroke={color} fill={on ? color : 'none'} {...stroke} />
+      <Circle cx={16} cy={15.5} r={2.5} stroke={color} fill={on ? color : 'none'} {...stroke} />
     </Glyph>
   );
 }
@@ -83,7 +84,7 @@ function GearGlyph({ color }: { color: string }) {
  * as you move between them. A lead may carry a hint for the screen to show.
  */
 function follow(lead: Lead | { to: '/vault' | '/settings'; id?: null; hint?: undefined }, from: string) {
-  if (lead.id) (lead.to === '/player' ? openSong : setCurrent)(lead.id);
+  if (lead.id) setCurrent(lead.id);
   if (lead.to === from) return router.setParams({ hint: lead.hint });
   const href = { pathname: lead.to, params: lead.hint ? { hint: lead.hint } : {} } as const;
   if (router.canDismiss()) router.dismissAll();
@@ -151,7 +152,7 @@ export function TopNav() {
   );
 }
 
-/** Bottom navigation: Home, Player, the mic, Mix, Vault. Every tab always works; one with nothing to show yet leads to the step that gets there. */
+/** Bottom navigation: Home, Song, the mic, Mix, Vault. Every tab always works; one with nothing to show yet leads to the step that gets there. */
 export function TabBar() {
   const { path, library, tab } = useNav();
   const insets = useSafeAreaInsets();
@@ -164,7 +165,7 @@ export function TabBar() {
     <View accessibilityRole="tablist" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom, borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.14)' }, glass]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', height: TAB_BAR_HEIGHT, paddingHorizontal: 4 }}>
         <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
-        <Item label="Player" on={is('player')} onPress={() => follow(playerLead(library), path)} Icon={PlayerGlyph} />
+        <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
         <View style={{ width: 76, height: TAB_BAR_HEIGHT, alignItems: 'center' }}>
           <Pressable
             accessibilityRole="button"

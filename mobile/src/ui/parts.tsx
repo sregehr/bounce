@@ -9,7 +9,7 @@ import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
-import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, Txt, s } from './kit';
+import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
 
 export function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
@@ -191,9 +191,7 @@ export function ClapCheck({ input, onDone, onCancel }: { input: EngineState['inp
 
 const HINTS: Record<Hint, string> = {
   beat: 'Start with a beat. Capture one, import a file or pick a demo song, and the rest opens up.',
-  take: 'Nothing to play yet. Record a take here, then finish it to hear it in the Player.',
   mix: 'Nothing to mix yet. Record a take here and it opens in the mix.',
-  finish: 'No finished songs yet. Pick your best take, then tap Finish song to put it in the Vault and the Player.',
 };
 
 /** What a tab says when it led here because its own screen has nothing to show yet. */
@@ -206,5 +204,29 @@ export function Guide({ show }: { show: Hint[] }) {
         {HINTS[hint]}
       </Txt>
     </View>
+  );
+}
+
+const TONES = { plain: C.muted, good: C.text, todo: C.accent, bad: C.recText } as const;
+
+/** A small pill that states one fact about the song. With `onPress` it also opens more detail. */
+export function Status({ label, tone = 'plain', onPress, expanded, hint }: { label: string; tone?: keyof typeof TONES; onPress?: () => void; expanded?: boolean; hint?: string }) {
+  const color = TONES[tone];
+  return (
+    <Pressable
+      accessibilityRole={onPress ? 'button' : 'text'}
+      accessibilityLabel={hint ? `${label}. ${hint}` : label}
+      accessibilityState={onPress ? { expanded: !!expanded } : undefined}
+      disabled={!onPress}
+      onPress={onPress}
+      hitSlop={6}
+      style={{ minHeight: 28, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1, borderColor: tone === 'todo' || tone === 'bad' ? color : C.borderStrong, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+    >
+      {tone === 'good' && <TickIcon />}
+      <Txt size={12} w="semi" color={color}>
+        {label}
+        {onPress ? (expanded ? '  ▴' : '  ▾') : ''}
+      </Txt>
+    </Pressable>
   );
 }

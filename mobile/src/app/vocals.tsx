@@ -101,7 +101,7 @@ export default function Vocals() {
         </Pressable>
       </View>
 
-      {!active && project.takes.length === 0 && <Guide show={['take', 'mix']} />}
+      {!active && project.takes.length === 0 && <Guide show={['mix']} />}
 
       <Card style={{ padding: 16, gap: 12 }}>
         <View style={[s.row, s.between]}>
@@ -199,7 +199,7 @@ export default function Vocals() {
           onPress={() => (mode === 'recording' ? finish() : begin('recording'))}
         />
         <Btn
-          label={mode === 'recording' ? 'Done, hear it back' : project.takes.length ? 'Takes and mix' : 'Record a take to mix it'}
+          label={mode === 'recording' ? 'Done, hear it back' : project.takes.length ? 'Hear it back' : 'Record a take to hear it back'}
           disabled={task.busy || (mode !== 'recording' && project.takes.length === 0)}
           onPress={() => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')))}
           style={{ alignSelf: 'stretch' }}

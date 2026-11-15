@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useBackup } from '@/data/backup';
 import { CoverImage } from '@/cover/CoverImage';
 import type { Project } from '@/data/model';
-import { mixLead, songsIn } from '@/data/songs';
+import { songLead, songsIn } from '@/data/songs';
 import { deleteProject, openSong, setCurrent, useLibrary } from '@/data/store';
 import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { C, clock, dayLabel, lufs } from '@/ui/theme';
@@ -33,10 +33,10 @@ export default function Vault() {
     void deleteProject(p.id);
   };
   // With nothing finished yet, the Vault points at the step that gets a song here.
-  const next = mixLead(library);
+  const next = songLead(library);
   const start = () => {
     if (next.id) setCurrent(next.id);
-    router.push({ pathname: next.to, params: next.to === '/playback' ? { hint: 'finish' } : next.hint ? { hint: next.hint } : {} });
+    router.push({ pathname: next.to, params: next.hint ? { hint: next.hint } : {} });
   };
 
   return (
@@ -70,7 +70,7 @@ export default function Vault() {
                   {meta(p)}
                 </Txt>
                 <Txt size={12} w="semi" color={C.accent} numberOfLines={1}>
-                  {library.songId === p.id ? `In the player · ${tag(p)}` : tag(p)}
+                  {library.songId === p.id ? `Last played · ${tag(p)}` : tag(p)}
                 </Txt>
               </View>
             </Pressable>
@@ -84,8 +84,8 @@ export default function Vault() {
             <Txt size={22} w="display">
               Nothing finished yet
             </Txt>
-            <Muted>The Vault holds your finished songs: the ones you want to play, share and promote. Takes stay with their beat until you finish one.</Muted>
-            <Btn label={next.to === '/playback' ? 'Finish a song' : next.to === '/vocals' ? 'Record a take' : 'Add a beat'} onPress={start} style={{ flex: 0 }} />
+            <Muted>The Vault holds your finished songs: the ones you want to play, share and promote. Pick a take on the Song tab, shape it in Mix, then tap Finish song.</Muted>
+            <Btn label={next.to === '/song' ? 'Open your song' : 'Add a beat'} onPress={start} style={{ flex: 0 }} />
           </View>
         ) : (
           shown.length === 0 && (

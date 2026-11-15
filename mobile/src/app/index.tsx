@@ -24,7 +24,7 @@ export default function Home() {
   const task = useTask();
   const latest = projects[0];
 
-  const open = (p: Project, to: '/vocals' | '/playback') => {
+  const open = (p: Project, to: '/vocals' | '/song') => {
     setCurrent(p.id);
     router.push(to);
   };
@@ -76,7 +76,7 @@ export default function Home() {
             <Eyebrow>Your beats</Eyebrow>
           </View>
           {projects.map((p, i) => (
-            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, p.takes.length ? '/playback' : '/vocals')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
+            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, '/song')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
               <Txt size={16} w="semi" numberOfLines={1} style={{ flexShrink: 1 }}>
                 {p.name}
               </Txt>

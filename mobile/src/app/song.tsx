@@ -6,10 +6,11 @@ import { tempoLine } from '@/data/labels';
 import type { Take } from '@/data/model';
 import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
-import { Btn, Eyebrow, Muted, RoundPlay, Screen, SeekTrack, Txt, s } from '@/ui/kit';
+import { Btn, Eyebrow, Muted, Screen, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
 import { Status, SwipeRow } from '@/ui/parts';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
+import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
 
 // Height of the pinned next step, above the floating bar.
@@ -19,15 +20,14 @@ const NEXT_HEIGHT = 62;
 export default function Song() {
   const project = useProject();
   const take = activeTake(project);
-  const song = useSong(take ? project : null, { autoplay: false });
+  const repeat = useRepeat();
+  const song = useSong(take ? project : null, { autoplay: false, repeat });
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const insets = useSafeAreaInsets();
   useStopOnLeave();
 
   if (!project || project.saved) return <Redirect href="/" />;
 
-  const { t, mix } = song;
-  const progress = t.duration > 0 ? t.position / t.duration : 0;
   const about = (k: Take) => [dayLabel(k.createdAt), clock(k.durationSec), k.origin === 'kept' ? 'kept' : k.origin === 'punched' ? 'punched in' : null].filter(Boolean).join(' · ');
   /** Tapping a take picks it and plays it polished over the beat; tapping the picked one plays or pauses. */
   const pick = (k: Take) => {
@@ -57,11 +57,8 @@ export default function Song() {
 
         {take ? (
           <View>
-            <View style={[s.row, { gap: 12, paddingBottom: 6 }]}>
-              <RoundPlay playing={t.playing} onPress={song.toggle} disabled={!mix} />
-              <SeekTrack peaks={take.wave} height={44} progress={progress} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" style={{ flex: 1 }} />
-            </View>
-            <Txt size={13} color={song.error ? C.recText : C.muted} style={{ paddingBottom: 6 }}>
+            <Transport project={project} take={take} song={song} />
+            <Txt size={13} color={song.error ? C.recText : C.muted} style={{ paddingTop: 8, paddingBottom: 6 }}>
               {song.error ?? (song.busy ? `Polishing take ${take.number}…` : `Take ${take.number}, polished over the beat`)}
             </Txt>
             {[...project.takes].reverse().map((k) => {

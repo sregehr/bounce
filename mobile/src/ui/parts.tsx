@@ -3,15 +3,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
-import type { Beat, LoopChoice } from '@/data/model';
 import type { Hint } from '@/data/songs';
-import { barSeconds, barsIn, loopSeconds } from '@/data/studio';
 
 import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
-import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Segmented, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
+import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
 
 export function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
@@ -295,40 +293,6 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
         <View pointerEvents={open || dragging ? 'none' : 'auto'}>{children}</View>
         {open && <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => settle(false)} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />}
       </Animated.View>
-    </View>
-  );
-}
-
-const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
-
-/** Which part of the beat plays: a loop of 8 or 16 bars starting on a chosen bar, or the whole beat once through. */
-export function BeatSection({ beat, loop, onChange }: { beat: Beat; loop: LoopChoice; onChange: (loop: LoopChoice) => void }) {
-  const region = loopSeconds(beat, loop);
-  const total = barsIn(beat);
-  const first = (region?.startBar ?? 0) + 1;
-  const length = loop.bars === 8 ? '8 bars' : loop.bars === 16 ? '16 bars' : 'Whole beat';
-  if (!barSeconds(beat.bpm)) return <Muted size={13}>Set the tempo in the beat details to loop 8 or 16 bars of the beat. Until then the whole beat plays through.</Muted>;
-  return (
-    <View style={{ gap: 8 }}>
-      <View style={[s.row, s.between]}>
-        <Txt size={15} w="semi">
-          Beat
-        </Txt>
-        <Txt size={13} color={C.muted}>
-          {region ? `bars ${first}–${first + region.bars - 1} on loop` : 'whole beat, once through'}
-        </Txt>
-      </View>
-      <Segmented options={LENGTHS} value={length} onChange={(l) => onChange({ ...loop, bars: l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0 })} variant="inset" />
-      {region && total > region.bars && (
-        <View style={[s.row, s.between]}>
-          <NavLink size={13} style={{ minHeight: 28 }} onPress={() => onChange({ ...loop, startBar: Math.max(0, region.startBar - 4) })}>
-            Start 4 bars earlier
-          </NavLink>
-          <NavLink size={13} style={{ minHeight: 28 }} onPress={() => onChange({ ...loop, startBar: Math.min(total - region.bars, region.startBar + 4) })}>
-            Start 4 bars later
-          </NavLink>
-        </View>
-      )}
     </View>
   );
 }

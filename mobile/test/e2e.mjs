@@ -373,6 +373,10 @@ async function finish() {
   await tap('Open your song');
   await expectText('Not in the Vault yet', 'the Vault leads to the song, which says it is not finished');
   await expectText('Has lyrics');
+  await expectText('on loop', 'the song page has the same repeat and bar controls as the mix');
+  await tap('Repeat');
+  await tap('Repeat');
+  await shot('13b-song-transport');
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'the mix opens from the song', 30000);
   await shot('13c-mix');

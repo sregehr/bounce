@@ -93,9 +93,15 @@ export default function Export() {
         )}
         <Btn label={canShareFiles() ? 'Share' : `Save ${plural(count, 'file')}`} busy={task.busy} onPress={() => run(canShareFiles() ? 'share' : 'save')} />
         {canShareFiles() && <Btn kind="outline" label="Save to Files" size={16} disabled={task.busy} onPress={() => run('save')} style={{ flex: 0 }} />}
-        <NavLink to="/cover" center>
-          Add cover art and play it
-        </NavLink>
+        {project.saved ? (
+          <NavLink to="/cover" center>
+            Change the cover art
+          </NavLink>
+        ) : (
+          <NavLink to="/cover?finish=1" center>
+            Name it and save it to the Vault
+          </NavLink>
+        )}
         <Muted size={12} center>
           M4A export comes with the phone app; browsers cannot encode it reliably.
         </Muted>

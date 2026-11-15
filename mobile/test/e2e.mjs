@@ -85,7 +85,9 @@ async function type(label, value) {
   const handle = await page.evaluateHandle((label) => [...document.querySelectorAll('input,textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop(), label);
   const el = handle.asElement();
   if (!el) return log(false, `type into "${label}"`, 'no such field');
-  await el.click({ clickCount: 3 });
+  await el.click();
+  // Select what is there so typing replaces it; a triple click only picks one line or word.
+  await el.evaluate((n) => n.select());
   await page.keyboard.press('Backspace');
   await el.type(value, { delay: 5 });
 }
@@ -177,7 +179,11 @@ async function onboarding() {
 const transportPlaying = () => state(() => !![...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).find((n) => n.getAttribute('aria-label') === 'Pause'));
 
 async function song() {
-  await tap('Freestyle over it', { exact: false });
+  // Nothing is recorded yet, so Mix and Player both lead to the mic and say why.
+  await tap('Mix');
+  await expectText('Nothing to mix yet', 'Mix leads to recording when there are no takes');
+  await tap('Player');
+  await expectText('Nothing to play yet', 'Player leads to recording when there are no takes');
   await expectText('Always listening', 'vocals screen opens');
   await expectText('Mic: Fake', 'microphone connects by itself once allowed', 8000);
   await shot('07-vocals-idle');
@@ -188,23 +194,23 @@ async function song() {
   await sleep(4000);
   await tap('Done, hear it back');
   await expectText('Take 1', 'playback opens on the new take', 10000);
-  await expectText(/ready in [\d.]+ s/, 'polish finishes', 30000);
+  await expectText(/Polished\s/, 'polish finishes', 30000);
   log(await transportPlaying(), 'the polished take plays by itself');
   await shot('09-playback');
-  await tap('Raw take');
+  await tap('Compare with raw');
   await sleep(300);
-  await tap('Polished');
+  await tap('Compare with raw');
   await tap('Melodic');
-  await expectText(/updating|working/i, 'changing the style re-renders', 4000);
-  await expectText(/ready in [\d.]+ s/, 'second polish finishes', 30000);
-  await tap('Tweak it', { exact: false });
+  await expectText(/Updating…|Polishing…/, 'changing the style re-renders', 4000);
+  await expectText(/Polished\s/, 'second polish finishes', 30000);
   await expectText('Double track, nudged and panned');
   await slide('Vocal level', 0.9);
-  await expectText(/ready in [\d.]+ s/, 'vocal level change renders', 30000);
+  await expectText(/Polished\s/, 'vocal level change renders', 30000);
   await shot('10-playback-tweak');
 
   // A second take, then punch in over it.
-  await tap('Run it back');
+  // The mic in the bar is how another take is recorded from the song page.
+  await tap('Freestyle over Night bus');
   await expectText('Always listening');
   await tap('Punch in at bar 5', { exact: false });
   await tap('Start recording');
@@ -217,10 +223,17 @@ async function song() {
   await sleep(3500);
   await tap('Keep that');
   await expectText('Take 3', 'kept take opens in playback', 10000);
-  await expectText('kept from the last 60 s');
-  await expectText(/ready in [\d.]+ s/, 'kept take is polished', 30000);
+  await expectText(/0:0\d · kept/, 'the page shows the take in the mix');
+  await expectText(/Polished\s/, 'kept take is polished', 30000);
+  // The other takes are behind "Change": each can be heard on its own, then chosen.
+  await tap('Change take');
+  await expectText('Previews play the raw vocal', 'the takes open as a list to choose from');
+  await tap('Preview take 2');
+  await sleep(500);
+  log(await state(() => !!document.querySelector('[aria-label="Stop take 2"]')), 'a take can be previewed before it is chosen');
+  await shot('10b-take-picker');
   await tap('Take 1');
-  await expectText(/ready in [\d.]+ s/, 'switching takes renders', 30000);
+  await expectText(/Polished\s/, 'switching takes renders', 30000);
   await tap('Pause', { optional: true });
   await tapTrack('Position in take', 0.75);
   let at = await trackAt('Position in take');
@@ -232,9 +245,8 @@ async function song() {
   log(at >= 18 && at <= 45, 'tapping the track during playback jumps there', `at ${at}%`);
   await tap('Pause');
 
-  await tap('Tweak it', { exact: false });
-  await tap('Advanced: EQ', { exact: false });
-  await expectText('Starting from what Auto chose for this take', 'advanced shows the automatic chain', 15000);
+  // The chains sit on the song page itself: EQ, compressor, de-esser and limiter for vocal, beat and master.
+  await expectText('Starting from what Auto chose for this take', 'the song page shows the automatic chain', 15000);
   await shot('11-advanced');
   await slide('Gain', 0.9);
   await expectText('Set by hand', 'editing a band marks the chain as set by hand', 5000);
@@ -249,7 +261,7 @@ async function song() {
   await slide('Gain', 0.7);
   await shot('12-advanced-master');
 
-  await tap('Next: Master');
+  await tap('Finish song');
   await expectText('Set by hand', 'master screen says the chain was set by hand');
   await tap('Punchy');
   await expectText('Slower compressor attack', 'choosing a style explains itself', 20000);
@@ -294,7 +306,24 @@ function unzipNames(file) {
 }
 
 async function finish() {
-  await tap('Export');
+  // Nothing is finished yet: the Vault says so and leads back to the song page.
+  await tap('Vault');
+  await expectText('Nothing finished yet', 'the Vault starts empty');
+  await shot('13b-vault-empty');
+  await tap('Finish a song');
+  await expectText('Not in the Vault yet', 'the Vault leads to the song page, which says the song is not finished');
+  await tap('Change take');
+  await expectText('in the mix', 'the song page lists the takes');
+  await tap('Change take');
+  await shot('13c-song-page');
+  await tap('Send stems to an engineer');
+  await expectText('stems.zip to your downloads', 'stems are saved from the song page', 30000);
+  const stemZip = (await waitDownloads(1)).find((f) => f.endsWith('stems.zip'));
+  const stemNames = stemZip ? unzipNames(path.join(DOWNLOADS, stemZip)) : [];
+  log(stemNames.length === 3, 'the stems ZIP holds the beat and both vocals', stemNames.join(', '));
+  await tap('Finish song');
+  await expectText('Next: name and cover', 'finishing starts with the master');
+  await tap('Export without saving');
   await expectText('Loud, for socials and demos', 'export screen opens');
   await tap('Loud, for socials and demos');
   await tap('Vocals only');
@@ -303,7 +332,7 @@ async function finish() {
   // Chrome offers a share sheet, so saving is the second button; without one it is the only button.
   if (!(await tap('Save to Files', { optional: true }))) await tap('Save 3 files');
   await expectText('3 files saved to your downloads as Night bus.zip', 'export finishes', 60000);
-  const files = await waitDownloads(1);
+  const files = await waitDownloads(2);
   const names = files.includes('Night bus.zip') ? unzipNames(path.join(DOWNLOADS, 'Night bus.zip')) : [];
   log(names.length === 3 && names.every((n) => n.endsWith('.wav')), 'the ZIP holds three WAV files', names.join(', ') || files.join(', '));
   // Then one file on its own, to check the audio itself.
@@ -311,12 +340,14 @@ async function finish() {
   await tap('Instrumental, mastered to match');
   if (!(await tap('Save to Files', { optional: true }))) await tap('Save 1 file');
   await expectText('Saved Night bus.wav to your downloads', 'a single file is saved as it is', 60000);
-  await waitDownloads(2);
+  await waitDownloads(3);
   const header = fs.existsSync(path.join(DOWNLOADS, 'Night bus.wav')) ? fs.readFileSync(path.join(DOWNLOADS, 'Night bus.wav')) : null;
   log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
 
-  await tap('Add cover art and play it');
-  await expectText('Add a photo of yourself', 'cover screen asks for a photo');
+  await tap('Name it and save it to the Vault');
+  await expectText('Finish song', 'the last step names the song');
+  await expectText('Add a photo of yourself', 'and asks for a cover photo');
+  await type('Song title', 'Night bus');
   await shot('15-cover-empty');
   await choose('Choose a photo', PHOTO);
   const found = await waitFor(/Same person, same pose|colour treatment/i, 90000);
@@ -331,8 +362,8 @@ async function finish() {
   await tap('Stage');
   await sleep(400);
   await shot('19-cover-stage');
-  await tap('Set as cover and backdrop');
-  await expectText('Prod. Lowkey', 'player shows the credit', 15000);
+  await tap('Save to the Vault');
+  await expectText('Prod. Lowkey', 'the finished song opens in the player', 15000);
   await expectText(/Mastered · Punchy · −\d+ LUFS/i, 'player shows the master', 30000);
   await sleep(1500);
   log(await transportPlaying(), 'the song plays in the player');
@@ -348,30 +379,35 @@ async function finish() {
   await shot('21-snippet');
   if (!(await tap('Save video', { optional: true }))) await tap('Share video');
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
-  const video = (await waitDownloads(3)).find((f) => /snippet\.(mp4|webm)$/.test(f));
+  const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');
-  await tap('Save to the vault');
-  await expectText('Search your bars', 'vault opens');
+  await tap('Done, back to the Vault');
+  await expectText('Search your songs', 'vault opens');
   await expectText('Snippet made');
+  await expectText('In the player', 'the Vault marks the loaded song');
   await shot('22-vault');
-  await type('Search your bars', 'red light');
-  await expectText('Night bus · Take', 'search finds a word in the lyrics');
-  await type('Search your bars', 'zzzz');
+  await type('Search your songs', 'red light');
+  await expectText('Has lyrics', 'search finds a word in the lyrics');
+  await type('Search your songs', 'zzzz');
   await expectText('Nothing in the vault matches');
-  await type('Search your bars', '');
-  await tap('Send stems to an engineer');
-  await expectText('stems.zip to your downloads', 'stems are saved', 30000);
-  const stemZip = (await waitDownloads(4)).find((f) => f.endsWith('stems.zip'));
-  const stemNames = stemZip ? unzipNames(path.join(DOWNLOADS, stemZip)) : [];
-  log(stemNames.length === 3, 'the stems ZIP holds the beat and both vocals', stemNames.join(', '));
+  await type('Search your songs', '');
+  // The finished song is its own copy: the beat keeps all three takes, and the tabs know which is which.
+  await tap('Open Night bus');
+  await expectText('Prod. Lowkey', 'a Vault song opens in the player', 15000);
+  await tap('Mix');
+  await expectText('In the Vault', 'Mix opens the song page of the beat it came from, now marked as finished', 10000);
+  await tap('Player');
+  await expectText('Prod. Lowkey', 'Player returns to the loaded song', 15000);
 }
 
 async function library() {
   await tap('Home');
   await expectText('FREESTYLE OVER', 'home shows the latest beat');
   await expectText('3 takes');
-  await expectText('Mastered · open the player');
   await shot('23-home');
+  await tap('Open Night bus');
+  await expectText('Finish song', 'a beat with takes opens its song page', 10000);
+  await tap('Home');
   await tap('Settings');
   await expectText('Timing');
   await expectText('Everything is backed up', 'the library is backed up to the server', 30000);
@@ -451,7 +487,7 @@ async function library() {
   await sleep(3500);
   await tap('Done, hear it back');
   await expectText('Take 1', 'the take opens in playback', 10000);
-  await expectText(/ready in [\d.]+ s/, 'and is polished', 30000);
+  await expectText(/Polished\s/, 'and is polished', 30000);
   log(await transportPlaying(), 'and plays');
   await shot('28-playback-48k');
 }

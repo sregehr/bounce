@@ -17,7 +17,7 @@ import { router, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { TAB_BAR_HEIGHT, tabFor } from './tabs';
+import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, tabFor } from './tabs';
 import { C, F, type Weight } from './theme';
 
 // ---------- Text ----------
@@ -108,11 +108,12 @@ export function Screen({
   const insets = useSafeAreaInsets();
   // On tabbed screens the content runs under the bar, so it ends clear of it (and of the raised mic button).
   const tabbed = tabFor(usePathname()) !== null;
+  const top = Math.max(60, insets.top + 16);
   const content: ViewStyle = {
     flexGrow: 1,
     gap,
     paddingHorizontal: padX,
-    paddingTop: Math.max(60, insets.top + 16),
+    paddingTop: tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top,
     paddingBottom: tabbed ? TAB_BAR_HEIGHT + insets.bottom + 28 : (padBottom ?? Math.max(28, insets.bottom + 12)),
   };
   if (!scroll) return <View style={[{ flex: 1, backgroundColor: C.bg }, content, style]}>{children}</View>;

@@ -93,7 +93,7 @@ export default function Snippet() {
 
   return (
     <Screen>
-      <TopBar left="Snippet" right={<NavLink to={take ? '/playback' : '/player'} back>Back</NavLink>} />
+      <TopBar left="Snippet" right={<NavLink to="/player" back>Back</NavLink>} />
 
       <View style={{ height: 356, borderRadius: 24, backgroundColor: C.accent, paddingVertical: 24, paddingHorizontal: 22, justifyContent: 'space-between' }}>
         <View style={{ gap: 4 }}>
@@ -159,7 +159,7 @@ export default function Snippet() {
             router.push('/vault');
           }}
         >
-          Save to the vault
+          Done, back to the Vault
         </NavLink>
         {!videoSupported() && <Muted size={12} center>This browser cannot record video, so the snippet is shared as audio.</Muted>}
       </Foot>

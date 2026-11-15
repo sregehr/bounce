@@ -39,7 +39,7 @@ export type RenderOutput = {
   durationSec: number;
   lufs: number;
   truePeakDb: number;
-  /** The chains that were actually used, for the Advanced screen. */
+  /** The chains that were actually used, for the Mix page. */
   chains: { vocal: Chain | null; beat: Chain; master: Chain };
   note: string;
   voice: VoiceStats | null;

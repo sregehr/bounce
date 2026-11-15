@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
 import { composeScene, cutOut, normalisePhoto } from '@/cover/compose';
 import { blobUrl, blobs } from '@/data/db';
 import { newId, SCENES, type SceneId } from '@/data/model';
-import { patchProject, update, useLibrary, useProject } from '@/data/store';
-import { Btn, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { dropBlob, finishSong, patchProject, update, useLibrary, useProject } from '@/data/store';
+import { Btn, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
 import { C } from '@/ui/theme';
 
@@ -17,6 +17,9 @@ type Made = Record<SceneId, { blob: Blob; url: string }>;
 
 export default function Cover() {
   const project = useProject();
+  // The last step of finishing a song: name it, choose its cover, and save it to the Vault.
+  const finishing = !!useLocalSearchParams<{ finish?: string }>().finish && !project?.saved;
+  const [title, setTitle] = useState(project?.name ?? '');
   const lastPhoto = useLibrary((l) => l.coverPhotoKey);
   const task = useTask();
   const [made, setMade] = useState<Made | null>(null);
@@ -84,21 +87,36 @@ export default function Cover() {
     });
 
   const apply = () =>
-    made &&
+    (made || finishing) &&
     task.run(async () => {
-      const imageKey = `cover-${newId()}`;
-      await blobs.put(imageKey, made[scene].blob);
-      const old = cover.imageKey;
-      patchProject(project.id, (p) => ({ cover: { ...p.cover, scene, imageKey } }));
-      if (old) void blobs.delete(old).catch(() => {});
-      router.replace('/player');
+      if (made) {
+        const imageKey = `cover-${newId()}`;
+        await blobs.put(imageKey, made[scene].blob);
+        const old = cover.imageKey;
+        patchProject(project.id, (p) => ({ cover: { ...p.cover, scene, imageKey } }));
+        if (old) void dropBlob(old);
+      }
+      if (!finishing) return router.replace('/player');
+      // The finished song opens in the Player, one level above Home like any tab.
+      finishSong(project.id, title);
+      if (router.canDismiss()) router.dismissAll();
+      router.push('/player');
     });
 
   const working = task.busy;
 
   return (
     <Screen>
-      <TopBar left="Cover art" right={<NavLink to="/player" replace>Skip</NavLink>} />
+      <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to="/master" back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />
+
+      {finishing && (
+        <View style={{ gap: 6 }}>
+          <Txt size={12} color={C.muted}>
+            Title
+          </Txt>
+          <Field label="Song title" value={title} onChangeText={setTitle} placeholder={project.name} maxLength={60} returnKeyType="done" />
+        </View>
+      )}
 
       <View style={{ height: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
         {made ? (
@@ -152,7 +170,8 @@ export default function Cover() {
         <Muted size={13} lh={1.4}>
           Ask before you shoot someone else. The cut-out is made in this browser; the photo is not sent anywhere.
         </Muted>
-        <Btn label="Set as cover and backdrop" disabled={!made} busy={working && !!made} onPress={apply} />
+        <Btn label={finishing ? 'Save to the Vault' : 'Set as cover and backdrop'} disabled={!made && !finishing} busy={working && (!!made || finishing)} onPress={apply} />
+        {finishing && !made && !working && <Muted size={13} center>No photo? It is saved with a plain cover you can change later.</Muted>}
       </Foot>
     </Screen>
   );

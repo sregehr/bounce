@@ -66,7 +66,7 @@ export type Project = {
   takeId: string | null;
   polish: Polish;
   master: MasterSettings;
-  /** Chains edited by hand on the Advanced screen. */
+  /** Chains edited by hand on the Mix page. */
   overrides: { vocal?: Chain; beat?: Chain; master?: Chain };
   exporting: ExportChoice;
   snippet: SnippetChoice;
@@ -74,6 +74,8 @@ export type Project = {
   lyrics: string;
   /** Numbers from the last master, shown in lists without rendering again. */
   stats: { lufs: number; truePeakDb: number; durationSec: number } | null;
+  /** Set on a finished song in the Vault: when it was saved, and the beat it was made from. */
+  saved?: { at: number; from: string };
 };
 
 export type Profile = { artist: string; producer: string; onboarded: boolean };
@@ -88,11 +90,23 @@ export type Settings = {
   backup: boolean;
   /** Identifies this browser to the backup until there are accounts. */
   deviceId: string;
-  /** A vocal chain saved from the Advanced screen. */
+  /** A vocal chain saved from the Mix page. */
   vocalPreset?: Chain;
 };
 
-export type Library = { version: 1; profile: Profile; settings: Settings; projects: Project[]; currentId: string | null; coverPhotoKey: string | null };
+export type Library = {
+  version: 1;
+  profile: Profile;
+  settings: Settings;
+  /** Beats being worked on and finished songs together; a finished song has `saved` set. */
+  projects: Project[];
+  currentId: string | null;
+  coverPhotoKey: string | null;
+  /** The finished song the Player has loaded. */
+  songId?: string | null;
+  /** Set once songs from before the Vault held only finished ones have been carried over. */
+  vault?: 1;
+};
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 

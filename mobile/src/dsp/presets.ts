@@ -3,7 +3,7 @@ import { clamp } from './core';
 
 export type Band = { type: 'lowshelf' | 'peaking' | 'highshelf'; freq: number; gain: number; q: number };
 
-/** One processing chain, as shown on the Advanced screen. */
+/** One processing chain, as shown on the Mix page. */
 export type Chain = {
   eq: Band[];
   comp: { threshold: number; ratio: number; attack: number; release: number; makeup: number };
@@ -151,7 +151,7 @@ export function masterPlan(settings: MasterSettings, mix: { balance: Balance; lu
   };
 }
 
-/** One-line summaries for the Advanced screen's collapsed sections. */
+/** One-line summaries for the Mix page's collapsed sections. */
 export function summarise(chain: Chain) {
   const dB = (v: number, d = 0) => `${v < 0 ? '−' : v > 0 ? '+' : ''}${Math.abs(v).toFixed(d)} dB`;
   const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')} kHz` : `${Math.round(v)} Hz`);

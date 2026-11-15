@@ -1,141 +1,106 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { useBackup } from '@/data/backup';
-import { fileBase } from '@/data/exporting';
-import { saveFiles } from '@/data/files';
-import type { Project, Take } from '@/data/model';
-import { deleteProject, deleteTake, patchProject, setCurrent, useLibrary } from '@/data/store';
-import { getMix, loadPcm } from '@/data/studio';
-import { encodeWav } from '@/dsp/wav';
-import { Btn, Eyebrow, Field, Foot, Muted, NavLink, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
-import { useTask } from '@/ui/hooks';
-import { C, clock, dayLabel } from '@/ui/theme';
+import { CoverImage } from '@/cover/CoverImage';
+import type { Project } from '@/data/model';
+import { mixLead, songsIn } from '@/data/songs';
+import { deleteProject, openSong, setCurrent, useLibrary } from '@/data/store';
+import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { C, clock, dayLabel, lufs } from '@/ui/theme';
 
-type Entry = { key: string; project: Project; take: Take | null; title: string; meta: string; tag: string; time: number; words: string };
+const meta = (p: Project) => [dayLabel(p.saved?.at ?? p.createdAt), clock(p.stats?.durationSec ?? p.beat.durationSec), p.takes.length ? null : 'instrumental'].filter(Boolean).join(' · ');
+const tag = (p: Project) => [p.overrides.master ? 'Mastered by hand' : `Mastered · ${p.master.style}`, p.stats ? lufs(p.stats.lufs, 0) : null, p.snippet.made ? 'Snippet made' : null, p.lyrics.trim() ? 'Has lyrics' : null].filter(Boolean).join(' · ');
 
-function entries(projects: Project[]): Entry[] {
-  const list: Entry[] = [];
-  for (const project of projects) {
-    if (project.takes.length === 0) {
-      list.push({
-        key: project.id,
-        project,
-        take: null,
-        title: `${project.name} · beat`,
-        meta: [dayLabel(project.createdAt), clock(project.beat.durationSec), project.stats ? project.master.style : null].filter(Boolean).join(' · '),
-        tag: project.stats ? 'Mastered instrumental' : project.beat.source === 'capture' ? 'Captured' : project.beat.source === 'import' ? 'Imported' : 'Demo beat',
-        time: project.createdAt,
-        words: project.lyrics,
-      });
-    }
-    for (const take of project.takes) {
-      const active = project.takeId === take.id;
-      list.push({
-        key: take.id,
-        project,
-        take,
-        title: `${project.name} · Take ${take.number}`,
-        meta: [dayLabel(take.createdAt), clock(take.durationSec), project.polish.style].join(' · '),
-        tag: active && project.snippet.made ? 'Snippet made' : take.origin === 'kept' ? 'Saved from the last 60 s' : take.origin === 'punched' ? 'Punched in' : active && project.lyrics.trim() ? 'Has lyrics' : active && project.stats ? 'Mastered' : 'Take',
-        time: take.createdAt,
-        words: active ? `${project.lyrics} ${project.snippet.caption}` : '',
-      });
-    }
-  }
-  return list.sort((a, b) => b.time - a.time);
-}
-
+/** Finished songs: the ones saved from a beat's song page, ready to play, share and promote. */
 export default function Vault() {
-  const projects = useLibrary((l) => l.projects);
+  const library = useLibrary((l) => l);
   const backup = useBackup();
   const [query, setQuery] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
-  const stems = useTask();
-  const [sent, setSent] = useState<string | null>(null);
-  const all = entries(projects);
+  const all = songsIn(library.projects);
   const q = query.trim().toLowerCase();
-  const shown = q ? all.filter((e) => `${e.title} ${e.meta} ${e.tag} ${e.words}`.toLowerCase().includes(q)) : all;
-  const newest = all.find((e) => e.take);
+  const shown = q ? all.filter((p) => `${p.name} ${meta(p)} ${tag(p)} ${p.lyrics} ${p.snippet.caption}`.toLowerCase().includes(q)) : all;
 
-  const open = (e: Entry) => {
-    setCurrent(e.project.id);
-    if (e.take && e.project.takeId !== e.take.id) patchProject(e.project.id, { takeId: e.take.id }, false);
+  const open = (p: Project) => {
+    openSong(p.id);
     router.push('/player');
   };
-  const remove = (e: Entry) => {
-    if (removing !== e.key) return setRemoving(e.key);
+  const remove = (p: Project) => {
+    if (removing !== p.id) return setRemoving(p.id);
     setRemoving(null);
-    void (e.take ? deleteTake(e.project.id, e.take.id) : deleteProject(e.project.id));
+    void deleteProject(p.id);
   };
-  /** The untouched parts an engineer would want: the beat, the raw vocal, and the processed vocal. */
-  const sendStems = () =>
-    newest?.take &&
-    stems.run(async () => {
-      const project = { ...newest.project, takeId: newest.take!.id };
-      const base = fileBase(`${project.name} take ${newest.take!.number}`);
-      const beat = await loadPcm(project.beat.key);
-      const raw = await loadPcm(newest.take!.key);
-      const vocals = await getMix(project, { include: 'vocals' });
-      await saveFiles(
-        [
-        { name: `${base} - beat.wav`, data: encodeWav(beat.channels, beat.sampleRate, 24), type: 'audio/wav' },
-        { name: `${base} - vocal raw.wav`, data: encodeWav(raw.channels, raw.sampleRate, 24), type: 'audio/wav' },
-        { name: `${base} - vocal processed.wav`, data: encodeWav(vocals.channels, vocals.sampleRate, 24), type: 'audio/wav' },
-        ],
-        `${base} stems`,
-      );
-      setSent(`Saved ${base} stems.zip to your downloads: the beat, the raw vocal and the processed vocal.`);
-    });
+  // With nothing finished yet, the Vault points at the step that gets a song here.
+  const next = mixLead(library);
+  const start = () => {
+    if (next.id) setCurrent(next.id);
+    router.push({ pathname: next.to, params: next.to === '/playback' ? { hint: 'finish' } : next.hint ? { hint: next.hint } : {} });
+  };
 
   return (
     <Screen gap={16}>
       <TopBar left="Vault" />
 
-      <View style={{ gap: 6 }}>
-        <Eyebrow>Search your bars</Eyebrow>
-        <Field label="Search your bars" value={query} onChangeText={setQuery} placeholder="A word, a beat, a name" returnKeyType="search" autoCorrect={false} />
-      </View>
+      {all.length > 0 && (
+        <View style={{ gap: 6 }}>
+          <Eyebrow>Search your songs</Eyebrow>
+          <Field label="Search your songs" value={query} onChangeText={setQuery} placeholder="A title, a style, a line" returnKeyType="search" autoCorrect={false} />
+        </View>
+      )}
 
       <View>
-        {shown.map((e) => (
-          <View key={e.key} style={[s.row, s.divided, { gap: 14, minHeight: 84 }]}>
-            <RoundPlay label={`Play ${e.title}`} onPress={() => open(e)} />
-            <View style={{ flex: 1, gap: 3 }}>
-              <Txt size={16} w="semi" numberOfLines={1}>
-                {e.title}
-              </Txt>
-              <Txt size={13} color={C.muted}>
-                {e.meta}
-              </Txt>
-              <Txt size={12} w="semi" color={C.accent}>
-                {e.tag}
-              </Txt>
-            </View>
-            <NavLink size={13} onPress={() => remove(e)} style={{ minHeight: 36 }}>
-              {removing === e.key ? 'Sure?' : 'Remove'}
+        {shown.map((p) => (
+          <View key={p.id} style={[s.row, s.divided, { gap: 12, minHeight: 84 }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p)} style={[s.row, { flex: 1, gap: 14, minHeight: 84 }]}>
+              <View>
+                <CoverImage project={p} size={52} radius={10} />
+                {library.songId === p.id && (
+                  <View style={{ position: 'absolute', right: -6, bottom: -6, width: 24, height: 24, borderRadius: 12, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }}>
+                    <PlayIcon size={10} color={C.bg} />
+                  </View>
+                )}
+              </View>
+              <View style={{ flex: 1, gap: 3 }}>
+                <Txt size={16} w="semi" numberOfLines={1}>
+                  {p.name}
+                </Txt>
+                <Txt size={13} color={C.muted} numberOfLines={1}>
+                  {meta(p)}
+                </Txt>
+                <Txt size={12} w="semi" color={C.accent} numberOfLines={1}>
+                  {library.songId === p.id ? `In the player · ${tag(p)}` : tag(p)}
+                </Txt>
+              </View>
+            </Pressable>
+            <NavLink size={13} onPress={() => remove(p)} style={{ minHeight: 36 }}>
+              {removing === p.id ? 'Sure?' : 'Remove'}
             </NavLink>
           </View>
         ))}
-        {shown.length === 0 && (
-          <View style={{ paddingVertical: 20 }}>
-            <Muted size={13}>{all.length === 0 ? 'Nothing here yet. Every take you record is kept in the vault.' : `Nothing in the vault matches “${query}”.`}</Muted>
+        {all.length === 0 ? (
+          <View style={{ gap: 14, paddingVertical: 8 }}>
+            <Txt size={22} w="display">
+              Nothing finished yet
+            </Txt>
+            <Muted>The Vault holds your finished songs: the ones you want to play, share and promote. Takes stay with their beat until you finish one.</Muted>
+            <Btn label={next.to === '/playback' ? 'Finish a song' : next.to === '/vocals' ? 'Record a take' : 'Add a beat'} onPress={start} style={{ flex: 0 }} />
           </View>
+        ) : (
+          shown.length === 0 && (
+            <View style={{ paddingVertical: 20 }}>
+              <Muted size={13}>{`Nothing in the vault matches “${query}”.`}</Muted>
+            </View>
+          )
         )}
       </View>
 
       <Foot gap={12}>
         <Muted size={13}>
-          Search covers beat names, styles and any lyrics you have added in the player.{' '}
+          {all.length > 0 ? 'Removing a song here leaves its beat and takes where they are. ' : ''}
           {backup.status === 'done' ? 'Everything is backed up.' : backup.status === 'working' ? `Backing up${backup.pending ? ` (${backup.pending} left)` : ''}…` : backup.status === 'unreachable' ? 'Backup server not reachable; your work is safe on this device.' : backup.status === 'off' ? 'Backup is off.' : ''}
         </Muted>
-        {(stems.error || sent) && (
-          <Txt size={13} color={stems.error ? C.recText : C.muted}>
-            {stems.error ?? sent}
-          </Txt>
-        )}
-        <Btn kind="outline" label={newest ? 'Send stems to an engineer' : 'Record a take to send stems'} disabled={!newest} busy={stems.busy} onPress={sendStems} style={{ flex: 0 }} />
       </Foot>
     </Screen>
   );

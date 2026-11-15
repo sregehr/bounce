@@ -1,6 +1,9 @@
 // Larger building blocks shared by several screens.
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+
+import type { Hint } from '@/data/songs';
 
 import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
@@ -182,6 +185,26 @@ export function ClapCheck({ input, onDone, onCancel }: { input: EngineState['inp
       <NavLink center size={14} onPress={onCancel}>
         Cancel
       </NavLink>
+    </View>
+  );
+}
+
+const HINTS: Record<Hint, string> = {
+  beat: 'Start with a beat. Capture one, import a file or pick a demo song, and the rest opens up.',
+  take: 'Nothing to play yet. Record a take here, then finish it to hear it in the Player.',
+  mix: 'Nothing to mix yet. Record a take here and it opens in the mix.',
+  finish: 'No finished songs yet. Pick your best take, then tap Finish song to put it in the Vault and the Player.',
+};
+
+/** What a tab says when it led here because its own screen has nothing to show yet. */
+export function Guide({ show }: { show: Hint[] }) {
+  const { hint } = useLocalSearchParams<{ hint?: Hint }>();
+  if (!hint || !show.includes(hint)) return null;
+  return (
+    <View accessibilityRole="alert" style={{ borderWidth: 1, borderColor: C.accent, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 }}>
+      <Txt size={14} w="medium" lh={1.4} color={C.accent}>
+        {HINTS[hint]}
+      </Txt>
     </View>
   );
 }

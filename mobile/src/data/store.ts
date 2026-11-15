@@ -4,6 +4,7 @@ import { DEFAULT_MASTER, DEFAULT_POLISH } from '@/dsp/presets';
 
 import { blobs, kv, persist } from './db';
 import { emptyLibrary, newId, type Beat, type Library, type Profile, type Project, type Settings, type Take } from './model';
+import { carryOver, makeSong } from './songs';
 
 let library: Library = emptyLibrary();
 let ready = false;
@@ -24,6 +25,7 @@ export async function loadLibrary() {
   try {
     const saved = await kv.get<Library>('library');
     if (saved && saved.version === 1) library = { ...emptyLibrary(), ...saved, settings: { ...emptyLibrary().settings, ...saved.settings } };
+    if (!library.vault) update(carryOver);
     void persist();
   } catch (e) {
     saveError = e instanceof Error ? e.message : 'Storage is not available.';
@@ -91,7 +93,7 @@ export function patchProject(id: string, patch: Partial<Project> | ((p: Project)
 /** The next free "Untitled beat N". */
 export function nextBeatName() {
   const used = new Set(library.projects.map((p) => p.name));
-  for (let n = library.projects.length + 1; ; n++) if (!used.has(`Untitled beat ${n}`)) return `Untitled beat ${n}`;
+  for (let n = library.projects.filter((p) => !p.saved).length + 1; ; n++) if (!used.has(`Untitled beat ${n}`)) return `Untitled beat ${n}`;
 }
 
 export function createProject(beat: Beat, name: string): Project {
@@ -123,10 +125,26 @@ const projectKeys = (p: Project) => [p.beat.key, ...p.takes.map((t) => t.key), p
 export async function deleteProject(id: string) {
   const project = getProject(id);
   if (!project) return;
-  update((l) => ({ ...l, projects: l.projects.filter((p) => p.id !== id), currentId: l.currentId === id ? null : l.currentId }));
-  // A cover photo may be shared with other songs; keep it if anything still uses it.
-  const still = new Set(library.projects.flatMap(projectKeys));
-  await Promise.all(projectKeys(project).filter((k) => !still.has(k)).map((k) => blobs.delete(k).catch(() => {})));
+  update((l) => ({ ...l, projects: l.projects.filter((p) => p.id !== id), currentId: l.currentId === id ? null : l.currentId, songId: l.songId === id ? null : l.songId }));
+  await Promise.all(projectKeys(project).map(dropBlob));
+}
+
+/** Deletes a stored file unless something still uses it: a finished song shares its audio and cover with the beat it came from. */
+export async function dropBlob(key: string) {
+  if (library.projects.some((p) => projectKeys(p).includes(key))) return;
+  await blobs.delete(key).catch(() => {});
+}
+
+/** Loads a finished song into the Player. */
+export const openSong = (id: string) => update((l) => (l.currentId === id && l.songId === id ? l : { ...l, currentId: id, songId: id }));
+
+/** Saves the take and settings a beat has now as a finished song in the Vault, and loads it into the Player. */
+export function finishSong(projectId: string, title: string): Project | null {
+  const project = getProject(projectId);
+  if (!project) return null;
+  const song = makeSong(project, title);
+  update((l) => ({ ...l, projects: [song, ...l.projects], currentId: song.id, songId: song.id }));
+  return song;
 }
 
 export function addTake(projectId: string, take: Take) {
@@ -140,7 +158,7 @@ export async function deleteTake(projectId: string, takeId: string) {
     const takes = p.takes.filter((t) => t.id !== takeId);
     return { takes, takeId: p.takeId === takeId ? (takes[takes.length - 1]?.id ?? null) : p.takeId };
   });
-  await blobs.delete(take.key).catch(() => {});
+  await dropBlob(take.key);
 }
 
 /** The take a project is currently working with. */

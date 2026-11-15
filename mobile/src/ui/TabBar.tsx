@@ -4,11 +4,12 @@ import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
-import { setCurrent, useLibrary, useProject } from '@/data/store';
+import { micLead, mixLead, playerLead, type Lead } from '@/data/songs';
+import { openSong, setCurrent, useLibrary } from '@/data/store';
 import { useEngine } from '@/engine/engine';
 
 import { MicIcon, Txt } from './kit';
-import { TAB_BAR_HEIGHT, tabFor, type Tab } from './tabs';
+import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, tabFor, type Tab } from './tabs';
 import { C } from './theme';
 
 type IconProps = { on: boolean; color: string };
@@ -52,7 +53,7 @@ function PlayerGlyph({ on, color }: IconProps) {
   );
 }
 
-function SettingsGlyph({ on, color }: IconProps) {
+function MixGlyph({ on, color }: IconProps) {
   const knob = { r: 2.2, stroke: color, fill: on ? color : C.bg, strokeWidth: 1.8 };
   return (
     <Glyph>
@@ -64,24 +65,41 @@ function SettingsGlyph({ on, color }: IconProps) {
   );
 }
 
-/** Tabs sit one level above the home screen, so the stack never grows as you move between them. */
-function open(to: '/' | '/vault' | '/player' | '/settings' | '/vocals', from: string) {
-  if (to === from) return;
-  if (router.canDismiss()) router.dismissAll();
-  if (to === '/') router.replace('/');
-  else router.push(to);
+function GearGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M10.3 3.6h3.4l.5 2.3 1.6.9 2.2-.8 1.7 3-1.7 1.6v1.8l1.7 1.6-1.7 3-2.2-.8-1.6.9-.5 2.3h-3.4l-.5-2.3-1.6-.9-2.2.8-1.7-3 1.7-1.6v-1.8L4.3 9l1.7-3 2.2.8 1.6-.9z"
+        stroke={color}
+        {...stroke}
+      />
+      <Circle cx={12} cy={12} r={2.8} stroke={color} strokeWidth={1.8} />
+    </Svg>
+  );
 }
 
-function Item({ label, on, disabled, onPress, Icon }: { label: string; on: boolean; disabled?: boolean; onPress: () => void; Icon: (p: IconProps) => ReactNode }) {
+/**
+ * Opens where a tab leads. Tabs sit one level above the home screen, so the stack never grows
+ * as you move between them. A lead may carry a hint for the screen to show.
+ */
+function follow(lead: Lead | { to: '/vault' | '/settings'; id?: null; hint?: undefined }, from: string) {
+  if (lead.id) (lead.to === '/player' ? openSong : setCurrent)(lead.id);
+  if (lead.to === from) return router.setParams({ hint: lead.hint });
+  const href = { pathname: lead.to, params: lead.hint ? { hint: lead.hint } : {} } as const;
+  if (router.canDismiss()) router.dismissAll();
+  if (lead.to === '/') router.replace(href);
+  else router.push(href);
+}
+
+function Item({ label, on, onPress, Icon }: { label: string; on: boolean; onPress: () => void; Icon: (p: IconProps) => ReactNode }) {
   const color = on ? C.accent : C.muted;
   return (
     <Pressable
       accessibilityRole="tab"
       accessibilityLabel={label}
-      accessibilityState={{ selected: on, disabled: !!disabled }}
-      disabled={disabled}
+      accessibilityState={{ selected: on }}
       onPress={onPress}
-      style={({ pressed }) => ({ flex: 1, height: TAB_BAR_HEIGHT, alignItems: 'center', justifyContent: 'center', gap: 3, opacity: disabled ? 0.32 : pressed ? 0.55 : 1 })}
+      style={({ pressed }) => ({ flex: 1, height: TAB_BAR_HEIGHT, alignItems: 'center', justifyContent: 'center', gap: 3, opacity: pressed ? 0.55 : 1 })}
     >
       <Icon on={on} color={color} />
       <Txt size={10} w={on ? 'semi' : 'medium'} ls={0.01} color={color}>
@@ -96,69 +114,84 @@ const glass = (Platform.OS === 'web'
   ? { backgroundColor: 'rgba(18,18,18,0.72)', backdropFilter: 'saturate(180%) blur(24px)', WebkitBackdropFilter: 'saturate(180%) blur(24px)' }
   : { backgroundColor: 'rgba(18,18,18,0.96)' }) as ViewStyle;
 
-/** Bottom navigation, on every screen after the welcome. It steps aside while a recording is running, so a stray tap cannot end a take. */
-export function TabBar() {
+/** Where the navigation is, and what is lit. It steps aside while a recording is running, so a stray tap cannot end a take. */
+function useNav() {
   const path = usePathname();
-  const tab = tabFor(path);
-  const insets = useSafeAreaInsets();
-  const projects = useLibrary((l) => l.projects);
-  const current = useProject();
+  const library = useLibrary((l) => l);
   const recording = useEngine((e) => e.take.mode !== 'idle' || e.capture.status !== 'idle');
-  if (!tab || recording) return null;
+  const tab = tabFor(path, !!library.projects.find((p) => p.id === library.currentId)?.saved);
+  return { path, library, tab: recording ? null : tab };
+}
 
-  const beat = current ?? projects[0];
-  const ready = (p: (typeof projects)[number]) => p.takes.length > 0 || !!p.stats;
-  // The player plays a bare beat too, so any project will do; one with something recorded or mastered is preferred.
-  const playable = current ?? projects.find(ready) ?? projects[0];
+/** The logo and Settings, above every screen after the welcome. */
+export function TopNav() {
+  const { path, tab } = useNav();
+  const insets = useSafeAreaInsets();
+  if (!tab) return null;
+  const on = tab === 'settings';
+  return (
+    <View style={[{ position: 'absolute', left: 0, right: 0, top: 0, paddingTop: insets.top, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.14)' }, glass]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: 24, paddingRight: 12 }}>
+        <Pressable accessibilityRole="link" accessibilityLabel="Bounce: home" onPress={() => follow({ to: '/', id: null }, path)} hitSlop={8}>
+          <Txt size={20} w="display" ls={-0.02}>
+            Bounce
+          </Txt>
+        </Pressable>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Settings"
+          accessibilityState={{ selected: on }}
+          onPress={() => follow({ to: '/settings' }, path)}
+          style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.55 : 1 })}
+        >
+          <GearGlyph color={on ? C.accent : C.muted} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** Bottom navigation: Home, Player, the mic, Mix, Vault. Every tab always works; one with nothing to show yet leads to the step that gets there. */
+export function TabBar() {
+  const { path, library, tab } = useNav();
+  const insets = useSafeAreaInsets();
+  if (!tab) return null;
   const is = (t: Tab) => tab === t;
+  const mic = micLead(library);
+  const beat = mic.id ? library.projects.find((p) => p.id === mic.id) : null;
 
   return (
     <View accessibilityRole="tablist" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom, borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.14)' }, glass]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', height: TAB_BAR_HEIGHT, paddingHorizontal: 4 }}>
-        <Item label="Home" on={is('home')} onPress={() => open('/', path)} Icon={HomeGlyph} />
-        <Item label="Vault" on={is('vault')} onPress={() => open('/vault', path)} Icon={VaultGlyph} />
+        <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
+        <Item label="Player" on={is('player')} onPress={() => follow(playerLead(library), path)} Icon={PlayerGlyph} />
         <View style={{ width: 76, height: TAB_BAR_HEIGHT, alignItems: 'center' }}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
-            accessibilityState={{ disabled: !beat, selected: is('mic') }}
-            disabled={!beat}
+            accessibilityState={{ selected: is('mic') }}
             hitSlop={6}
-            onPress={() => {
-              if (!beat) return;
-              setCurrent(beat.id);
-              open('/vocals', path);
-            }}
+            onPress={() => follow(mic, path)}
             style={({ pressed }) => ({
               position: 'absolute',
               top: -18,
               width: 62,
               height: 62,
               borderRadius: 31,
-              backgroundColor: beat ? C.accent : C.dim,
+              backgroundColor: C.accent,
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: is('mic') ? 2 : 0.5,
               borderColor: is('mic') ? C.text : 'rgba(255,255,255,0.28)',
-              boxShadow: beat ? '0 8px 22px rgba(255,176,32,0.28), 0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.5)',
+              boxShadow: '0 8px 22px rgba(255,176,32,0.28), 0 2px 6px rgba(0,0,0,0.5)',
               transform: [{ scale: pressed ? 0.93 : 1 }],
             })}
           >
-            <MicIcon size={28} color={beat ? C.bg : C.muted} />
+            <MicIcon size={28} color={C.bg} />
           </Pressable>
         </View>
-        <Item
-          label="Player"
-          on={is('player')}
-          disabled={!playable && !is('player')}
-          onPress={() => {
-            if (!playable) return;
-            setCurrent(playable.id);
-            open('/player', path);
-          }}
-          Icon={PlayerGlyph}
-        />
-        <Item label="Settings" on={is('settings')} onPress={() => open('/settings', path)} Icon={SettingsGlyph} />
+        <Item label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
+        <Item label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
       </View>
     </View>
   );

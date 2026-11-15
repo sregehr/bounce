@@ -2,13 +2,14 @@ import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { importBeat } from '@/data/beats';
-import { CoverImage } from '@/cover/CoverImage';
 import { tempoLine } from '@/data/labels';
 import type { Project } from '@/data/model';
+import { beatsIn } from '@/data/songs';
 import { setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { loopSeconds } from '@/data/studio';
-import { Btn, Eyebrow, Foot, MicIcon, Muted, NavLink, PlayIcon, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Eyebrow, Foot, MicIcon, Muted, NavLink, Screen, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
+import { Guide } from '@/ui/parts';
 import { C, plural } from '@/ui/theme';
 
 function loopLine(p: Project) {
@@ -17,13 +18,13 @@ function loopLine(p: Project) {
 }
 
 export default function Home() {
-  const projects = useLibrary((l) => l.projects);
+  // Finished songs live in the Vault; this is the list of beats being worked on.
+  const projects = beatsIn(useLibrary((l) => l.projects));
   const saveError = useSaveError();
   const task = useTask();
   const latest = projects[0];
-  const playable = projects.find((p) => p.takes.length > 0 || p.stats);
 
-  const open = (p: Project, to: '/vocals' | '/player' | '/beat') => {
+  const open = (p: Project, to: '/vocals' | '/playback') => {
     setCurrent(p.id);
     router.push(to);
   };
@@ -31,13 +32,7 @@ export default function Home() {
 
   return (
     <Screen gap={20}>
-      <TopBar
-        left={
-          <Txt size={22} w="display">
-            Bounce
-          </Txt>
-        }
-      />
+      {projects.length === 0 && <Guide show={['beat']} />}
 
       {latest ? (
         <Pressable accessibilityRole="button" accessibilityLabel={`Freestyle over ${latest.name}`} onPress={() => open(latest, '/vocals')} style={({ pressed }) => ({ backgroundColor: C.accent, borderRadius: 28, padding: 24, gap: 18, opacity: pressed ? 0.9 : 1 })}>
@@ -81,7 +76,7 @@ export default function Home() {
             <Eyebrow>Your beats</Eyebrow>
           </View>
           {projects.map((p, i) => (
-            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, '/vocals')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
+            <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, p.takes.length ? '/playback' : '/vocals')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
               <Txt size={16} w="semi" numberOfLines={1} style={{ flexShrink: 1 }}>
                 {p.name}
               </Txt>
@@ -98,25 +93,6 @@ export default function Home() {
           <Txt size={13} color={C.recText}>
             Changes are not being saved: {saveError}
           </Txt>
-        )}
-        {playable && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${playable.name} in the player`}
-            onPress={() => open(playable, '/player')}
-            style={[s.row, { minHeight: 60, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16, paddingHorizontal: 14, marginBottom: 8 }]}
-          >
-            <CoverImage project={playable} size={40} radius={8} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <Txt size={15} w="semi" numberOfLines={1}>
-                {playable.name}
-              </Txt>
-              <Txt size={13} color={C.muted}>
-                {playable.stats ? 'Mastered · open the player' : 'Open the player'}
-              </Txt>
-            </View>
-            <PlayIcon size={18} />
-          </Pressable>
         )}
         <Eyebrow>Add a beat</Eyebrow>
         {task.error && (

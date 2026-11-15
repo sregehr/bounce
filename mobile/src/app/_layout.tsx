@@ -10,7 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { startBackup } from '@/data/backup';
 import { loadLibrary, useLibrary, useReady } from '@/data/store';
 import { closeInput } from '@/engine/engine';
-import { TabBar } from '@/ui/TabBar';
+import { TabBar, TopNav } from '@/ui/TabBar';
 import { C } from '@/ui/theme';
 
 const LISTENING = ['/onboarding', '/capture', '/record', '/vocals', '/settings'];
@@ -46,6 +46,7 @@ export default function Layout() {
           ) : (
             <>
               <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }} />
+              <TopNav />
               <TabBar />
             </>
           )}

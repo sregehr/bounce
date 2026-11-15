@@ -26,7 +26,7 @@ export default function Master() {
   const master = { ...project.master, ...draft };
   const commit = (patch: Partial<MasterSettings>) => {
     setDraft({});
-    // Choosing on this screen replaces any master chain set by hand in Advanced.
+    // Choosing on this screen replaces any master chain set by hand on the Mix page.
     patchProject(project.id, (p) => ({ master: { ...p.master, ...patch }, overrides: { ...p.overrides, master: undefined } }));
   };
   const { t, mix } = song;
@@ -34,7 +34,7 @@ export default function Master() {
 
   return (
     <Screen gap={14} padBottom={32}>
-      <TopBar left="Master" right={<NavLink to={take ? '/playback' : '/beat'} back>Back</NavLink>} />
+      <TopBar left="Master" right={<NavLink to={project.saved ? '/player' : take ? '/playback' : '/beat'} back>Back</NavLink>} />
 
       <Segmented options={SIDES} value={t.side === 'b' ? 'Original' : 'Mastered'} onChange={(v) => song.setSide(v === 'Original' ? 'b' : 'a')} />
       <MiniTransport playing={t.playing} position={t.position} duration={t.duration} onToggle={song.toggle} onSeek={song.seek} busy={song.busy} />
@@ -48,7 +48,7 @@ export default function Master() {
       <Card style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, gap: 6 }}>
         <Eyebrow accent>{byHand ? 'Set by hand' : 'What this style did'}</Eyebrow>
         <Txt size={14} lh={1.45} color={song.error ? C.recText : C.text}>
-          {song.error ?? (byHand ? 'Using the master chain you set in Advanced. Pick a style to go back to an automatic master.' : (mix?.note ?? 'Listening to the whole track…'))}
+          {song.error ?? (byHand ? 'Using the master chain you set on the Mix page. Pick a style to go back to an automatic master.' : (mix?.note ?? 'Listening to the whole track…'))}
         </Txt>
       </Card>
 
@@ -93,7 +93,16 @@ export default function Master() {
             </Txt>
           </View>
         </View>
-        <Btn label="Export" to="/export" disabled={!mix} />
+        {project.saved ? (
+          <Btn label="Export" to="/export" disabled={!mix} />
+        ) : (
+          <>
+            <Btn label="Next: name and cover" to="/cover?finish=1" disabled={!mix} />
+            <NavLink to="/export" center size={14}>
+              Export without saving
+            </NavLink>
+          </>
+        )}
       </Foot>
     </Screen>
   );

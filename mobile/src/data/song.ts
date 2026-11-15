@@ -50,14 +50,21 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     // Plays by itself the first time; coming back to the screen loads it paused.
     const autoplay = first.current ? options.autoplay !== false : returning ? false : undefined;
     first.current = false;
+    load(autoplay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.mix, raw, id, focused]);
+
+  /** Puts the mix on the transport. Something else may have taken it over since, such as a take being previewed. */
+  function load(autoplay?: boolean) {
+    const mix = state.mix;
+    if (!mix) return;
     play(id, {
       a: { channels: mix.channels, sampleRate: mix.sampleRate },
       b: options.compare && raw ? { channels: raw, sampleRate: mix.sampleRate } : undefined,
       keepPosition: true,
       autoplay,
     }).catch((e) => setError(e instanceof Error ? e.message : 'Could not play.'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.mix, raw, id, focused]);
+  }
 
-  return { ...state, error: state.error ?? error, t, took, id, toggle, pause, seek, setSide };
+  return { ...state, error: state.error ?? error, t, took, id, toggle: () => (t.loaded ? toggle() : load(true)), pause, seek, setSide };
 }

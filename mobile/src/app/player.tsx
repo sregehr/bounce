@@ -6,12 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CoverImage } from '@/cover/CoverImage';
 import { exportFiles } from '@/data/exporting';
 import { shareFiles } from '@/data/files';
-import { activeTake, patchProject, setCurrent, useLibrary, useProject } from '@/data/store';
+import { songsIn } from '@/data/songs';
+import { activeTake, openSong, patchProject, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { spectrum } from '@/engine/engine';
 import { Btn, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
-import { TAB_BAR_HEIGHT } from '@/ui/tabs';
+import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT } from '@/ui/tabs';
 import { C, F, clock, lufs } from '@/ui/theme';
 
 const BARS = 34;
@@ -57,10 +58,12 @@ export default function Player() {
 
   const { t, mix } = song;
   const take = activeTake(project);
-  const at = projects.findIndex((p) => p.id === project.id);
+  // Skipping moves through the finished songs in the Vault.
+  const songs = songsIn(projects);
+  const at = songs.findIndex((p) => p.id === project.id);
   const jump = (step: number) => {
-    const next = projects[(at + step + projects.length) % projects.length];
-    if (next && next.id !== project.id) setCurrent(next.id);
+    const next = songs[(at + step + songs.length) % songs.length];
+    if (next && next.id !== project.id) openSong(next.id);
     else song.seek(0);
   };
   const pill = { backgroundColor: C.bg } as const;
@@ -79,7 +82,7 @@ export default function Player() {
         <CoverImage project={project} fill />
       </View>
 
-      <View style={[s.topbar, { paddingHorizontal: 16, paddingTop: 60 }]}>
+      <View style={[s.topbar, { paddingHorizontal: 16, paddingTop: insets.top + TOP_NAV_HEIGHT + 12 }]}>
         <Pressable accessibilityRole="link" accessibilityLabel="Mastering settings" onPress={() => router.push('/master')} style={[pill, { borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12 }]}>
           <Txt size={12} w="semi" ls={0.08} upper color={song.error ? C.recText : C.muted}>
             {song.error ? 'Could not render' : !mix ? song.stage || 'Mastering' : [take ? 'Mastered' : 'Beat', project.overrides.master ? 'by hand' : project.master.style, lufs(mix.lufs, 0)].join(' · ')}

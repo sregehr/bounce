@@ -9,6 +9,7 @@ import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studi
 import { engineState, inputAllowed, openInput, reportedLatencyMs, startTake, stopTake, useEngine, wake } from '@/engine/engine';
 import { Btn, Card, Chip, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, StopButton, Txt, s } from '@/ui/kit';
 import { useOnScreen, useTask } from '@/ui/hooks';
+import { Guide } from '@/ui/parts';
 import { C, clock, meterPct, plural } from '@/ui/theme';
 
 const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
@@ -98,10 +99,9 @@ export default function Vocals() {
             {tempoLine(project) || 'Tempo not set'}
           </Txt>
         </Pressable>
-        <NavLink home>
-          Home
-        </NavLink>
       </View>
+
+      {!active && project.takes.length === 0 && <Guide show={['take', 'mix']} />}
 
       <Card style={{ padding: 16, gap: 12 }}>
         <View style={[s.row, s.between]}>
@@ -199,7 +199,7 @@ export default function Vocals() {
           onPress={() => (mode === 'recording' ? finish() : begin('recording'))}
         />
         <Btn
-          label={mode === 'recording' ? 'Done, hear it back' : project.takes.length ? 'Hear it back' : 'Record a take to hear it back'}
+          label={mode === 'recording' ? 'Done, hear it back' : project.takes.length ? 'Takes and mix' : 'Record a take to mix it'}
           disabled={task.busy || (mode !== 'recording' && project.takes.length === 0)}
           onPress={() => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')))}
           style={{ alignSelf: 'stretch' }}

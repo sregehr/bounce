@@ -1,16 +1,15 @@
+// The hand-editable processing chains, shown on the song page.
 import { useState } from 'react';
 import { View } from 'react-native';
-import { Redirect } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { activeTake, patchProject, setSettings, useLibrary, useProject } from '@/data/store';
-import { useSong } from '@/data/song';
+import type { Project } from '@/data/model';
+import { activeTake, patchProject, setSettings, useLibrary } from '@/data/store';
+import type { useSong } from '@/data/song';
 import { biquad, responseDb } from '@/dsp/core';
 import { summarise, type Band, type Chain } from '@/dsp/presets';
-import { Btn, Chip, Disclosure, Foot, Muted, NavLink, Screen, Segmented, SliderRow, TopBar, s } from '@/ui/kit';
-import { useStopOnLeave } from '@/ui/hooks';
-import { MiniTransport } from '@/ui/parts';
-import { C, db } from '@/ui/theme';
+import { Btn, Chip, Disclosure, Muted, NavLink, Segmented, SliderRow, s } from './kit';
+import { C, db } from './theme';
 
 type Tab = 'Vocal' | 'Beat' | 'Master';
 type Section = 'eq' | 'comp' | 'deess' | 'lim' | '';
@@ -44,20 +43,19 @@ function Curve({ bands }: { bands: Band[] }) {
   );
 }
 
-export default function Advanced() {
-  const project = useProject();
+/**
+ * The processing chains behind a mix, editable by hand: EQ, compressor, de-esser and limiter
+ * for the vocal, the beat and the master. Each starts from what the automatic polish chose.
+ */
+export function ChainEditor({ project, song }: { project: Project; song: Pick<ReturnType<typeof useSong>, 'mix' | 'error'> }) {
   const preset = useLibrary((l) => l.settings.vocalPreset);
   const take = activeTake(project);
-  const song = useSong(project, { autoplay: false });
   const tabs: Tab[] = take ? ['Vocal', 'Beat', 'Master'] : ['Beat', 'Master'];
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [open, setOpen] = useState<Section>('eq');
   const [band, setBand] = useState(1);
   // Values being dragged: applied to the sound when the slider is let go.
   const [draft, setDraft] = useState<Chain | null>(null);
-  useStopOnLeave();
-
-  if (!project) return <Redirect href="/" />;
 
   const key = KEY[tab];
   const resolved = project.overrides[key] ?? song.mix?.chains[key] ?? null;
@@ -72,7 +70,6 @@ export default function Advanced() {
     patchProject(project.id, (p) => ({ overrides: { ...p.overrides, [key]: undefined } }));
   };
   const toggle = (sec: Section) => () => setOpen(open === sec ? '' : sec);
-  const { t } = song;
 
   /** A slider bound to one value in the chain. */
   const row = (label: string, value: number, min: number, max: number, step: number, display: string, apply: (c: Chain, v: number) => Chain) =>
@@ -82,11 +79,8 @@ export default function Advanced() {
   const b = chain?.eq[Math.min(band, (chain?.eq.length ?? 1) - 1)];
 
   return (
-    <Screen gap={10}>
-      <TopBar left="Advanced" right={<NavLink to="/master">Next: Master</NavLink>} />
-
+    <View style={{ gap: 10 }}>
       <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setTab(v))} />
-      <MiniTransport playing={t.playing} position={t.position} duration={t.duration} onToggle={song.toggle} onSeek={song.seek} busy={song.busy} />
 
       <View style={[s.row, s.between, { minHeight: 28 }]}>
         <Muted size={13} style={{ flex: 1 }}>
@@ -147,13 +141,11 @@ export default function Advanced() {
       )}
 
       {tab === 'Vocal' && chain && (
-        <Foot>
           <View style={[s.row, { gap: 10 }]}>
             <Btn kind="outline" label={preset && JSON.stringify(preset) === JSON.stringify(chain) ? 'Saved as my preset' : 'Save as my preset'} style={{ flex: 1 }} onPress={() => setSettings({ vocalPreset: chain })} />
             {preset && <Btn kind="outline" label="Use my preset" style={{ flex: 1 }} onPress={() => commit(preset)} />}
           </View>
-        </Foot>
       )}
-    </Screen>
+    </View>
   );
 }

@@ -72,6 +72,8 @@ export type Project = {
   snippet: SnippetChoice;
   cover: Cover;
   lyrics: string;
+  /** Who is on the song: the rapper or singer it features. Empty means the name in Settings. */
+  artist?: string;
   /** Numbers from the last master, shown in lists without rendering again. */
   stats: { lufs: number; truePeakDb: number; durationSec: number } | null;
   /** Set on a finished song in the Vault: when it was saved, and the beat it was made from. */

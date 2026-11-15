@@ -1,6 +1,6 @@
 // Beats being worked on and finished songs live in one list. These are the rules that tell
 // them apart, and that decide where the Song, mic and Mix tabs lead.
-import { newId, type Library, type Project } from './model';
+import { newId, type Library, type Profile, type Project } from './model';
 
 export const beatsIn = (projects: Project[]) => projects.filter((p) => !p.saved);
 export const songsIn = (projects: Project[]) => projects.filter((p) => p.saved).sort((a, b) => b.saved!.at - a.saved!.at);
@@ -13,6 +13,9 @@ export function makeSong(project: Project, title: string, now = Date.now()): Pro
   const take = project.takes.find((t) => t.id === project.takeId) ?? null;
   return { ...project, id: newId(), name: title.trim() || project.name, createdAt: now, updatedAt: now, takes: take ? [take] : [], takeId: take?.id ?? null, saved: { at: now, from: project.id } };
 }
+
+/** The name a song goes out under: the artist it features, or else the name in Settings. */
+export const artistOf = (project: Pick<Project, 'artist'>, profile: Pick<Profile, 'artist'>) => project.artist?.trim() || profile.artist || 'You';
 
 /**
  * The Vault used to list every take. Now it holds finished songs only, so on the first launch

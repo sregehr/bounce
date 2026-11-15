@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CoverImage } from '@/cover/CoverImage';
 import { exportFiles } from '@/data/exporting';
 import { shareFiles } from '@/data/files';
-import { songsIn } from '@/data/songs';
+import { artistOf, songsIn } from '@/data/songs';
 import { activeTake, openSong, patchProject, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { spectrum } from '@/engine/engine';
@@ -71,12 +71,13 @@ export default function Player() {
     if (router.canDismiss()) router.dismissAll();
     router.push('/vault');
   };
-  const credit = [profile.artist || 'You', profile.producer ? `Prod. ${profile.producer}` : null].filter(Boolean).join(' · ');
+  const artist = artistOf(project, profile);
+  const credit = [artist, profile.producer ? `Prod. ${profile.producer}` : null].filter(Boolean).join(' · ');
   const onShare = () =>
     share.run(async () => {
       setNote(null);
       const files = await exportFiles({ ...project, exporting: { ...project.exporting, instrumental: false, vocals: false } });
-      const result = await shareFiles(files, `${project.name}${profile.artist ? ` by ${profile.artist}` : ''}`);
+      const result = await shareFiles(files, `${project.name}${artist !== 'You' ? ` by ${artist}` : ''}`);
       setNote(result === 'saved' ? `Saved ${files[0].name} to your downloads.` : result === 'shared' ? 'Shared.' : null);
     });
 

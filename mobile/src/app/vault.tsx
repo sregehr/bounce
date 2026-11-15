@@ -10,7 +10,7 @@ import { deleteProject, openSong, setCurrent, useLibrary } from '@/data/store';
 import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { C, clock, dayLabel, lufs } from '@/ui/theme';
 
-const meta = (p: Project) => [dayLabel(p.saved?.at ?? p.createdAt), clock(p.stats?.durationSec ?? p.beat.durationSec), p.takes.length ? null : 'instrumental'].filter(Boolean).join(' · ');
+const meta = (p: Project) => [p.artist?.trim() || null, dayLabel(p.saved?.at ?? p.createdAt), clock(p.stats?.durationSec ?? p.beat.durationSec), p.takes.length ? null : 'instrumental'].filter(Boolean).join(' · ');
 const tag = (p: Project) => [p.overrides.master ? 'Mastered by hand' : `Mastered · ${p.master.style}`, p.stats ? lufs(p.stats.lufs, 0) : null, p.snippet.made ? 'Snippet made' : null, p.lyrics.trim() ? 'Has lyrics' : null].filter(Boolean).join(' · ');
 
 /** Finished songs: the ones saved from a beat's song page, ready to play, share and promote. */

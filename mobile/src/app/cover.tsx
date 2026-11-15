@@ -21,6 +21,7 @@ export default function Cover() {
   const finishing = !!useLocalSearchParams<{ finish?: string }>().finish && !project?.saved;
   const [title, setTitle] = useState(project?.name ?? '');
   const lastPhoto = useLibrary((l) => l.coverPhotoKey);
+  const ownName = useLibrary((l) => l.profile.artist);
   const task = useTask();
   const [made, setMade] = useState<Made | null>(null);
   const [scene, setScene] = useState<SceneId>(project?.cover.scene ?? 'photo');
@@ -59,13 +60,22 @@ export default function Cover() {
   if (!project) return <Redirect href="/" />;
   const cover = project.cover;
 
-  const pick = () =>
+  // The cover features whoever is on the song: the rapper or singer, who is often not the person holding the phone.
+  const artist = project.artist?.trim() ?? '';
+  const who = artist || 'the artist';
+
+  /** Takes a new photo with the camera, or picks one already on the device. */
+  const pick = (from: 'camera' | 'library' = 'library') =>
     task.run(async () => {
-      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+      if (from === 'camera' && !(await ImagePicker.requestCameraPermissionsAsync()).granted) throw new Error('Allow the camera to take a photo, or choose one you already have.');
+      const picked =
+        from === 'camera'
+          ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, cameraType: ImagePicker.CameraType.back })
+          : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
       if (picked.canceled || !picked.assets?.[0]) return;
       setStage('Reading the photo');
       const photo = await normalisePhoto(await (await fetch(picked.assets[0].uri)).blob());
-      setStage('Finding you in the photo');
+      setStage(`Finding ${who} in the photo`);
       const cutout = await cutOut(photo);
       const photoKey = `photo-${newId()}`;
       const cutoutKey = cutout ? `${photoKey}:cut` : null;
@@ -118,27 +128,39 @@ export default function Cover() {
         </View>
       )}
 
+      <View style={{ gap: 6 }}>
+        <Txt size={12} color={C.muted}>
+          Artist on this song
+        </Txt>
+        <Field label="Artist on this song" value={project.artist ?? ''} onChangeText={(name) => patchProject(project.id, { artist: name }, false)} placeholder={ownName || 'Who is on the mic?'} maxLength={40} autoCapitalize="words" returnKeyType="done" />
+      </View>
+
       <View style={{ height: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
         {made ? (
           <Image source={{ uri: made[scene].url }} accessibilityLabel={`Cover preview: ${LABEL[scene]}`} style={{ width: '100%', height: 320 }} resizeMode="cover" />
         ) : (
-          <Pressable accessibilityRole="button" accessibilityLabel="Add a photo" disabled={working} onPress={pick} style={{ alignItems: 'center', gap: 8, padding: 24 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Take a photo of the artist" disabled={working} onPress={() => pick('camera')} style={{ alignItems: 'center', gap: 8, padding: 24 }}>
             <Txt size={22} w="display" center>
-              {working ? `${stage || 'Working'}…` : 'Add a photo of yourself'}
+              {working ? `${stage || 'Working'}…` : `Add a photo of ${who}`}
             </Txt>
-            <Muted center>{working ? 'This takes a few seconds the first time.' : 'A portrait works best: head and shoulders, plain light. You get placed in a studio, on a stage and on a rooftop.'}</Muted>
+            <Muted center>{working ? 'This takes a few seconds the first time.' : 'Take it now, while they are with you, or pick one you have. Head and shoulders in plain light works best. They get placed in a studio, on a stage and on a rooftop.'}</Muted>
           </Pressable>
         )}
       </View>
 
       <View style={[s.row, s.between]}>
         <Muted style={{ flex: 1 }}>
-          {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? 'Your photo never leaves this device.' : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
+          {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? 'The photo never leaves this device.' : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
         </Muted>
         {made && (
-          <NavLink size={14} style={{ minHeight: 24 }} onPress={() => !working && pick()}>
-            Retake
-          </NavLink>
+          <View style={[s.row, { gap: 16 }]}>
+            <NavLink size={14} style={{ minHeight: 24 }} onPress={() => !working && pick('camera')}>
+              Retake
+            </NavLink>
+            <NavLink size={14} style={{ minHeight: 24 }} onPress={() => !working && pick('library')}>
+              Choose another
+            </NavLink>
+          </View>
         )}
       </View>
 
@@ -156,10 +178,13 @@ export default function Cover() {
       ) : (
         !working && (
           <View style={{ gap: 4 }}>
-            <Btn kind="outline" label="Choose a photo" onPress={pick} style={{ flex: 0 }} />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Btn kind="outline" label="Take a photo" onPress={() => pick('camera')} />
+              <Btn kind="outline" label="Choose a photo" onPress={() => pick('library')} />
+            </View>
             {lastPhoto && lastPhoto !== cover.photoKey && (
               <NavLink center size={14} onPress={reuse}>
-                Use the photo from your last cover
+                Use the photo from the last cover
               </NavLink>
             )}
           </View>
@@ -168,7 +193,7 @@ export default function Cover() {
 
       <Foot gap={8}>
         <Muted size={13} lh={1.4}>
-          Ask before you shoot someone else. The cut-out is made in this browser; the photo is not sent anywhere.
+          {`The cover goes out with the song when you share it, so pick one ${who} is happy with.`}
         </Muted>
         <Btn label={finishing ? 'Save to the Vault' : 'Set as cover and backdrop'} disabled={!made && !finishing} busy={working && (!!made || finishing)} onPress={apply} />
         {finishing && !made && !working && <Muted size={13} center>No photo? It is saved with a plain cover you can change later.</Muted>}

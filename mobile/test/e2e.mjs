@@ -384,7 +384,7 @@ async function finish() {
   // Finish song goes straight to naming it; there is no second mixing step in between.
   await tap('Finish song');
   await expectText('Save to the Vault', 'Finish song opens the last step directly');
-  await expectText('Add a photo of yourself');
+  await expectText('Add a photo of the artist');
   await tap('Back');
   await expectText('Export without saving', 'Back returns to the mix');
   await tap('Export without saving');
@@ -410,8 +410,11 @@ async function finish() {
 
   await tap('Name it and save it to the Vault');
   await expectText('Finish song', 'the last step names the song');
-  await expectText('Add a photo of yourself', 'and asks for a cover photo');
+  await expectText('Add a photo of the artist', 'and asks for a cover photo');
   await type('Song title', 'Night bus');
+  await type('Artist on this song', 'Mina Cole');
+  await expectText('Add a photo of Mina Cole', 'the photo is asked for by the artist\'s name');
+  await expectText('Take a photo', 'with the camera offered first');
   await shot('15-cover-empty');
   await choose('Choose a photo', PHOTO);
   const found = await waitFor(/Same person, same pose|colour treatment/i, 90000);
@@ -428,6 +431,7 @@ async function finish() {
   await shot('19-cover-stage');
   await tap('Save to the Vault');
   await expectText('Prod. Lowkey', 'the finished song opens in the player', 15000);
+  await expectText('Mina Cole · Prod. Lowkey', 'the song is credited to the artist on it');
   await expectText(/Mastered · Punchy · −\d+ LUFS/i, 'player shows the master', 30000);
   await sleep(1500);
   log(await transportPlaying(), 'the song plays in the player');

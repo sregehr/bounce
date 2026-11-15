@@ -7,6 +7,7 @@ import { fileBase } from '@/data/exporting';
 import { canShareFiles, saveFiles, shareFiles } from '@/data/files';
 import type { SnippetChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
+import { artistOf } from '@/data/songs';
 import { barSeconds, useMix } from '@/data/studio';
 import { strongestStretch } from '@/dsp/analysis';
 import { wavePeaks } from '@/dsp/core';
@@ -67,7 +68,7 @@ export default function Snippet() {
   const firstLine = project.lyrics.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   const caption = choice.caption.trim() || firstLine;
   const credit = profile.producer ? `Prod. ${profile.producer}` : profile.artist ? `Prod. ${profile.artist}` : null;
-  const artist = profile.artist || 'You';
+  const artist = artistOf(project, profile);
   const base = `${fileBase(project.name)} snippet`;
 
   const share = (how: 'share' | 'save') =>

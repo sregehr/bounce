@@ -2,7 +2,7 @@
 // native audio module. Until that is wired up, these stand-ins keep the app compiling.
 import type { LatencyResult } from '@/dsp/latency';
 
-import type { Captured, EngineState, PlayOptions, RecordedTake, TapRun } from './types';
+import type { Captured, EngineState, PlayOptions, RecordedTake, ClapRun } from './types';
 
 const state: EngineState = {
   input: { status: 'error', error: 'Recording on the phone app is not connected yet.', inputs: [], deviceId: null, label: '', sampleRate: 0, channels: 0, pair: 0, levelL: 0, levelR: 0 },
@@ -36,6 +36,6 @@ export const startTake = (_mode: 'listening' | 'recording', _beat: { channels: F
 export const stopTake = (_keep?: boolean): RecordedTake | null => null;
 export const reportedLatencyMs = () => 30;
 export const measureLatency = (): Promise<LatencyResult> => missing();
-export const startTapCheck = (): Promise<TapRun> => missing();
+export const startClapCheck = (): Promise<ClapRun> => missing();
 export const decode = (_data: ArrayBuffer): Promise<{ channels: Float32Array[]; sampleRate: number }> => missing();
 export const supported = false;

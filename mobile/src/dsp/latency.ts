@@ -3,7 +3,7 @@ import { toDb } from './core';
 export const CLICKS = { count: 6, first: 0.5, spacing: 0.4, tail: 0.3, burst: 0.003 } as const;
 export const clickTrainSeconds = CLICKS.first + CLICKS.spacing * CLICKS.count + CLICKS.tail;
 
-/** A slower, longer-sounding train for tapping along to: a steady pulse a finger can follow. */
+/** A slower, longer-sounding train for clapping along to: a steady pulse a person can follow. */
 export const TAPS = { count: 8, first: 1.2, spacing: 0.6, tail: 0.8, burst: 0.012 } as const;
 export const tapTrainSeconds = TAPS.first + TAPS.spacing * TAPS.count + TAPS.tail;
 
@@ -26,8 +26,37 @@ export function makeClickTrain(sampleRate: number, plan: Train = CLICKS): Float3
 }
 
 /**
- * Works out how late the clicks are heard from when someone tapped along to them.
- * `clicksMs` is when each click was sent to the output and `tapsMs` when each tap landed, on the same clock.
+ * Finds the claps (or any sharp sound: a "ta", a finger snap) someone made along to the pulse, and how late they sit.
+ * `heard` starts at the instant the pulse started playing, so the answer covers the whole trip: out to the ears,
+ * and back in through the mic. That is the same trip a vocal makes, which is why this works with earbuds.
+ */
+export function analyseClaps(heard: Float32Array, sampleRate: number): TapResult {
+  const at = (seconds: number) => Math.max(0, Math.min(heard.length, Math.round(seconds * sampleRate)));
+  let noise = 0;
+  for (let i = at(0.1); i < at(TAPS.first - 0.2); i++) noise = Math.max(noise, Math.abs(heard[i]));
+  const threshold = Math.max(0.015, noise * 4);
+  const clicksMs = Array.from({ length: TAPS.count }, (_, k) => (TAPS.first + TAPS.spacing * k) * 1000);
+  const onsets: number[] = [];
+  for (let k = 0; k < TAPS.count; k++) {
+    // Each click owns the stretch from just before it to just before the next.
+    const from = at(TAPS.first + TAPS.spacing * k - 0.1);
+    const to = at(TAPS.first + TAPS.spacing * (k + 1) - 0.1);
+    let peak = 0;
+    for (let i = from; i < to; i++) peak = Math.max(peak, Math.abs(heard[i]));
+    if (peak <= threshold) continue;
+    for (let i = from; i < to; i++) {
+      if (Math.abs(heard[i]) >= peak * 0.3) {
+        onsets.push((i / sampleRate) * 1000);
+        break;
+      }
+    }
+  }
+  return analyseTaps(clicksMs, onsets);
+}
+
+/**
+ * Works out how late a run of beats sits against the clicks they were made to.
+ * `clicksMs` is when each click was sent to the output and `tapsMs` when each beat landed, on the same clock.
  */
 export function analyseTaps(clicksMs: number[], tapsMs: number[]): TapResult {
   const spacing = TAPS.spacing * 1000;
@@ -39,7 +68,7 @@ export function analyseTaps(clicksMs: number[], tapsMs: number[]): TapResult {
     offsets.set(k, tap - clicksMs[k]);
   }
   const values = [...offsets.values()].sort((a, b) => a - b);
-  // Fingers wander, so the earliest and latest taps are set aside before judging how steady the rest were.
+  // People wander, so the earliest and latest taps are set aside before judging how steady the rest were.
   const core = values.length >= 6 ? values.slice(1, -1) : values;
   const spread = core.length ? core[core.length - 1] - core[0] : null;
   const ok = values.length >= 5 && spread !== null && spread < 90;

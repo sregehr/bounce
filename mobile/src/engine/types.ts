@@ -1,4 +1,4 @@
-import type { LatencyResult } from '@/dsp/latency';
+import type { LatencyResult, TapResult } from '@/dsp/latency';
 
 export type InputDevice = { deviceId: string; label: string };
 
@@ -71,7 +71,7 @@ export type PlayOptions = {
   autoplay?: boolean;
 };
 
-/** A tap-along timing check in progress: when each click was sent (on the `performance.now()` clock) and the input's own delay. */
-export type TapRun = { clicksAt: number[]; endsAt: number; inputMs: number; stop: () => void };
+/** A clap-along timing check in progress: when each click plays (on the `performance.now()` clock) and what the mic made of it. */
+export type ClapRun = { clicksAt: number[]; result: Promise<TapResult>; stop: () => void };
 
 export type { LatencyResult };

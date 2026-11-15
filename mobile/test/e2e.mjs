@@ -145,26 +145,16 @@ async function onboarding() {
   await expectText(/Heard all the clicks|clicks came back/i, 'latency check finishes', 12000);
   await shot('04-timing');
 
-  // The earbud route: tap along to the pulse instead of letting the mic listen for it.
-  await tap('Wearing earbuds? Tap along instead');
-  await expectText('0 of 8 taps', 'the tap-along check opens');
-  const pad = await page.evaluate(() => {
-    const r = document.querySelector('[aria-label="Tap on each click"]').getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  });
-  await sleep(1150); // the first click comes 1.3 s after the pulse starts
-  for (let k = 0; k < 8; k++) {
-    const next = Date.now() + 600;
-    await page.mouse.move(pad.x, pad.y);
-    await page.mouse.down();
-    if (k === 3) await shot('04b-tap-along');
-    await page.mouse.up();
-    await sleep(Math.max(0, next - Date.now()));
-  }
-  await expectText(/Measured from [5-8] of 8 taps/, 'tapping along measures the timing', 8000);
+  // The earbud route: clap along to the pulse while the mic listens. Nobody claps here, so it only has to finish cleanly.
+  await tap('Wearing earbuds? Clap along instead');
+  await expectText('Clap on every click', 'the clap-along check opens');
+  await sleep(2500);
+  await shot('04b-clap-along');
+  await expectText(/Measured from \d of 8 claps|claps lined up/, 'the clap-along check finishes', 12000);
   await tap('Run it again');
   await expectText(/Heard all the clicks|clicks came back/i, 'the click check still runs afterwards', 12000);
 
+  await sleep(300); // the check clears its busy state a moment after the result shows
   await tap('Continue');
   await expectText('Ready, Kai Rivers.');
   await shot('05-first-beat');
@@ -386,6 +376,17 @@ async function library() {
   await expectText('Timing');
   await expectText('Everything is backed up', 'the library is backed up to the server', 30000);
   await shot('24-settings');
+
+  // The same guided setup the welcome ends with can be run again from Settings.
+  await tap('Walk me through the setup again');
+  await expectText('Sound check', 'setup opens from Settings');
+  await tap('Connect an input', { optional: true });
+  await expectText('Connected', 'input connects in setup');
+  await tap('Continue');
+  await expectText('Line up your takes');
+  await shot('24b-setup-timing');
+  await tap('Done');
+  await expectText('Backup', 'setup returns to Settings');
   await tap('Home');
 
   // Everything survives a reload.

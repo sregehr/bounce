@@ -2,7 +2,7 @@ import { detectKey, detectTempo, measureVoice, strongestStretch, tonalBalance } 
 import { finalise, integratedLufs, limit, peakOf, reduceNoise, toDb, trimRange, truePeakDb, wavePeaks, rmsDb } from '../src/dsp/core';
 import { DEMO, makeDemoBeat } from '../src/dsp/demoBeat';
 import { encodeWav, parseWav } from '../src/dsp/wav';
-import { analyseClicks, analyseTaps, makeClickTrain, TAPS } from '../src/dsp/latency';
+import { analyseClaps, analyseClicks, analyseTaps, makeClickTrain, TAPS, tapTrainSeconds } from '../src/dsp/latency';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail: string) {
@@ -116,13 +116,27 @@ const lat = analyseClicks(heard, 48000);
 check('latency test', lat.detected === 6 && lat.medianMs !== null && near(lat.medianMs, 37.5, 0.3), `${lat.medianMs?.toFixed(2)} ms from ${lat.detected} clicks`);
 check('latency test in silence', analyseClicks(new Float32Array(train.length), 48000).medianMs === null, 'not detected');
 
-// Tapping along: clicks every 600 ms, heard 180 ms late, tapped with a wandering finger and one wild tap.
+// Beats made along to clicks every 600 ms, heard 180 ms late, with a wandering hand and one wild beat.
 const clicksAt = Array.from({ length: TAPS.count }, (_, k) => 5000 + k * TAPS.spacing * 1000);
 const wander = [260, -18, 12, -25, 20, 4, -9, 15];
 const tapped = analyseTaps(clicksAt, clicksAt.map((t, k) => t + 180 + wander[k]));
 check('tap-along timing', tapped.matched === 8 && tapped.medianMs !== null && near(tapped.medianMs, 180, 15), `${tapped.medianMs?.toFixed(0)} ms from ${tapped.matched} taps`);
 check('tap-along with too few taps', analyseTaps(clicksAt, [clicksAt[0] + 180, clicksAt[3] + 170]).medianMs === null, 'not used');
 check('tap-along with random taps', analyseTaps(clicksAt, clicksAt.map((t, k) => t + [20, 380, 150, 460, 60, 300, 410, 110][k])).medianMs === null, 'not used');
+
+// Clapping along through earbuds: the mic hears no clicks, only claps that sit 230 ms after them, over room noise.
+const room = new Float32Array(Math.round(tapTrainSeconds * 48000));
+let seed = 7;
+const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+for (let i = 0; i < room.length; i++) room[i] = 0.004 * rand();
+const sway = [35, -12, 8, -20, 15, 0, -6, 10];
+for (let k = 0; k < TAPS.count; k++) {
+  const start = Math.round((TAPS.first + TAPS.spacing * k + 0.23 + sway[k] / 1000) * 48000);
+  for (let i = 0; i < 2400; i++) room[start + i] += 0.5 * Math.exp(-i / 500) * rand();
+}
+const clapped = analyseClaps(room, 48000);
+check('clap-along timing', clapped.matched === 8 && clapped.medianMs !== null && near(clapped.medianMs, 230, 15), `${clapped.medianMs?.toFixed(0)} ms from ${clapped.matched} claps`);
+check('clap-along in a quiet room', analyseClaps(room.map((_, i) => 0.004 * Math.sin(i)), 48000).medianMs === null, 'not used');
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);

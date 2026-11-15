@@ -1,10 +1,10 @@
 // Larger building blocks shared by several screens.
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, View, type ViewStyle } from 'react-native';
+import { Pressable, View } from 'react-native';
 
-import { analyseTaps, TAPS } from '@/dsp/latency';
-import { startTapCheck } from '@/engine/engine';
-import type { EngineState, TapRun } from '@/engine/types';
+import { TAPS } from '@/dsp/latency';
+import { startClapCheck } from '@/engine/engine';
+import type { ClapRun, EngineState } from '@/engine/types';
 
 import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
@@ -134,82 +134,50 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
   );
 }
 
-export type TapOutcome = { ms: number | null; matched: number; clicks: number };
+export type ClapOutcome = { ms: number | null; matched: number; clicks: number };
 
 /**
- * The timing check for earbuds, where the mic cannot hear the clicks: a pulse plays and the artist taps along.
- * How late the taps land is how late the sound reaches their ears; the input's own delay is added on top.
+ * The timing check for earbuds, where the mic cannot hear the clicks: a pulse plays and the artist claps along.
+ * The mic hears the claps, so the result covers both the delay to the ears and the mic's own delay.
  */
-export function TapCheck({ onDone, onCancel }: { onDone: (outcome: TapOutcome) => void; onCancel: () => void }) {
-  const [count, setCount] = useState(0);
+export function ClapCheck({ input, onDone, onCancel }: { input: EngineState['input']; onDone: (outcome: ClapOutcome) => void; onCancel: () => void }) {
+  const [click, setClick] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const run = useRef<TapRun | null>(null);
-  const taps = useRef<number[]>([]);
-  const [lit, setLit] = useState(false);
-  const flash = useRef<ReturnType<typeof setTimeout> | null>(null);
   const done = useRef(onDone);
   done.current = onDone;
 
   useEffect(() => {
     let over = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    startTapCheck()
+    let run: ClapRun | null = null;
+    let tick: ReturnType<typeof setInterval> | null = null;
+    startClapCheck()
       .then((r) => {
         if (over) return r.stop();
-        run.current = r;
-        timer = setTimeout(() => {
-          const result = analyseTaps(r.clicksAt, taps.current);
-          done.current({ ms: result.medianMs === null ? null : Math.round(result.medianMs + r.inputMs), matched: result.matched, clicks: result.clicks });
-        }, Math.max(0, r.endsAt - performance.now()));
+        run = r;
+        tick = setInterval(() => setClick(r.clicksAt.filter((t) => t <= performance.now()).length), 100);
+        void r.result.then((result) => !over && done.current({ ms: result.medianMs === null ? null : Math.round(result.medianMs), matched: result.matched, clicks: result.clicks }));
       })
       .catch((e) => !over && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       over = true;
-      if (timer) clearTimeout(timer);
-      if (flash.current) clearTimeout(flash.current);
-      run.current?.stop();
+      if (tick) clearInterval(tick);
+      run?.stop();
     };
   }, []);
 
+  const level = Math.min(1, meterPct(Math.max(input.levelL, input.levelR)) / 100);
   return (
     <View style={{ gap: 14, alignItems: 'center' }}>
-      <Muted center>{error ?? 'Keep your earbuds in. Tap the circle on every click, like tapping along to a song.'}</Muted>
-      {/* A bare pointer-down, not a Pressable: a press handler waits to tell taps from scrolls and drops the quickest ones. */}
-      <View
-        accessibilityRole="button"
-        accessibilityLabel="Tap on each click"
-        onPointerDown={(e) => {
-          // The event carries when the finger landed, which is earlier and steadier than when this handler runs.
-          const now = performance.now();
-          const at = (e.nativeEvent as { timeStamp?: number }).timeStamp;
-          taps.current.push(typeof at === 'number' && Math.abs(at - now) < 250 ? at : now);
-          setCount(taps.current.length);
-          setLit(true);
-          if (flash.current) clearTimeout(flash.current);
-          flash.current = setTimeout(() => setLit(false), 110);
-        }}
-        style={{
-          width: 148,
-          height: 148,
-          borderRadius: 74,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: lit ? C.accent : 'transparent',
-          borderWidth: 2,
-          borderColor: C.accent,
-          transform: [{ scale: lit ? 0.95 : 1 }],
-          userSelect: 'none',
-          cursor: 'pointer',
-          // Stops the browser treating fast taps as a double-tap zoom or a scroll.
-          touchAction: 'none',
-        } as ViewStyle}
-      >
-        <Txt size={26} w="display" color={lit ? C.bg : C.accent}>
-          Tap
+      <Muted center>{error ?? 'Keep your earbuds in. Clap on every click, or say “ta”, right on the beat like you would rap it.'}</Muted>
+      <View accessibilityLabel="Listening for your claps" style={{ width: 148, height: 148, borderRadius: 74, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.accent }}>
+        {/* The disc swells with the mic, so a clap that registers can be seen. */}
+        <View style={{ position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: C.accent, opacity: 0.85 * level, transform: [{ scale: 0.55 + 0.45 * level }] }} />
+        <Txt size={26} w="display" color={C.text}>
+          Clap
         </Txt>
       </View>
       <Txt size={13} color={C.muted}>
-        {Math.min(count, TAPS.count)} of {TAPS.count} taps
+        {click === 0 ? 'Get ready…' : `Click ${Math.min(click, TAPS.count)} of ${TAPS.count}`}
       </Txt>
       <NavLink center size={14} onPress={onCancel}>
         Cancel

@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { importBeat } from '@/data/beats';
 import type { Project } from '@/data/model';
 import { setProfile, setSettings, useLibrary } from '@/data/store';
 import { measureLatency, openInput, reportedLatencyMs, setPair, useEngine } from '@/engine/engine';
-import { Btn, Card, Eyebrow, Field, Foot, Muted, NavLink, Screen, TickIcon, Txt, s } from '@/ui/kit';
+import { Btn, Card, Eyebrow, Field, Foot, Muted, NavLink, Screen, TickIcon, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
-import { InputPanel, TapCheck, type TapOutcome } from '@/ui/parts';
+import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
 import { C } from '@/ui/theme';
 
 const STEPS = ['Welcome', 'Names', 'Sound check', 'Timing', 'First beat'] as const;
@@ -46,7 +46,10 @@ export default function Onboarding() {
   const profile = useLibrary((l) => l.profile);
   const settings = useLibrary((l) => l.settings);
   const input = useEngine((e) => e.input);
-  const [step, setStep] = useState(0);
+  // Opened from Settings, this is just the two setup steps (sound check, timing) and then back again.
+  const setup = !!useLocalSearchParams<{ setup?: string }>().setup;
+  const [step, setStep] = useState(setup ? 2 : 0);
+  const leave = () => (router.canGoBack() ? router.back() : router.replace('/settings'));
   const [artist, setArtist] = useState(profile.artist);
   const [producer, setProducer] = useState(profile.producer);
   const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number; of: number; taps?: boolean } | null>(null);
@@ -67,7 +70,7 @@ export default function Onboarding() {
       setSettings({ latencyMs: result.medianMs !== null ? ms : null });
       setTiming({ ms, measured: result.medianMs !== null, heard: result.detected, of: result.clicks });
     });
-  const tapped = (outcome: TapOutcome) => {
+  const clapped = (outcome: ClapOutcome) => {
     setTapping(false);
     const ms = outcome.ms !== null ? Math.min(500, outcome.ms) : reportedLatencyMs();
     setSettings({ latencyMs: outcome.ms !== null ? ms : null });
@@ -82,7 +85,7 @@ export default function Onboarding() {
 
   return (
     <Screen gap={20} padBottom={32}>
-      <Dots step={step} />
+      {setup ? <TopBar left="Setup" right={<NavLink onPress={leave}>Done</NavLink>} /> : <Dots step={step} />}
 
       {step === 0 && (
         <>
@@ -171,8 +174,8 @@ export default function Onboarding() {
           </Card>
           {live && <Muted size={13}>Make some noise: the meters should move. Wear headphones when you record vocals, so the beat stays out of the mic.</Muted>}
           <Foot>
-            <Btn label="Continue" onPress={() => setStep(live ? 3 : 4)} disabled={input.status === 'opening'} />
-            {!live && (
+            <Btn label="Continue" onPress={() => (live ? setStep(3) : setup ? leave() : setStep(4))} disabled={input.status === 'opening' || (setup && !live)} />
+            {!live && !setup && (
               <NavLink center size={14} onPress={() => setStep(4)}>
                 Skip for now
               </NavLink>
@@ -195,7 +198,7 @@ export default function Onboarding() {
               {timing ? `${timing.ms} ms` : `~${reportedLatencyMs()} ms`}
             </Txt>
             {tapping ? (
-              <TapCheck onDone={tapped} onCancel={() => setTapping(false)} />
+              <ClapCheck input={input} onDone={clapped} onCancel={() => setTapping(false)} />
             ) : (
               <>
                 <Muted>
@@ -203,23 +206,28 @@ export default function Onboarding() {
                     (timing
                       ? timing.measured
                         ? timing.taps
-                          ? `Measured from ${timing.heard} of ${timing.of} taps. Your takes will be moved ${timing.ms} ms earlier.`
+                          ? `Measured from ${timing.heard} of ${timing.of} claps. Your takes will be moved ${timing.ms} ms earlier.`
                           : `Heard all the clicks it needed (${timing.heard} of ${timing.of}). Your takes will be moved ${timing.ms} ms earlier.`
                         : timing.taps
-                          ? `Only ${timing.heard} of ${timing.of} taps lined up, so the browser's own estimate is used. Try again, tapping right on each click.`
-                          : `Only ${timing.heard} of ${timing.of} clicks came back, so the browser's own estimate is used. With headphones on, hold one ear cup to the mic and try again, or tap along instead.`
+                          ? `Only ${timing.heard} of ${timing.of} claps lined up, so the browser's own estimate is used. Try again, clapping right on each click.`
+                          : `Only ${timing.heard} of ${timing.of} clicks came back, so the browser's own estimate is used. With headphones on, hold one ear cup to the mic and try again, or clap along instead.`
                       : 'Turn the volume up and take your headphones off, or hold one ear cup to the mic. The clicks are short and loud.')}
                 </Muted>
                 <Btn kind={timing ? 'outline' : 'primary'} label={timing ? 'Run it again' : 'Play the clicks'} busy={check.busy} onPress={runCheck} style={timing ? { flex: 0 } : undefined} />
                 <NavLink center size={14} onPress={() => !check.busy && setTapping(true)}>
-                  Wearing earbuds? Tap along instead
+                  Wearing earbuds? Clap along instead
                 </NavLink>
               </>
             )}
           </Card>
           <Foot>
-            <Btn label="Continue" onPress={next} disabled={check.busy || tapping} />
-            {!timing && (
+            <Btn label={setup ? 'Done' : 'Continue'} onPress={setup ? leave : next} disabled={check.busy || tapping} />
+            {setup && (
+              <NavLink center size={14} onPress={() => setStep(2)}>
+                Back to the sound check
+              </NavLink>
+            )}
+            {!timing && !setup && (
               <NavLink center size={14} onPress={next}>
                 Skip: use the estimate
               </NavLink>

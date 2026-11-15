@@ -2,10 +2,10 @@
 // Everything shares one AudioContext, so playback and recording run on the same clock.
 import { useSyncExternalStore } from 'react';
 
-import { analyseClicks, clickTrainSeconds, makeClickTrain, TAPS, tapTrainSeconds, type LatencyResult } from '@/dsp/latency';
+import { analyseClaps, analyseClicks, clickTrainSeconds, makeClickTrain, TAPS, tapTrainSeconds, type LatencyResult } from '@/dsp/latency';
 import { parseWav } from '@/dsp/wav';
 
-import type { Captured, EngineState, InputDevice, PlayOptions, RecordedTake, TapRun } from './types';
+import type { Captured, EngineState, InputDevice, PlayOptions, RecordedTake, ClapRun } from './types';
 
 const SILENCE = 0.003; // about −50 dBFS
 const PREROLL_BLOCKS = 4;
@@ -668,32 +668,39 @@ function inputLatencyMs(): number {
 }
 
 /**
- * Plays a steady pulse for tapping along to, for setups where the input cannot hear the output (earbuds).
- * Returns when each click was sent, on the `performance.now()` clock that taps are stamped with.
+ * Plays a steady pulse and listens for the artist clapping along to it, for setups where the input cannot
+ * hear the output (earbuds). What comes back is the whole delay a vocal suffers: out to the ears and in through the mic.
  */
-export async function startTapCheck(): Promise<TapRun> {
+export async function startClapCheck(): Promise<ClapRun> {
+  if (state.input.status !== 'ready') throw new Error('Connect a microphone first.');
   endRun();
   stopTransport();
   const c = await context();
   const src = c.createBufferSource();
   src.buffer = buffer(c, { channels: [makeClickTrain(c.sampleRate, TAPS)], sampleRate: c.sampleRate });
   src.connect(master!);
-  // Read both clocks together so audio time can be turned into the clock taps arrive on.
   const audioNow = c.currentTime;
   const clockNow = performance.now();
-  const when = audioNow + 0.1;
+  const when = audioNow + 0.25;
+  let finish: (heard: Float32Array) => void = () => {};
+  const heard = new Promise<Float32Array>((resolve) => (finish = resolve));
+  const mine = { startFrame: Math.round(when * c.sampleRate), need: Math.round(tapTrainSeconds * c.sampleRate), blocks: [], got: 0, done: finish };
+  probe = mine;
   src.start(when);
+  const timer = setTimeout(() => finish(new Float32Array(0)), (tapTrainSeconds + 2) * 1000);
+  const end = () => {
+    clearTimeout(timer);
+    if (probe === mine) probe = null;
+    try {
+      src.stop();
+    } catch {}
+    src.disconnect();
+  };
   const startsAt = clockNow + (when - audioNow) * 1000;
   return {
     clicksAt: Array.from({ length: TAPS.count }, (_, k) => startsAt + (TAPS.first + TAPS.spacing * k) * 1000),
-    endsAt: startsAt + tapTrainSeconds * 1000,
-    inputMs: inputLatencyMs(),
-    stop: () => {
-      try {
-        src.stop();
-      } catch {}
-      src.disconnect();
-    },
+    result: heard.then((samples) => (end(), analyseClaps(samples, c.sampleRate))),
+    stop: () => (end(), finish(new Float32Array(0))),
   };
 }
 

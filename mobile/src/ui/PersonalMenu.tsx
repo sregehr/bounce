@@ -62,7 +62,7 @@ function Menu({ name, image, onNavigate, rail }: { name: string; image: string |
         <>
           {/* A tap anywhere else puts the menu away. */}
           <Pressable accessibilityLabel="Close menu" onPress={() => setOpen(false)} style={rail ? { position: 'absolute', bottom: -200, left: -200, width: 4000, height: height + 400 } : { position: 'absolute', top: -200, right: -12, width: 2000, height: height + 400 }} />
-          <View accessibilityRole="menu" style={{ position: 'absolute', ...(rail ? { bottom: 0, left: 56 } : { top: TOP_NAV_HEIGHT - 2, right: 0 }), minWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingVertical: 6, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
+          <View accessibilityRole="menu" style={{ position: 'absolute', ...(rail ? { bottom: 16, left: 88 } : { top: TOP_NAV_HEIGHT - 2, right: 0 }), minWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingVertical: 6, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
             {ITEMS.map((item) => (
               <Pressable
                 key={item.to}

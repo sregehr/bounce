@@ -46,12 +46,15 @@ export default function Home() {
               <MicIcon size={wide ? 40 : 26} />
             </View>
           </View>
-          <Txt size={15} w="medium" lh={1.4} color={C.bg}>
-            {[tempoLine(latest), loopLine(latest)].filter(Boolean).join(' · ')}
-          </Txt>
-          <Txt size={18} w="display" ls={0} color={C.bg} style={{ borderTopWidth: 1, borderTopColor: C.bg, paddingTop: 14 }}>
-            One tap and the mic is live
-          </Txt>
+          {/* The two closing lines stay together at the foot of the card when it is tall. */}
+          <View style={{ gap: 18 }}>
+            <Txt size={15} w="medium" lh={1.4} color={C.bg}>
+              {[tempoLine(latest), loopLine(latest)].filter(Boolean).join(' · ')}
+            </Txt>
+            <Txt size={18} w="display" ls={0} color={C.bg} style={{ borderTopWidth: 1, borderTopColor: C.bg, paddingTop: 14 }}>
+              One tap and the mic is live
+            </Txt>
+          </View>
         </Pressable>
       ) : (
         <View style={{ backgroundColor: C.accent, borderRadius: 28, padding: wide ? 32 : 24, gap: 14, ...(wide && { flex: 1, justifyContent: 'center' }) }}>

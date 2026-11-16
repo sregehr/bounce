@@ -22,6 +22,8 @@ const page = await browser.newPage();
 const [viewWidth, viewHeight] = (process.env.VIEW ?? '390x844').split('x').map(Number);
 // In the wide layout some things the phone tucks away are always on show, so the taps that reveal them are skipped.
 const WIDE = viewWidth >= 1000 && viewWidth > viewHeight;
+// Something only the Vault says: the phone labels its search field, the wide layout does not need to.
+const IN_VAULT = WIDE ? 'Removing a song here' : 'Search your songs';
 await page.setViewport({ width: viewWidth, height: viewHeight, deviceScaleFactor: 2 });
 const problems = [];
 const chatter = new Set();
@@ -60,6 +62,9 @@ async function expectText(needle, name, ms) {
   if (!ok) throw new Error(`stopped at: ${name ?? needle}`);
   return ok;
 }
+/** Opens a finished song from the Vault: in the full-screen player on a phone, in the docked player when wide. */
+const openSong = (name) => tap(WIDE ? `Play ${name}` : `Open ${name}`);
+
 /** Clicks the last visible control whose label or text matches. */
 async function tap(label, { exact = true, optional = false } = {}) {
   const hit = await page.evaluate(
@@ -417,7 +422,8 @@ async function finish() {
   await tap('Reverb and echo', { exact: false, optional: WIDE });
   await expectText('Room cut', 'reverb, echo and room cut are on the mix page');
   await slide('Echo', 0.3);
-  await expectText(/Echo 30%/i, 'echo can be added to the vocal');
+  // The wide layout's sliders are shorter, so the same drag lands a step either side.
+  await expectText(WIDE ? /Echo (29|30|31)%/i : /Echo 30%/i, 'echo can be added to the vocal');
   await expectText(/Polished\s/, 'and the mix renders with it', 30000);
   await tap('Reverb and echo', { exact: false, optional: WIDE });
   await tap('Send stems to an engineer');
@@ -478,9 +484,10 @@ async function finish() {
   log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
   await tap('Back');
   await expectText('Prod. Lowkey', 'Back returns to the player');
-  await tap('Lyrics');
+  // The wide player always shows the lyrics; the phone keeps them behind a button.
+  await tap('Lyrics', { optional: WIDE });
   await expectText('Every red light is a breath I use', 'the lyrics written on the song came with it');
-  await tap('Done');
+  await tap('Done', { optional: WIDE });
   await tap('Pause', { optional: true });
 
   await tap('Snippet');
@@ -502,7 +509,7 @@ async function finish() {
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');
   await tap('Done, back to the Vault');
-  await expectText('Search your songs', 'vault opens');
+  await expectText(IN_VAULT, 'vault opens');
   await expectText('Snippet made');
   await expectText('Last played', 'the Vault marks the song played last');
   await shot('22-vault');
@@ -512,11 +519,12 @@ async function finish() {
   await expectText('Nothing in the vault matches');
   await type('Search your songs', '');
   // A finished song opens in the full-screen player, with no navigation around it, and closes back to the Vault.
-  await tap('Open Night bus');
+  await openSong('Night bus');
+  if (WIDE) await tap('Open the player full screen');
   await expectText('Prod. Lowkey', 'a Vault song opens in the player', 15000);
   log(await state(() => ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Song')), 'the player is full screen');
   await tap('Close the player');
-  await expectText('Search your songs', 'closing the player returns to the Vault');
+  await expectText(IN_VAULT, 'closing the player returns to the Vault');
   // The finished song is its own copy: the beat keeps all three takes.
   await tap('Song');
   await expectText('3 takes', 'Song opens the beat the finished song came from', 10000);
@@ -533,7 +541,7 @@ async function library() {
   await shot('23-home-done');
   // Its song in the Vault leads back to the beat, and recording over it again brings it back.
   await tap('Vault');
-  await tap('Open Night bus');
+  await openSong('Night bus');
   await tap('Record another version');
   await expectText('Always listening', 'a finished song leads back to its beat', 10000);
   await sleep(800);

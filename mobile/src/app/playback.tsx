@@ -134,7 +134,7 @@ export default function Playback() {
       <Screen gap={22}>
         <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
           <View style={{ flex: 1 }}>{header}</View>
-          <Btn label="Finish song" to="/cover?finish=1" style={{ flex: 0, paddingHorizontal: 32 }} />
+          <Btn label="Finish song" to="/cover?finish=1" style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 32 }} />
         </View>
         {/* Columns fixes its right pane; here the narrow one is on the left. */}
         <View style={{ flex: 1, flexDirection: 'row', gap: 36, minHeight: 0 }}>

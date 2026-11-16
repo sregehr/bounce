@@ -275,7 +275,7 @@ export default function Vocals() {
                 label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
                 disabled={task.busy}
                 onPress={hear}
-                style={{ flex: 0, minHeight: 56, paddingHorizontal: 28, borderRadius: 18 }}
+                style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minHeight: 56, paddingHorizontal: 28, borderRadius: 18 }}
               />
             )}
           </View>

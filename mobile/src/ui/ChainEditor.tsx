@@ -109,7 +109,7 @@ function Panel({ title, summary, children }: { title: string; summary: string; c
         <Txt size={15} w="semi">
           {title}
         </Txt>
-        <Txt size={12} color={C.muted} numberOfLines={1} right style={{ flex: 1 }}>
+        <Txt size={12} color={C.muted} numberOfLines={2} right style={{ flex: 1 }}>
           {summary}
         </Txt>
       </View>

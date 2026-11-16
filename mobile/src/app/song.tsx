@@ -105,7 +105,7 @@ export default function Song() {
       <Screen gap={22}>
         <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
           <View style={{ flex: 1 }}>{header}</View>
-          {take && <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, paddingHorizontal: 32 }} />}
+          {take && <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 32 }} />}
         </View>
         <Columns
           side={440}

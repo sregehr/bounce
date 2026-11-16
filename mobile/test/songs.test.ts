@@ -80,9 +80,15 @@ check('carrying over happens once', carryOver(moved) === moved && moved.vault ==
 const phone = { input: 'iPhone Microphone', output: '' };
 const speaker = { input: 'iPhone Microphone', output: 'JBL Flip 6' };
 const fresh = { latencyMs: null as number | null };
-check('an unmeasured setup uses what the browser reports', timingFor(fresh, phone, 42).ms === 42 && !timingFor(fresh, phone, 42).measured);
+const laptop = { input: 'MacBook Pro Microphone', output: 'MacBook Pro Speakers' };
+check('an unmeasured setup with nothing known about it uses what the browser reports', timingFor(fresh, laptop, 42).ms === 42 && !timingFor(fresh, laptop, 42).measured);
 check('a wireless speaker is estimated long when the browser under-reports it', timingFor(fresh, speaker, 42).ms === 230);
 check('a long reported delay is trusted as it is', timingFor(fresh, speaker, 190).ms === 190);
+const iphone = { input: 'iPhone Microphone', output: '' };
+check('a phone\'s own microphone starts at the figure measured on one', timingFor(fresh, iphone, 38).ms === 84 && !timingFor(fresh, iphone, 38).measured);
+check('earbuds on a phone are still estimated as wireless', timingFor(fresh, { input: 'AirPods Pro', output: '' }, 38).ms === 230);
+check('a phone playing through something far away is trusted as reported', timingFor(fresh, iphone, 210).ms === 210);
+check('a measurement on the phone replaces the starting figure', timingFor({ ...fresh, ...withTiming(fresh, iphone, 38, 91) }, iphone, 38).ms === 91);
 const onPhone = withTiming(fresh, phone, 42, 80);
 const onBoth = { ...onPhone, ...withTiming(onPhone, speaker, 42, 228) };
 check('each setup keeps its own measurement', timingFor(onBoth, phone, 42).ms === 80 && timingFor(onBoth, speaker, 42).ms === 228 && timingFor(onBoth, phone, 42).measured);

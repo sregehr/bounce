@@ -9,6 +9,7 @@ import { Btn, Card, Chip, Eyebrow, Foot, NavLink, Screen, Segmented, Slider, Sli
 import { useStopOnLeave } from '@/ui/hooks';
 import { MiniTransport } from '@/ui/parts';
 import { C, db, lufs } from '@/ui/theme';
+import { Columns, useWide } from '@/ui/wide';
 
 const SIDES = ['Original', 'Mastered'] as const;
 const fine = { labelWidth: 92, valueWidth: 50, minHeight: 44 };
@@ -19,6 +20,7 @@ export default function Master() {
   const song = useSong(project, { compare: true });
   // Values being dragged; the master is redone when the slider is let go.
   const [draft, setDraft] = useState<Partial<MasterSettings>>({});
+  const wide = useWide();
   useStopOnLeave();
 
   if (!project) return <Redirect href="/" />;
@@ -32,27 +34,27 @@ export default function Master() {
   const { t, mix } = song;
   const byHand = !!project.overrides.master;
 
-  return (
-    <Screen gap={14} padBottom={32}>
-      {/* No way back here: the bar at the bottom leads everywhere, and a finished song has Done below. */}
-      <TopBar left="Master" />
+  const sides = <Segmented options={SIDES} value={t.side === 'b' ? 'Original' : 'Mastered'} onChange={(v) => song.setSide(v === 'Original' ? 'b' : 'a')} />;
+  const transport = <MiniTransport playing={t.playing} position={t.position} duration={t.duration} onToggle={song.toggle} onSeek={song.seek} busy={song.busy} />;
 
-      <Segmented options={SIDES} value={t.side === 'b' ? 'Original' : 'Mastered'} onChange={(v) => song.setSide(v === 'Original' ? 'b' : 'a')} />
-      <MiniTransport playing={t.playing} position={t.position} duration={t.duration} onToggle={song.toggle} onSeek={song.seek} busy={song.busy} />
-
+  const styles = (
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         {MASTER_STYLES.map((style) => (
           <Chip key={style} label={style} on={style === master.style && !byHand} onPress={() => commit({ style })} />
         ))}
       </View>
+  );
 
+  const did = (
       <Card style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, gap: 6 }}>
         <Eyebrow accent>{byHand ? 'Set by hand' : 'What this style did'}</Eyebrow>
-        <Txt size={14} lh={1.45} color={song.error ? C.recText : C.text}>
+        <Txt size={wide ? 16 : 14} lh={1.45} color={song.error ? C.recText : C.text}>
           {song.error ?? (byHand ? 'Using the master chain you set on the Mix page. Pick a style to go back to an automatic master.' : (mix?.note ?? 'Listening to the whole track…'))}
         </Txt>
       </Card>
+  );
 
+  const intensity = (
       <View style={{ gap: 2 }}>
         <View style={[s.row, s.between]}>
           <Txt size={15} w="semi">
@@ -62,9 +64,11 @@ export default function Master() {
             {master.amount}%
           </Txt>
         </View>
-        <Slider label="Intensity" value={master.amount} min={0} max={100} step={1} height={32} onChange={(amount) => setDraft({ ...draft, amount })} onCommit={(amount) => commit({ amount })} />
+        <Slider label="Intensity" value={master.amount} min={0} max={100} step={1} height={wide ? 44 : 32} onChange={(amount) => setDraft({ ...draft, amount })} onCommit={(amount) => commit({ amount })} />
       </View>
+  );
 
+  const fineTune = (
       <View>
         <View style={{ paddingBottom: 4 }}>
           <Eyebrow>Fine tune</Eyebrow>
@@ -74,28 +78,80 @@ export default function Master() {
         <SliderRow {...fine} label="High" min={-6} max={6} step={0.5} value={master.high} display={db(master.high, master.high % 1 ? 1 : 0)} onChange={(high) => setDraft({ ...draft, high })} onCommit={(high) => commit({ high })} />
         <SliderRow {...fine} label="Compression" value={master.comp} display={`${master.comp}%`} onChange={(comp) => setDraft({ ...draft, comp })} onCommit={(comp) => commit({ comp })} />
       </View>
+  );
 
-      <Foot gap={14}>
+  // The wide layout has room to make the numbers the thing you read from across the desk.
+  const readout = (
         <View style={[s.row, s.between, { alignItems: 'flex-end' }]}>
           <View style={{ gap: 2 }}>
-            <Txt size={12} color={C.muted}>
+            <Txt size={wide ? 14 : 12} color={C.muted}>
               {song.busy ? 'Mastering…' : 'Loudness now'}
             </Txt>
-            <Txt size={24} w="display" ls={0}>
+            <Txt size={wide ? 44 : 24} w="display" ls={0}>
               {mix ? lufs(mix.lufs) : '– LUFS'}
             </Txt>
           </View>
           <View style={{ gap: 2, alignItems: 'flex-end' }}>
-            <Txt size={12} color={C.muted}>
+            <Txt size={wide ? 14 : 12} color={C.muted}>
               True peak
             </Txt>
-            <Txt size={18} w="displayMedium">
+            <Txt size={wide ? 28 : 18} w="displayMedium">
               {mix ? db(mix.truePeakDb, 1) : '– dB'}
             </Txt>
           </View>
         </View>
-        {/* A song is finished by saving it to the Vault; its files are exported from there. */}
-        {project.saved ? <Btn label="Done" to="/player" back disabled={!mix} /> : <Btn label="Save to the Vault" to="/cover?finish=1" disabled={!mix} />}
+  );
+
+  // A song is finished by saving it to the Vault; its files are exported from there.
+  const next = project.saved ? <Btn label="Done" to="/player" back disabled={!mix} /> : <Btn label="Save to the Vault" to="/cover?finish=1" disabled={!mix} />;
+
+  // Wide: listening and what the master did on the left, the controls and the last step on the right.
+  if (wide)
+    return (
+      <Screen gap={22}>
+        <TopBar left="Master" />
+        <Columns
+          side={440}
+          gap={36}
+          left={
+            <>
+              {sides}
+              {transport}
+              {styles}
+              {did}
+              <Foot>{readout}</Foot>
+            </>
+          }
+          right={
+            <>
+              {intensity}
+              {fineTune}
+              <Foot>{next}</Foot>
+            </>
+          }
+        />
+      </Screen>
+    );
+
+  return (
+    <Screen gap={14} padBottom={32}>
+      {/* No way back here: the bar at the bottom leads everywhere, and a finished song has Done below. */}
+      <TopBar left="Master" />
+
+      {sides}
+      {transport}
+
+      {styles}
+
+      {did}
+
+      {intensity}
+
+      {fineTune}
+
+      <Foot gap={14}>
+        {readout}
+        {next}
       </Foot>
     </Screen>
   );

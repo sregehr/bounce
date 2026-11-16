@@ -18,6 +18,7 @@ import { Btn, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmen
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
 import { WindowTrack } from '@/ui/WindowTrack';
 import { C, F, clock } from '@/ui/theme';
+import { useWide } from '@/ui/wide';
 
 const LENGTHS = ['15 s', '20 s', '30 s'] as const;
 /** How long a snippet takes to fade out at its end. */
@@ -36,6 +37,7 @@ export default function Snippet() {
   const [note, setNote] = useState<string | null>(null);
   // What is being typed into the caption, once it has been touched.
   const [draft, setDraft] = useState<string | null>(null);
+  const wide = useWide();
   useStopOnLeave();
 
   const choice = project?.snippet;
@@ -114,28 +116,25 @@ export default function Snippet() {
 
   const lengths = LENGTHS.filter((l) => !mix || parseInt(l, 10) <= Math.max(15, Math.floor(mix.durationSec)));
 
-  return (
-    <Screen>
-      <TopBar left="Snippet" />
-
-      {/* What the video shows. With a cover photo it is the backdrop, darkened so the light words and bars read on any picture. */}
-      <View style={{ height: 356, borderRadius: 24, overflow: 'hidden', backgroundColor: coverUrl ? C.bg : C.accent, paddingVertical: 24, paddingHorizontal: 22, justifyContent: 'space-between' }}>
+  // What the video shows. With a cover photo it is the backdrop, darkened so the light words and bars read on any picture.
+  const card = (
+      <View style={[{ height: 356, borderRadius: 24, overflow: 'hidden', backgroundColor: coverUrl ? C.bg : C.accent, paddingVertical: 24, paddingHorizontal: 22, justifyContent: 'space-between' }, wide && { flex: 1, height: undefined, minHeight: 520, borderRadius: 28, paddingVertical: 32, paddingHorizontal: 28 }]}>
         {coverUrl && (
           <>
             <Image source={{ uri: coverUrl }} accessibilityIgnoresInvertColors resizeMode="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
             <View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, shade]} />
           </>
         )}
-        <View style={{ gap: 4 }}>
-          <Txt size={project.name.length > 14 ? 36 : 48} w="display" ls={-0.03} lh={1} color={ink} numberOfLines={2}>
+        <View style={{ gap: wide ? 6 : 4 }}>
+          <Txt size={wide ? (project.name.length > 14 ? 48 : 64) : project.name.length > 14 ? 36 : 48} w="display" ls={-0.03} lh={1} color={ink} numberOfLines={wide ? 3 : 2}>
             {project.name}
           </Txt>
-          <Txt size={15} w="semi" color={ink}>
+          <Txt size={wide ? 17 : 15} w="semi" color={ink}>
             {artist}
           </Txt>
         </View>
-        <SeekTrack peaks={clip?.peaks ?? []} height={96} progress={t.duration > 0 ? t.position / t.duration : 0} played={ink} rest={t.loaded && t.position > 0 ? faint : ink} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
-        <View style={{ gap: 8, minHeight: 52, justifyContent: 'flex-end' }}>
+        <SeekTrack peaks={clip?.peaks ?? []} height={wide ? 140 : 96} progress={t.duration > 0 ? t.position / t.duration : 0} played={ink} rest={t.loaded && t.position > 0 ? faint : ink} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
+        <View style={{ gap: wide ? 10 : 8, minHeight: 52, justifyContent: 'flex-end' }}>
           {choice.captions && (
             <TextInput
               accessibilityLabel="Caption line"
@@ -152,7 +151,7 @@ export default function Snippet() {
               placeholderTextColor={coverUrl ? 'rgba(242,240,234,0.6)' : 'rgba(18,18,18,0.5)'}
               selectionColor={ink}
               maxLength={80}
-              style={{ fontFamily: F.display, fontSize: 22, lineHeight: 26, height: 54, color: ink, padding: 0 }}
+              style={[{ fontFamily: F.display, fontSize: 22, lineHeight: 26, height: 54, color: ink, padding: 0 }, wide && { fontSize: 28, lineHeight: 34, height: 70 }]}
             />
           )}
           {choice.credit && credit && (
@@ -162,11 +161,13 @@ export default function Snippet() {
           )}
         </View>
       </View>
+  );
 
+  const pick = (
       <View style={{ gap: 8 }}>
         <View style={[s.row, s.between]}>
           <View style={[s.row, { gap: 10 }]}>
-            <RoundPlay size={36} icon={13} playing={t.playing} onPress={toggle} disabled={!clip} />
+            <RoundPlay size={wide ? 48 : 36} icon={13} playing={t.playing} onPress={toggle} disabled={!clip} />
             <Txt size={15} w="semi">
               {error ? 'Could not render' : busy && !clip ? 'Finding the strongest stretch…' : moved === null ? 'Strongest stretch picked' : 'Your pick'}
             </Txt>
@@ -182,7 +183,7 @@ export default function Snippet() {
             <WindowTrack
               label="Snippet position"
               peaks={whole}
-              height={56}
+              height={wide ? 84 : 56}
               from={start / mix.durationSec}
               span={length / mix.durationSec}
               snap={(f) => (bar ? (Math.round((f * mix.durationSec) / bar) * bar) / mix.durationSec : f)}
@@ -195,7 +196,7 @@ export default function Snippet() {
             <View style={[s.row, s.between]}>
               <Muted size={13}>Drag the lit part to choose another stretch.</Muted>
               {moved !== null && (
-                <NavLink size={13} style={{ minHeight: 24 }} onPress={() => ((playNext.current = true), set({ startSec: null }))}>
+                <NavLink size={13} style={{ minHeight: wide ? 44 : 24 }} onPress={() => ((playNext.current = true), set({ startSec: null }))}>
                   Strongest stretch
                 </NavLink>
               )}
@@ -204,21 +205,24 @@ export default function Snippet() {
         )}
         {lengths.length > 1 && <Segmented options={lengths} value={`${choice.lengthSec} s` as (typeof LENGTHS)[number]} onChange={(v) => set({ lengthSec: parseInt(v, 10) as SnippetChoice['lengthSec'] })} variant="compact" />}
       </View>
+  );
 
+  const options = (
       <View>
         <Option label="Caption on screen" sub={choice.captions ? 'Tap the line on the card to change it.' : undefined} checked={choice.captions} onChange={(captions) => set({ captions })} divided minHeight={46} />
         <Option label="Producer credit on screen" checked={choice.credit} onChange={(credit2) => set({ credit: credit2 })} minHeight={46} />
       </View>
+  );
 
-      <Foot>
-        {(task.error || note || left !== null) && (
+  const status = (task.error || note || left !== null) && (
           <Txt size={13} color={task.error ? C.recText : C.muted} center>
             {task.error ?? (left !== null ? `Recording the video: ${left} s left. Keep this tab open.` : note)}
           </Txt>
-        )}
-        {/* With a share sheet, sharing leads and saving is the second button. Without one, the snippet can only be saved. */}
-        <Btn label={canShareFiles() ? 'Share snippet' : 'Save snippet'} busy={task.busy} disabled={!clip} onPress={() => share(canShareFiles() ? 'share' : 'save')} />
-        {canShareFiles() && <Btn kind="outline" label="Save snippet" size={16} disabled={task.busy || !clip} onPress={() => share('save')} style={{ flex: 0 }} />}
+        );
+  // With a share sheet, sharing leads and saving is the second button. Without one, the snippet can only be saved.
+  const lead = <Btn label={canShareFiles() ? 'Share snippet' : 'Save snippet'} busy={task.busy} disabled={!clip} onPress={() => share(canShareFiles() ? 'share' : 'save')} style={wide && { flex: 1 }} />;
+  const second = canShareFiles() && <Btn kind="outline" label="Save snippet" size={16} disabled={task.busy || !clip} onPress={() => share('save')} style={wide ? { flex: 1, minHeight: 56 } : { flex: 0 }} />;
+  const finish = (
         <NavLink
           center
           onPress={() => {
@@ -228,7 +232,49 @@ export default function Snippet() {
         >
           Done, back to the Vault
         </NavLink>
-        {!videoSupported() && <Muted size={12} center>This browser cannot record video, so the snippet is audio only.</Muted>}
+  );
+  const audioOnly = !videoSupported() && <Muted size={12} center>This browser cannot record video, so the snippet is audio only.</Muted>;
+
+  // Wide: the card stands tall on the left, as the video is; choosing the stretch and sending it are on the right.
+  if (wide)
+    return (
+      <Screen>
+        <View style={{ flex: 1, flexDirection: 'row', gap: 48, minHeight: 0 }}>
+          <View style={{ width: 430 }}>{card}</View>
+          <View style={{ flex: 1, minWidth: 0, gap: 16 }}>
+            <TopBar left="Snippet" />
+            {pick}
+            {options}
+            <Foot>
+              {status}
+              <View style={[s.row, { gap: 12 }]}>
+                {second}
+                {lead}
+              </View>
+              {finish}
+              {audioOnly}
+            </Foot>
+          </View>
+        </View>
+      </Screen>
+    );
+
+  return (
+    <Screen>
+      <TopBar left="Snippet" />
+
+      {card}
+
+      {pick}
+
+      {options}
+
+      <Foot>
+        {status}
+        {lead}
+        {second}
+        {finish}
+        {audioOnly}
       </Foot>
     </Screen>
   );

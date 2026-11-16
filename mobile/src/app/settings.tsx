@@ -11,10 +11,14 @@ import { closeInput, stopTransport } from '@/engine/engine';
 import { Eyebrow, Muted, NavLink, Option, Screen, TopBar } from '@/ui/kit';
 import { useArmed } from '@/ui/hooks';
 import { plural } from '@/ui/theme';
+import { useWide } from '@/ui/wide';
+
+import Profile from './profile';
 
 const mb = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 
-export default function Settings() {
+/** The sections of the Settings screen, for it and for the wide page it shares with Profile. */
+export function SettingsBody() {
   const settings = useLibrary((l) => l.settings);
   const count = useLibrary((l) => l.projects.length);
   const backup = useBackup();
@@ -36,9 +40,7 @@ export default function Settings() {
   };
 
   return (
-    <Screen gap={18} padBottom={40}>
-      <TopBar left="Settings" />
-
+    <>
       <View style={{ gap: 4 }}>
         <Eyebrow>Backup</Eyebrow>
         {backupAvailable ? (
@@ -82,6 +84,19 @@ export default function Settings() {
           {armed ? 'Tap again: this deletes every beat, take and cover here' : 'Delete everything on this device'}
         </NavLink>
       </View>
+    </>
+  );
+}
+
+export default function Settings() {
+  // Wide: Profile and Settings are one page, whichever of the two was asked for.
+  if (useWide()) return <Profile />;
+
+  return (
+    <Screen gap={18} padBottom={40}>
+      <TopBar left="Settings" />
+
+      <SettingsBody />
     </Screen>
   );
 }

@@ -14,6 +14,7 @@ import { SongHeader } from '@/ui/SongHeader';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
+import { Columns, useWide } from '@/ui/wide';
 
 // Height of the pinned next step, above the floating bar.
 const NEXT_HEIGHT = 62;
@@ -27,6 +28,7 @@ export default function Song() {
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const insets = useSafeAreaInsets();
   const [details, setDetails] = useState(false);
+  const wide = useWide();
   useStopOnLeave();
 
   // Mastering the beat alone sets the take aside. Back here, the song has its newest take again.
@@ -45,16 +47,15 @@ export default function Song() {
     patchProject(project.id, { takeId: k.id }, false);
   };
 
-  return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen gap={20}>
+  const header = (
         <SongHeader project={project}>
           <Status label={project.takes.length ? plural(project.takes.length, 'take') : 'No takes yet'} tone={project.takes.length ? 'plain' : 'todo'} />
           {project.lyrics.trim() ? <Status label="Has lyrics" /> : null}
           <Status label={vaulted === 0 ? 'Not in the Vault yet' : vaulted === 1 ? 'In the Vault' : `${vaulted} in the Vault`} tone={vaulted ? 'good' : 'todo'} />
         </SongHeader>
+  );
 
-        {take ? (
+  const takes = take ? (
           <View>
             <Transport project={project} take={take} song={song} />
             <Txt size={13} color={song.error ? C.recText : C.muted} style={{ paddingTop: 8, paddingBottom: 6 }}>
@@ -77,15 +78,13 @@ export default function Song() {
             })}
           </View>
         ) : (
-          <Muted>Nothing recorded over this beat yet. Tap the mic below to record a take, and it shows up here.</Muted>
-        )}
+          <Muted>Nothing recorded over this beat yet. Tap the mic {wide ? 'in the rail' : 'below'} to record a take, and it shows up here.</Muted>
+        );
 
-        {/* Until there is a take, the beat is the thing to play, so its card comes first. After that the lyrics do. */}
-        {!take && (
-          <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />
-        )}
+  const beat = <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />;
 
-        <View style={{ gap: 8 }}>
+  const lyrics = (
+        <View style={[{ gap: 8 }, wide && { flex: 1 }]}>
           <Eyebrow>Lyrics</Eyebrow>
           <TextInput
             accessibilityLabel="Lyrics"
@@ -95,13 +94,46 @@ export default function Song() {
             placeholder="Write the bars here. They stay with the song when you finish it, and the first line can caption a snippet."
             placeholderTextColor={C.muted}
             selectionColor={C.accent}
-            style={{ minHeight: 120, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, color: C.text, fontFamily: F.regular, fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }}
+            style={[{ minHeight: 120, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, color: C.text, fontFamily: F.regular, fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }, wide && { flex: 1, borderRadius: 18, padding: 20, fontSize: 17, lineHeight: 27 }]}
           />
         </View>
+  );
 
-        {take && (
-          <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />
-        )}
+  // Wide: the takes and the beat on the left, the lyrics down the right, and the next step in the header.
+  if (wide)
+    return (
+      <Screen gap={22}>
+        <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
+          <View style={{ flex: 1 }}>{header}</View>
+          {take && <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, paddingHorizontal: 32 }} />}
+        </View>
+        <Columns
+          side={440}
+          gap={36}
+          left={
+            <>
+              {takes}
+              {beat}
+            </>
+          }
+          right={lyrics}
+        />
+      </Screen>
+    );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <Screen gap={20}>
+        {header}
+
+        {takes}
+
+        {/* Until there is a take, the beat is the thing to play, so its card comes first. After that the lyrics do. */}
+        {!take && beat}
+
+        {lyrics}
+
+        {take && beat}
 
         {take && <View style={{ height: NEXT_HEIGHT }} />}
       </Screen>

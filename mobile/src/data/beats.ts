@@ -56,14 +56,18 @@ export async function importBeat() {
   const picked = await DocumentPicker.getDocumentAsync({ type: AUDIO_TYPES, copyToCacheDirectory: true, multiple: false });
   if (picked.canceled || !picked.assets?.[0]) return null;
   const asset = picked.assets[0];
+  return importAudio(asset.name, () => fetch(asset.uri).then((r) => r.arrayBuffer()));
+}
+
+/** Adds an audio file as a beat, however it arrived: picked from the file browser, or dropped onto the page. */
+export async function importAudio(fileName: string, read: () => Promise<ArrayBuffer>) {
   let pcm;
   try {
-    const data = await (await fetch(asset.uri)).arrayBuffer();
-    pcm = await decode(data);
+    pcm = await decode(await read());
   } catch {
-    throw new Error(`"${asset.name}" could not be read as audio. Try a WAV, MP3 or M4A file.`);
+    throw new Error(`"${fileName}" could not be read as audio. Try a WAV, MP3 or M4A file.`);
   }
   if (pcm.channels[0].length > pcm.sampleRate * 60 * 12) throw new Error('That file is over 12 minutes long. Bounce is built for beats; trim it first.');
-  const name = asset.name.replace(/\.[a-z0-9]+$/i, '').replace(/[_]+/g, ' ').trim();
-  return addBeat(pcm, { source: 'import', label: asset.name, name: freeName(name || nextBeatName()) });
+  const name = fileName.replace(/\.[a-z0-9]+$/i, '').replace(/[_]+/g, ' ').trim();
+  return addBeat(pcm, { source: 'import', label: fileName, name: freeName(name || nextBeatName()) });
 }

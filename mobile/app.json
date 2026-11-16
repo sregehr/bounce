@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.stefanstudio.bounce",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Bounce records your beats and vocals.",

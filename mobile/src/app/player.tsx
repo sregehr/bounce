@@ -4,18 +4,18 @@ import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CoverImage } from '@/cover/CoverImage';
-import { artistOf, songsIn } from '@/data/songs';
-import { activeTake, openSong, setCurrent, useLibrary, useProject } from '@/data/store';
-import { useSong } from '@/data/song';
+import { useProject } from '@/data/store';
 import { spectrum } from '@/engine/engine';
-import { Btn, NavLink, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
+import { Btn, Eyebrow, NavLink, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
-import { C, clock, lufs } from '@/ui/theme';
+import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
+import { C } from '@/ui/theme';
+import { useWide } from '@/ui/wide';
 
 const BARS = 34;
 
-/** Bars that follow the sound of whatever is playing. */
-function Visualiser({ playing }: { playing: boolean }) {
+/** Bars that follow the sound of whatever is playing. `tall` is the wide layout's, spread along the bottom of the cover. */
+function Visualiser({ playing, tall }: { playing: boolean; tall?: boolean }) {
   const [levels, setLevels] = useState<number[]>(() => new Array(BARS).fill(0.08));
   useEffect(() => {
     if (!playing) return;
@@ -31,9 +31,9 @@ function Visualiser({ playing }: { playing: boolean }) {
     return () => cancelAnimationFrame(frame);
   }, [playing]);
   return (
-    <View accessible={false} style={{ height: 88, flexDirection: 'row', alignItems: 'flex-end', gap: 4, paddingHorizontal: 24, paddingTop: 16, overflow: 'hidden' }}>
+    <View accessible={false} style={[{ height: 88, flexDirection: 'row', alignItems: 'flex-end', gap: 4, paddingHorizontal: 24, paddingTop: 16, overflow: 'hidden' }, tall && { height: 112, gap: 6, paddingHorizontal: 28, pointerEvents: 'none' }]}>
       {levels.map((v, i) => (
-        <View key={i} style={{ flex: 1, maxWidth: 6, height: Math.max(4, Math.round(72 * Math.min(1, v * 1.15))), borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: i % 5 === 0 ? C.text : C.accent }} />
+        <View key={i} style={{ flex: 1, maxWidth: tall ? undefined : 6, height: Math.max(4, Math.round((tall ? 96 : 72) * Math.min(1, v * 1.15))), borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: i % 5 === 0 ? C.text : C.accent }} />
       ))}
     </View>
   );
@@ -41,43 +41,95 @@ function Visualiser({ playing }: { playing: boolean }) {
 
 export default function Player() {
   const project = useProject();
-  const projects = useLibrary((l) => l.projects);
-  const profile = useLibrary((l) => l.profile);
-  const song = useSong(project);
-  const [drag, setDrag] = useState<number | null>(null);
+  const now = useNowPlaying(project);
   const [lyrics, setLyrics] = useState(false);
   const insets = useSafeAreaInsets();
+  const wide = useWide();
   useStopOnLeave();
 
   if (!project) return <Redirect href="/vault" />;
 
-  const { t, mix } = song;
-  const take = activeTake(project);
-  const hasLyrics = !!project?.lyrics.trim();
-  // Skipping moves through the finished songs in the Vault.
-  const songs = songsIn(projects);
-  const at = songs.findIndex((p) => p.id === project.id);
-  const jump = (step: number) => {
-    const next = songs[(at + step + songs.length) % songs.length];
-    if (next && next.id !== project.id) openSong(next.id);
-    else song.seek(0);
-  };
+  const { song, credit, hasLyrics, beat } = now;
+  const t = song.t;
   const pill = { backgroundColor: C.bg } as const;
   /** The player is full screen, opened from the Vault; closing it returns there. */
   const close = () => {
     if (router.canDismiss()) router.dismissAll();
     router.push('/vault');
   };
-  // The beat this song was made from, if it is still in the library: recording over it again starts another version.
-  const beat = projects.find((p) => !p.saved && p.id === project.saved?.from);
-  const again = () => {
-    if (!beat) return;
-    setCurrent(beat.id);
-    if (router.canDismiss()) router.dismissAll();
-    router.push('/vocals');
-  };
-  const artist = artistOf(project, profile);
-  const credit = [artist, profile.producer ? `Prod. ${profile.producer}` : null].filter(Boolean).join(' · ');
+
+  const mastering = (
+        <Pressable accessibilityRole="link" accessibilityLabel="Mastering settings" onPress={() => router.push('/master')} style={[pill, { borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12 }, wide && { minHeight: 44, borderRadius: 22, paddingHorizontal: 14, justifyContent: 'center' }]}>
+          <Txt size={12} w="semi" ls={0.08} upper color={song.error ? C.recText : C.muted}>
+            {now.mastering}
+          </Txt>
+        </Pressable>
+  );
+
+  const shut = (
+        <Pressable accessibilityRole="button" accessibilityLabel="Close the player" onPress={close} hitSlop={8} style={[pill, { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }, wide && { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: C.borderStrong }]}>
+          <Txt size={18} w="semi" color={C.text}>
+            ✕
+          </Txt>
+        </Pressable>
+  );
+
+  const again = beat && (
+          <NavLink center size={14} onPress={now.again}>
+            {now.againLabel}
+          </NavLink>
+  );
+
+  // Wide: the cover fills the left half; the song, its controls and its lyrics sit on the right, with nothing to toggle.
+  if (wide)
+    return (
+      <View style={{ flex: 1, flexDirection: 'row', backgroundColor: C.bg }}>
+        <View style={{ width: '52%', overflow: 'hidden', justifyContent: 'space-between' }}>
+          <Pressable accessibilityRole="link" accessibilityLabel="Change cover art" onPress={() => router.push('/cover')} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+            <CoverImage project={project} fill />
+          </Pressable>
+          <View style={{ alignItems: 'flex-start', paddingTop: Math.max(28, insets.top + 12), paddingLeft: Math.max(28, insets.left + 12), pointerEvents: 'box-none' }}>{mastering}</View>
+          <Visualiser playing={t.playing} tall />
+        </View>
+
+        <View style={{ flex: 1, minWidth: 0, gap: 18, paddingTop: Math.max(28, insets.top + 12), paddingLeft: 40, paddingRight: Math.max(40, insets.right + 16), paddingBottom: Math.max(32, insets.bottom + 12) }}>
+          <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 16 }]}>
+            <View style={{ gap: 4, flex: 1, minWidth: 0 }}>
+              <Txt size={44} w="display" ls={-0.03} lh={1.05} numberOfLines={2}>
+                {project.name}
+              </Txt>
+              <Txt size={15} color={C.muted} numberOfLines={1}>
+                {song.error ?? credit}
+              </Txt>
+            </View>
+            {shut}
+          </View>
+
+          <Scrubber now={now} height={32} />
+          <SkipPlay now={now} size={80} skip={56} gap={36} />
+
+          {hasLyrics ? (
+            <View style={{ flex: 1, minHeight: 0, gap: 8 }}>
+              <Eyebrow>Lyrics</Eyebrow>
+              {/* Lyrics are written on the Song tab; a finished song shows the ones it was saved with. */}
+              <ScrollView accessibilityLabel="Lyrics" style={{ flex: 1, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16 }} contentContainerStyle={{ padding: 16 }}>
+                <Txt size={17} lh={1.6}>
+                  {project.lyrics.trim()}
+                </Txt>
+              </ScrollView>
+            </View>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+
+          <View style={[s.row, { gap: 10 }]}>
+            <Btn kind="outline" label="Snippet" to="/snippet" style={{ flex: 1, borderRadius: 14 }} />
+            <Btn kind="outline" label="Share" to="/export" style={{ flex: 1, borderRadius: 14 }} />
+          </View>
+          {again}
+        </View>
+      </View>
+    );
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -86,16 +138,8 @@ export default function Player() {
       </View>
 
       <View style={[s.topbar, { paddingHorizontal: 16, paddingTop: Math.max(20, insets.top + 8) }]}>
-        <Pressable accessibilityRole="link" accessibilityLabel="Mastering settings" onPress={() => router.push('/master')} style={[pill, { borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12 }]}>
-          <Txt size={12} w="semi" ls={0.08} upper color={song.error ? C.recText : C.muted}>
-            {song.error ? 'Could not render' : !mix ? song.stage || 'Mastering' : [take ? 'Mastered' : 'Beat', project.overrides.master ? 'by hand' : project.master.style, lufs(mix.lufs, 0)].join(' · ')}
-          </Txt>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Close the player" onPress={close} hitSlop={8} style={[pill, { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }]}>
-          <Txt size={18} w="semi" color={C.text}>
-            ✕
-          </Txt>
-        </Pressable>
+        {mastering}
+        {shut}
       </View>
 
       <View style={{ flexGrow: 1 }} />
@@ -125,48 +169,8 @@ export default function Player() {
           </ScrollView>
         ) : (
           <>
-            <View style={{ gap: 2 }}>
-              <Slider
-                label="Position in track"
-                value={Math.min(drag ?? t.position, t.duration)}
-                min={0}
-                max={Math.max(1, t.duration)}
-                step={0.1}
-                height={28}
-                disabled={!t.loaded}
-                onChange={setDrag}
-                onCommit={(v) => {
-                  setDrag(null);
-                  song.seek(v);
-                }}
-              />
-              <View style={[s.row, s.between]}>
-                <Txt size={13} color={C.muted} style={{ fontVariant: ['tabular-nums'] }}>
-                  {clock(drag ?? t.position)}
-                </Txt>
-                <Txt size={13} color={C.muted} style={{ fontVariant: ['tabular-nums'] }}>
-                  {clock(t.duration || project.stats?.durationSec || 0)}
-                </Txt>
-              </View>
-            </View>
-
-            <View style={[s.row, { justifyContent: 'center', gap: 28 }]}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Previous track" onPress={() => (t.position > 3 ? song.seek(0) : jump(-1))} style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-                <SkipIcon back />
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t.playing ? 'Pause' : 'Play'}
-                disabled={!t.loaded}
-                onPress={song.toggle}
-                style={({ pressed }) => ({ width: 72, height: 72, borderRadius: 36, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', opacity: !t.loaded ? 0.4 : pressed ? 0.85 : 1 })}
-              >
-                {t.playing ? <PauseIcon color={C.bg} /> : <PlayIcon size={26} color={C.bg} />}
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="Next track" onPress={() => jump(1)} style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-                <SkipIcon />
-              </Pressable>
-            </View>
+            <Scrubber now={now} />
+            <SkipPlay now={now} />
           </>
         )}
 
@@ -176,11 +180,7 @@ export default function Player() {
           {/* Sharing opens the choices first (loudness, format, stems), then the share sheet or a saved file. */}
           <Btn kind="outline" label="Share" to="/export" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
         </View>
-        {beat && (
-          <NavLink center size={14} onPress={again}>
-            {project.takes.length ? 'Record another version' : 'Record a vocal over this beat'}
-          </NavLink>
-        )}
+        {again}
       </View>
     </View>
   );

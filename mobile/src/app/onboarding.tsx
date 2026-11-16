@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Rect } from 'react-native-svg';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { AccountStep } from '@/auth/account';
@@ -14,6 +16,7 @@ import { useTiming } from '@/ui/timing';
 import { useTask } from '@/ui/hooks';
 import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
 import { C } from '@/ui/theme';
+import { useWide } from '@/ui/wide';
 
 type StepId = 'welcome' | 'names' | 'account' | 'sound' | 'timing' | 'first';
 // The account step is only there when the build has a server to sign in to.
@@ -49,7 +52,32 @@ function Choice({ title, body, onPress, primary, disabled }: { title: string; bo
   );
 }
 
+/** The brand panel down the left of the wide layout. The mark is drawn dark here, because the usual one has an amber ball that would vanish into the panel. */
+function Brand() {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ width: '45%', backgroundColor: C.accent, justifyContent: 'space-between', paddingLeft: insets.left + 56, paddingRight: 56, paddingTop: Math.max(56, insets.top + 16), paddingBottom: Math.max(56, insets.bottom + 16) }}>
+      <Svg width={72} height={72} viewBox="0 0 62 62" accessibilityLabel="Bounce logo">
+        <Rect x={0} y={0} width={27} height={27} rx={7} fill={C.bg} />
+        <Rect x={35} y={0} width={27} height={27} rx={7} fill={C.bg} />
+        <Rect x={0} y={35} width={27} height={27} rx={7} fill={C.bg} />
+        <Circle cx={48.5} cy={48.5} r={14.5} fill={C.text} />
+      </Svg>
+      <View style={{ gap: 20 }}>
+        <Txt size={120} w="display" ls={-0.04} lh={0.95} color={C.bg}>
+          Bounce
+        </Txt>
+        <Txt size={28} w="displayMedium" lh={1.25} color={C.bg}>
+          Capture a beat. Freestyle over it. Hear it mastered in seconds.
+        </Txt>
+      </View>
+    </View>
+  );
+}
+
 export default function Onboarding() {
+  const wide = useWide();
+  const insets = useSafeAreaInsets();
   const profile = useLibrary((l) => l.profile);
   const settings = useLibrary((l) => l.settings);
   const input = useEngine((e) => e.input);
@@ -94,22 +122,25 @@ export default function Onboarding() {
       router.replace(to);
     });
 
-  return (
-    <Screen gap={20} padBottom={32}>
+  const steps = (
+    <>
       {setup ? <TopBar left="Setup" right={<NavLink onPress={leave}>Done</NavLink>} /> : <Dots at={step} />}
 
       {step === 'welcome' && (
         <>
-          <View style={{ gap: 12, paddingTop: 40 }}>
-            <Logo size={52} />
-            <Txt size={64} w="display" ls={-0.04} lh={1}>
-              Bounce
-            </Txt>
-            <Txt size={22} w="displayMedium" lh={1.25}>
-              Capture a beat. Freestyle over it. Hear it mastered in seconds.
-            </Txt>
-          </View>
-          <View style={{ gap: 14, paddingTop: 16 }}>
+          {/* In the wide layout the brand panel already says this. */}
+          {!wide && (
+            <View style={{ gap: 12, paddingTop: 40 }}>
+              <Logo size={52} />
+              <Txt size={64} w="display" ls={-0.04} lh={1}>
+                Bounce
+              </Txt>
+              <Txt size={22} w="displayMedium" lh={1.25}>
+                Capture a beat. Freestyle over it. Hear it mastered in seconds.
+              </Txt>
+            </View>
+          )}
+          <View style={{ gap: 14, paddingTop: wide ? 40 : 16 }}>
             {['Record a beat straight from your MPC, or any sampler or audio interface', 'Loop a section and rap; every take is kept', 'One tap polishes the vocal and masters the song', 'Add a cover, cut a snippet, export the WAV'].map((line) => (
               <View key={line} style={[s.row, { gap: 12, alignItems: 'flex-start' }]}>
                 <View style={{ paddingTop: 4 }}>
@@ -275,6 +306,28 @@ export default function Onboarding() {
           </Foot>
         </>
       )}
+    </>
+  );
+
+  // Wide: the brand stays down the left through every step, and the step itself sits in a column on the right.
+  if (wide)
+    return (
+      <View style={{ flex: 1, flexDirection: 'row', backgroundColor: C.bg }}>
+        <Brand />
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingLeft: 72, paddingRight: insets.right + 72, paddingTop: Math.max(56, insets.top + 16), paddingBottom: Math.max(56, insets.bottom + 16) }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={{ flexGrow: 1, width: '100%', maxWidth: 520, gap: 20 }}>{steps}</View>
+        </ScrollView>
+      </View>
+    );
+
+  return (
+    <Screen gap={20} padBottom={32}>
+      {steps}
     </Screen>
   );
 }

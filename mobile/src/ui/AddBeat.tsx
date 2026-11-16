@@ -1,15 +1,16 @@
-import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { ActivityIndicator, Platform, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { importBeat } from '@/data/beats';
+import { importAudio, importBeat } from '@/data/beats';
 import { beatsIn } from '@/data/songs';
 import { useLibrary } from '@/data/store';
 
 import { useTask } from './hooks';
 import { Eyebrow, Muted, Screen, Txt, go, s, type Nav } from './kit';
 import { C } from './theme';
+import { useWide } from './wide';
 
 const stroke = { stroke: C.accent, strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' } as const;
 
@@ -59,11 +60,41 @@ function Create({ icon, label, name, busy, disabled, ...nav }: Nav & { icon: key
   );
 }
 
+/**
+ * In a browser, an audio file dropped anywhere on the page is handed over, as if it had been
+ * picked. This is how a beat comes across from Files in Split View on a tablet. The native app
+ * has no drop target yet.
+ */
+function useFileDrop(onFile: (file: File) => void) {
+  const latest = useRef(onFile);
+  latest.current = onFile;
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const over = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    const drop = (e: DragEvent) => {
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      e.preventDefault();
+      latest.current(file);
+    };
+    window.addEventListener('dragover', over);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
+}
+
 /** The three ways to bring a beat in, as a row of tiles. Home leads with it, and so does any screen with no song to show. */
 export function AddBeat() {
   const any = useLibrary((l) => beatsIn(l.projects).length > 0);
   const task = useTask();
   const add = () => task.run(async () => void ((await importBeat()) && router.push('/song')));
+  const wide = useWide();
+  useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, () => file.arrayBuffer())) && router.push('/song'))));
   return (
     <View style={{ gap: 10 }}>
       <Eyebrow>Add a beat</Eyebrow>
@@ -77,6 +108,7 @@ export function AddBeat() {
           {task.error}
         </Txt>
       )}
+      {wide && Platform.OS === 'web' && !task.error && <Muted size={13}>Or drop an audio file anywhere on this page.</Muted>}
     </View>
   );
 }

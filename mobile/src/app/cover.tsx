@@ -12,6 +12,7 @@ import { dropBlob, finishSong, patchProject, setProfile, update, useLibrary, use
 import { Btn, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
 import { C } from '@/ui/theme';
+import { useWide } from '@/ui/wide';
 
 const LABEL: Record<SceneId | 'ai', string> = { photo: 'As taken', studio: 'Studio', stage: 'Stage', rooftop: 'Rooftop', ai: 'AI scene' };
 
@@ -35,6 +36,7 @@ export default function Cover() {
   const [hasCutout, setHasCutout] = useState(true);
   const [stage, setStage] = useState('');
   const urls = useRef<string[]>([]);
+  const wide = useWide();
 
   const build = async (photo: Blob, cutout: Blob | null) => {
     setStage('Building the scenes');
@@ -135,10 +137,10 @@ export default function Cover() {
 
   const working = task.busy;
 
-  return (
-    <Screen>
-      <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to={project.takeId ? '/playback' : '/master'} back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />
+  const top = <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to={project.takeId ? '/playback' : '/master'} back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />;
 
+  const fields = (
+    <>
       {finishing && (
         <View style={{ gap: 6 }}>
           <Txt size={12} color={C.muted}>
@@ -161,12 +163,15 @@ export default function Cover() {
         </Txt>
         <Field label="Produced by" value={producer} onChangeText={(name) => setProfile({ producer: name })} placeholder="Who made the beat? (optional)" maxLength={40} autoCapitalize="words" returnKeyType="done" />
       </View>
+    </>
+  );
 
-      <View style={{ height: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
+  const preview = (
+      <View style={[{ height: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }, wide && { flex: 1, height: undefined, minHeight: 320 }]}>
         {shown ? (
-          <Image source={{ uri: shown.url }} accessibilityLabel={`Cover preview: ${LABEL[scene]}`} style={{ width: '100%', height: 320 }} resizeMode="cover" />
+          <Image source={{ uri: shown.url }} accessibilityLabel={`Cover preview: ${LABEL[scene]}`} style={wide ? { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' } : { width: '100%', height: 320 }} resizeMode="cover" />
         ) : (
-          <Pressable accessibilityRole="button" accessibilityLabel="Take a photo of the artist" disabled={working} onPress={() => pick('camera')} style={{ alignItems: 'center', gap: 8, padding: 24 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Take a photo of the artist" disabled={working} onPress={() => pick('camera')} style={[{ alignItems: 'center', gap: 8, padding: 24 }, wide && { maxWidth: 460 }]}>
             <Txt size={22} w="display" center>
               {working ? `${stage || 'Working'}…` : `Add a photo of ${who}`}
             </Txt>
@@ -174,36 +179,42 @@ export default function Cover() {
           </Pressable>
         )}
       </View>
+  );
 
+  const about = (
       <View style={[s.row, s.between]}>
         <Muted style={{ flex: 1 }}>
           {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? (ai ? 'Add a photo to put the artist in the scene.' : hasAi ? 'The photo only goes to AI if you choose that. Backup keeps a copy with your songs.' : 'The photo never leaves this device.') : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
         </Muted>
         {made && (
           <View style={[s.row, { gap: 16 }]}>
-            <NavLink size={14} style={{ minHeight: 24 }} onPress={() => !working && pick('camera')}>
+            <NavLink size={14} style={{ minHeight: wide ? 44 : 24 }} onPress={() => !working && pick('camera')}>
               Retake
             </NavLink>
-            <NavLink size={14} style={{ minHeight: 24 }} onPress={() => !working && pick('library')}>
+            <NavLink size={14} style={{ minHeight: wide ? 44 : 24 }} onPress={() => !working && pick('library')}>
               Choose another
             </NavLink>
           </View>
         )}
       </View>
+  );
 
-      {made ? (
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+  // The scenes to choose from, once there is a photo. Wide stacks them in a column beside the preview.
+  const scenes = made && (
+        <View style={wide ? { width: 124, gap: 12 } : { flexDirection: 'row', gap: 8 }}>
           {[...SCENES, ...(ai ? (['ai'] as const) : [])].map((id) => (
-            <Pressable key={id} accessibilityRole="button" accessibilityLabel={LABEL[id]} accessibilityState={{ selected: id === scene }} onPress={() => setScene(id)} style={{ flex: 1, gap: 6 }}>
-              <Image source={{ uri: (id === 'ai' ? ai! : made[id]).url }} style={{ width: '100%', height: 72, borderRadius: 12, borderWidth: 3, borderColor: id === scene ? C.accent : C.bg }} resizeMode="cover" />
+            <Pressable key={id} accessibilityRole="button" accessibilityLabel={LABEL[id]} accessibilityState={{ selected: id === scene }} onPress={() => setScene(id)} style={wide ? { gap: 6 } : { flex: 1, gap: 6 }}>
+              <Image source={{ uri: (id === 'ai' ? ai! : made[id]).url }} style={{ width: '100%', height: wide ? 96 : 72, borderRadius: wide ? 14 : 12, borderWidth: 3, borderColor: id === scene ? C.accent : C.bg }} resizeMode="cover" />
               <Txt size={12} w="semi" center>
                 {LABEL[id]}
               </Txt>
             </Pressable>
           ))}
         </View>
-      ) : (
-        !working && (
+      );
+
+  // Until there is a photo, the ways to add one.
+  const add = !made && !working && (
           <View style={{ gap: 4 }}>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Btn kind="outline" label="Take a photo" onPress={() => pick('camera')} />
@@ -215,11 +226,11 @@ export default function Cover() {
               </NavLink>
             )}
           </View>
-        )
-      )}
+        );
 
-      {hasAi && <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} onMade={showAi} />}
+  const aiScene = hasAi && <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} onMade={showAi} />;
 
+  const foot = (
       <Foot gap={8}>
         <Muted size={13} lh={1.4}>
           {`The cover goes out with the song when you share it, so pick one ${who} is happy with.`}
@@ -227,6 +238,47 @@ export default function Cover() {
         <Btn label={finishing ? 'Save to the Vault' : 'Set as cover and backdrop'} disabled={!shown && !finishing} busy={working && (!!shown || finishing)} onPress={apply} />
         {finishing && !shown && !working && <Muted size={13} center>No photo? It is saved with a plain cover you can change later.</Muted>}
       </Foot>
+  );
+
+  // Wide: the words about the song and the way to save it on the left; the cover, as large as fits, on the right.
+  if (wide)
+    return (
+      <Screen gap={24}>
+        {top}
+        <View style={{ flex: 1, flexDirection: 'row', gap: 40, minHeight: 0 }}>
+          <View style={{ width: 400, gap: 16 }}>
+            {fields}
+            {aiScene}
+            {foot}
+          </View>
+          <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', gap: 16 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 12 }}>
+              {preview}
+              {about}
+              {add}
+            </View>
+            {scenes}
+          </View>
+        </View>
+      </Screen>
+    );
+
+  return (
+    <Screen>
+      {top}
+
+      {fields}
+
+      {preview}
+
+      {about}
+
+      {scenes}
+      {add}
+
+      {aiScene}
+
+      {foot}
     </Screen>
   );
 }

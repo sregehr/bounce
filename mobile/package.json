@@ -45,7 +45,8 @@
     "deploy:server": "convex deploy --env-file ../.deploy-key.local --cmd 'npm run build:site' --cmd-url-env-var-name BOUNCE_SERVER_URL",
     "serve": "node scripts/serve.mjs",
     "serve:phone": "node scripts/serve.mjs --phone",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "expo lint"
   },
   "private": true
 }

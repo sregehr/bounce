@@ -10,7 +10,7 @@ import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
 import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
 import { NoSong } from '@/ui/AddBeat';
-import { Btn, Chips, Muted, NavLink, Option, Screen, SliderRow, Txt } from '@/ui/kit';
+import { Btn, Chips, Muted, NavLink, Option, Screen, SliderRow, Txt, s } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
 import { Status } from '@/ui/parts';
@@ -18,9 +18,12 @@ import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { C, clock } from '@/ui/theme';
+import { useWide } from '@/ui/wide';
 
 // Height of the pinned last step, above the floating bar.
 const FINISH_HEIGHT = 62;
+// Width of the left pane in the wide layout: the transport and the broad strokes.
+const LISTEN_WIDTH = 400;
 
 export default function Playback() {
   const project = useProject();
@@ -35,6 +38,7 @@ export default function Playback() {
   // How many finished songs in the Vault were made from this beat.
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const [sent, setSent] = useState<string | null>(null);
+  const wide = useWide();
   useStopOnLeave();
 
   if (!project || project.saved) return <NoSong title="Nothing to mix yet" about="Add a beat and record a take over it, and the mix opens here." />;
@@ -75,9 +79,7 @@ export default function Playback() {
       setSent(`Saved ${base} stems.zip to your downloads: the beat, the raw vocal and the processed vocal.`);
     });
 
-  return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen gap={18}>
+  const header = (
         <View style={{ gap: 12 }}>
           {/* Where the song stands, at a glance. */}
           <SongHeader project={project}>
@@ -91,20 +93,21 @@ export default function Playback() {
             </Txt>
           )}
         </View>
+  );
 
+  const listen = (
         <View style={{ gap: 12 }}>
           <Transport project={project} take={take} song={song} compare />
           <Chips options={VOCAL_STYLES} value={polish.style} onChange={(style) => patchProject(project.id, (p) => ({ polish: { ...p.polish, style }, overrides: { ...p.overrides, vocal: undefined }, space: p.space && { ...p.space, vocal: { ...p.space.vocal, reverb: undefined } } }))} />
         </View>
+  );
 
-        {/* The mix controls are always on show; the deeper chain editing is one tap further. */}
-        <View>
-          <View>
-            <Option label="Double track, nudged and panned" w="regular" checked={polish.double} onChange={(double) => setPolish({ double })} minHeight={46} />
-            <SliderRow label="Vocal level" value={level ?? polish.vocalLevel} onChange={setLevel} onCommit={(v) => (setLevel(null), setPolish({ vocalLevel: v }))} labelWidth={92} minHeight={44} fontSize={15} display={`${level ?? polish.vocalLevel}`} valueWidth={30} />
-            <View style={{ paddingTop: 10, paddingBottom: 6 }}>
-              <ChainEditor project={project} song={song} />
-            </View>
+  const double = <Option label="Double track, nudged and panned" w="regular" checked={polish.double} onChange={(double) => setPolish({ double })} minHeight={46} />;
+  const vocalLevel = <SliderRow label="Vocal level" value={level ?? polish.vocalLevel} onChange={setLevel} onCommit={(v) => (setLevel(null), setPolish({ vocalLevel: v }))} labelWidth={92} minHeight={44} fontSize={15} display={`${level ?? polish.vocalLevel}`} valueWidth={30} />;
+  const chains = <ChainEditor project={project} song={song} />;
+
+  const links = (
+    <>
             <NavLink size={14} onPress={() => !stems.busy && sendStems()}>
               {stems.busy ? 'Gathering the stems…' : 'Send stems to an engineer'}
             </NavLink>
@@ -122,6 +125,47 @@ export default function Playback() {
             >
               {armed ? `Tap again to delete take ${take.number}` : 'Delete this take'}
             </NavLink>
+    </>
+  );
+
+  // Wide: listening and the broad strokes on the left, the chains open on the right, and the last step in the header.
+  if (wide)
+    return (
+      <Screen gap={22}>
+        <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
+          <View style={{ flex: 1 }}>{header}</View>
+          <Btn label="Finish song" to="/cover?finish=1" style={{ flex: 0, paddingHorizontal: 32 }} />
+        </View>
+        {/* Columns fixes its right pane; here the narrow one is on the left. */}
+        <View style={{ flex: 1, flexDirection: 'row', gap: 36, minHeight: 0 }}>
+          <View style={{ width: LISTEN_WIDTH, gap: 12 }}>
+            {listen}
+            <View>
+              {double}
+              {vocalLevel}
+            </View>
+            {/* The rarely used links sit at the foot of the pane, out of the way. */}
+            <View style={{ flexGrow: 1, justifyContent: 'flex-end' }}>{links}</View>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>{chains}</View>
+        </View>
+      </Screen>
+    );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <Screen gap={18}>
+        {header}
+
+        {listen}
+
+        {/* The mix controls are always on show; the deeper chain editing is one tap further. */}
+        <View>
+          <View>
+            {double}
+            {vocalLevel}
+            <View style={{ paddingTop: 10, paddingBottom: 6 }}>{chains}</View>
+            {links}
           </View>
         </View>
 

@@ -11,8 +11,9 @@ import { Backend } from '@/auth/Provider';
 import { startBackup } from '@/data/backup';
 import { loadLibrary, useLibrary, useReady } from '@/data/store';
 import { closeInput } from '@/engine/engine';
-import { TabBar, TopNav } from '@/ui/TabBar';
+import { Rail, TabBar, TopNav } from '@/ui/TabBar';
 import { C } from '@/ui/theme';
+import { WIDE_MAX, useWide } from '@/ui/wide';
 
 // Screens anyone can open before the welcome is done.
 const OPEN = ['/onboarding', '/privacy'];
@@ -35,8 +36,10 @@ export default function Layout() {
     if (!LISTENING.includes(pathname)) closeInput();
   }, [pathname]);
 
-  // On a desktop browser, show the app in a phone-sized frame, as the original design does.
-  const framed = Platform.OS === 'web' && width >= 520 && height >= 880;
+  // A tablet on its side, or a wide browser window, gets the two-pane layout with a rail down the left.
+  const wide = useWide();
+  // On a tall desktop browser window, show the app in a phone-sized frame, as the original design does.
+  const framed = !wide && Platform.OS === 'web' && width >= 520 && height >= 880;
   const loaded = ready && (fontsLoaded || !!fontError);
 
   return (
@@ -44,14 +47,20 @@ export default function Layout() {
       <Backend>
       <StatusBar style="light" />
       <View style={{ flex: 1, backgroundColor: framed ? '#000' : C.bg, alignItems: framed ? 'center' : 'stretch', justifyContent: framed ? 'center' : 'flex-start' }}>
-        <View style={framed ? { width: 390, height: 844, borderRadius: 32, overflow: 'hidden', backgroundColor: C.bg } : { flex: 1, backgroundColor: C.bg, width: '100%', maxWidth: 430, alignSelf: 'center' }}>
+        <View style={framed ? { width: 390, height: 844, borderRadius: 32, overflow: 'hidden', backgroundColor: C.bg } : { flex: 1, backgroundColor: C.bg, width: '100%', maxWidth: wide ? WIDE_MAX : 430, alignSelf: 'center' }}>
           {!loaded ? null : !onboarded && !OPEN.includes(pathname) ? (
             <Redirect href="/onboarding" />
           ) : (
             <>
               <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }} />
-              <TopNav />
-              <TabBar />
+              {wide ? (
+                <Rail />
+              ) : (
+                <>
+                  <TopNav />
+                  <TabBar />
+                </>
+              )}
             </>
           )}
         </View>

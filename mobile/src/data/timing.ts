@@ -21,8 +21,22 @@ export function routeKey(route: Route, reportedMs: number): string {
   return [route.input.trim().toLowerCase() || 'input', route.output.trim().toLowerCase() || 'output', far ? 'far' : 'near'].join('|');
 }
 
-/** The best guess for a setup that has not been measured. */
-export const estimateMs = (route: Route, reportedMs: number) => (isWireless(route) && reportedMs < FAR_MS ? WIRELESS_MS : reportedMs);
+// A phone's own microphone and speaker. The phone reports far less delay than a take really
+// suffers, so a figure measured on an iPhone stands in until this setup is checked.
+const PHONE_MIC = /iphone|ipad/i;
+const PHONE_MS = 84;
+
+/**
+ * The best guess for a setup that has not been measured, from what is connected: a wireless
+ * link is long whatever the browser says, a phone's own microphone is a known middle figure,
+ * and anything else is taken at the browser's word. A long reported delay is always trusted.
+ */
+export function estimateMs(route: Route, reportedMs: number): number {
+  if (reportedMs >= FAR_MS) return reportedMs;
+  if (isWireless(route)) return WIRELESS_MS;
+  if (PHONE_MIC.test(route.input)) return PHONE_MS;
+  return reportedMs;
+}
 
 /** How far takes are moved for this setup: its own measurement when there is one, otherwise an estimate. */
 export function timingFor(settings: Pick<Settings, 'latencyMs' | 'timing'>, route: Route, reportedMs: number): { ms: number; measured: boolean } {

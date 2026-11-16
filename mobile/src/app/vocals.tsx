@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 
 import type { LoopChoice } from '@/data/model';
@@ -14,6 +14,7 @@ import { useOnScreen, useTask } from '@/ui/hooks';
 import { askForMic, setRecordControl } from '@/ui/recordControl';
 import { SongHeader } from '@/ui/SongHeader';
 import { C, clock, meterPct, plural } from '@/ui/theme';
+import { Columns, useWide } from '@/ui/wide';
 
 const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
 type Length = (typeof LENGTHS)[number];
@@ -33,6 +34,8 @@ export default function Vocals() {
   const [onScreen, setOnScreen] = useState(false);
   const live = input.status === 'ready';
   const mode = take.mode;
+  const wide = useWide();
+  const { height } = useWindowDimensions();
 
   useOnScreen(() => {
     void inputAllowed().then((ok) => void (ok && engineState().input.status !== 'ready' && openInput(settings.inputId, 'mic')));
@@ -115,12 +118,10 @@ export default function Vocals() {
   const length = toLength(project.loop.bars);
   const first = (loop?.startBar ?? 0) + 1;
 
-  return (
-    <Screen gap={14}>
-      <SongHeader project={project} locked={active} />
+  const header = <SongHeader project={project} locked={active} />;
 
-      {/* The same empty state as Mix: what is missing, and one button that starts it. */}
-      {!active && project.takes.length === 0 && (
+  // The same empty state as Mix: what is missing, and one button that starts it.
+  const empty = !active && project.takes.length === 0 && (
         <View style={{ gap: 12 }}>
           <View style={{ gap: 4 }}>
             <Txt size={17} w="semi">
@@ -130,11 +131,11 @@ export default function Vocals() {
           </View>
           <Btn label="Record a take" disabled={task.busy} onPress={() => press.current()} />
         </View>
-      )}
+      );
 
-      {/* Looping and listening both play the beat against the microphone, so they wait for one. */}
-      {live && (
-        <Card style={{ padding: 16, gap: 12 }}>
+  // Looping and listening both play the beat against the microphone, so they wait for one.
+  const loopCard = live && (
+        <Card style={wide ? { padding: 22, gap: 16, borderRadius: 24 } : { padding: 16, gap: 12 }}>
           <View style={[s.row, s.between]}>
             <Eyebrow>{loop ? `Loop · bars ${first}–${first + loop.bars - 1}` : 'Whole beat · once through'}</Eyebrow>
             {active ? (
@@ -147,9 +148,15 @@ export default function Vocals() {
               </NavLink>
             )}
           </View>
-          <View accessible={false} style={{ flexDirection: 'row', gap: 3 }}>
+          <View accessible={false} style={{ flexDirection: 'row', gap: wide ? 6 : 3 }}>
             {Array.from({ length: cells }, (_, i) => (
-              <View key={i} style={{ flex: 1, height: 34, borderRadius: 4, backgroundColor: !active ? C.dim : i < cell ? C.text : i === cell ? (mode === 'recording' ? C.rec : C.accent) : C.dim }} />
+              <View key={i} style={[{ flex: 1, height: 34, borderRadius: 4, backgroundColor: !active ? C.dim : i < cell ? C.text : i === cell ? (mode === 'recording' ? C.rec : C.accent) : C.dim }, wide && { height: 130, borderRadius: 10, justifyContent: 'flex-end', padding: cells > 8 ? 6 : 10 }]}>
+                {wide && loop ? (
+                  <Txt size={cells > 8 ? 14 : 18} w="display" ls={0} color={active && i <= cell ? C.bg : C.muted}>
+                    {first + i}
+                  </Txt>
+                ) : null}
+              </View>
             ))}
           </View>
           {bar ? (
@@ -169,9 +176,9 @@ export default function Vocals() {
           )}
           {project.loop.bars > total && bar && !active ? <Muted size={13}>This beat is {plural(total, 'bar')} long, so that is what loops.</Muted> : null}
         </Card>
-      )}
+      );
 
-      {canPunch && (
+  const punchIn = canPunch && (
         <Option
           label={`Punch in at bar ${first + punchBar}`}
           sub={`Keeps bars ${first}–${first + punchBar - 1} from take ${previous?.number}`}
@@ -180,9 +187,9 @@ export default function Vocals() {
           divided
           minHeight={56}
         />
-      )}
+      );
 
-      {live && (
+  const listening = live && (
         <View style={[s.row, s.divided, { minHeight: 56 }]}>
           <View style={{ flex: 1, gap: 2 }}>
             <Txt size={15} w="semi">
@@ -194,14 +201,15 @@ export default function Vocals() {
           </View>
           <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: mode === 'listening' && take.held >= 2 ? 1 : 0.35 }} onPress={() => mode === 'listening' && take.held >= 2 && finish(() => router.push('/playback'))} />
         </View>
-      )}
+      );
 
-      {live && (
-        <View accessible={false} style={{ height: 4, borderRadius: 2, backgroundColor: C.line, overflow: 'hidden' }}>
-          <View style={{ width: `${meterPct(active ? take.level : Math.max(input.levelL, input.levelR))}%`, height: 4, backgroundColor: take.clipped && active ? C.rec : C.text }} />
+  const meter = live && (
+        <View accessible={false} style={{ height: wide ? 8 : 4, borderRadius: wide ? 4 : 2, backgroundColor: C.line, overflow: 'hidden' }}>
+          <View style={{ width: `${meterPct(active ? take.level : Math.max(input.levelL, input.levelR))}%`, height: wide ? 8 : 4, backgroundColor: take.clipped && active ? C.rec : C.text }} />
         </View>
-      )}
-      {active ? (
+      );
+
+  const micRow = active ? (
         <Muted size={13}>
           Mic: {input.label}. Timing is corrected by {latencyMs} ms.
         </Muted>
@@ -233,23 +241,107 @@ export default function Vocals() {
             {live && !setup && <Muted size={13} style={{ paddingTop: 8 }}>Wear headphones so the beat stays out of the take.</Muted>}
           </View>
         )
-      )}
+      );
 
-      {(task.error || saved) && (
+  const message = (task.error || saved) && (
         <Txt size={14} w="medium" color={task.error ? C.recText : C.accent} center>
           {task.error ?? saved}
         </Txt>
-      )}
+      );
+
+  // Hearing a take back needs one to exist.
+  const canHear = mode === 'recording' || project.takes.length > 0;
+  const hear = () => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')));
+
+  // Wide: the loop and the mic on the left, the bars to rap on the right, and hearing it back in the header. Recording is the mic in the rail.
+  if (wide)
+    return (
+      <Screen gap={24}>
+        <View style={[s.row, s.between, { gap: 32, minHeight: 64 }]}>
+          <View style={{ flex: 1 }}>{header}</View>
+          <View style={[s.row, { gap: 24 }]}>
+            {mode === 'recording' && (
+              <View style={[s.row, { gap: 12 }]}>
+                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: C.rec }} />
+                <Txt size={44} w="display" lh={1} style={{ fontVariant: ['tabular-nums'] }}>
+                  {clock(take.elapsed)}
+                </Txt>
+              </View>
+            )}
+            {canHear && (
+              <Btn
+                kind={mode === 'recording' ? 'primary' : 'outline'}
+                size={18}
+                label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
+                disabled={task.busy}
+                onPress={hear}
+                style={{ flex: 0, minHeight: 56, paddingHorizontal: 28, borderRadius: 18 }}
+              />
+            )}
+          </View>
+        </View>
+        <Columns
+          side={420}
+          inner={14}
+          left={
+            <>
+              {empty}
+              {loopCard}
+              {punchIn}
+              {listening}
+              {meter}
+              {micRow}
+              {message}
+            </>
+          }
+          right={
+            <View style={{ flex: 1, minHeight: 320, maxHeight: Math.max(320, height - 190), padding: 24, borderRadius: 24, borderWidth: 1, borderColor: C.border, gap: 16 }}>
+              <View style={[s.row, s.between, { minHeight: 44 }]}>
+                <Eyebrow>Your bars</Eyebrow>
+                {/* Leaving for Song mid-take would drop the take, so the way there waits. */}
+                {!active && (
+                  <NavLink size={14} to="/song">
+                    Edit on Song
+                  </NavLink>
+                )}
+              </View>
+              {project.lyrics.trim() ? (
+                // The bars scroll inside their panel, so the loop stays in view beside them.
+                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                  <Txt size={22} lh={1.55}>
+                    {project.lyrics}
+                  </Txt>
+                </ScrollView>
+              ) : (
+                <Muted size={15}>No bars written yet. Write them on the Song tab and they show here, big enough to read while you rap.</Muted>
+              )}
+            </View>
+          }
+        />
+      </Screen>
+    );
+
+  return (
+    <Screen gap={14}>
+      {header}
+
+      {empty}
+
+      {loopCard}
+
+      {punchIn}
+
+      {listening}
+
+      {meter}
+      {micRow}
+
+      {message}
 
       {/* Recording starts and stops from the mic in the bottom bar. Hearing a take back needs one to exist. */}
-      {(mode === 'recording' || project.takes.length > 0) && (
+      {canHear && (
         <Foot center gap={14}>
-          <Btn
-            label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
-            disabled={task.busy}
-            onPress={() => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')))}
-            style={{ alignSelf: 'stretch' }}
-          />
+          <Btn label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'} disabled={task.busy} onPress={hear} style={{ alignSelf: 'stretch' }} />
         </Foot>
       )}
     </Screen>

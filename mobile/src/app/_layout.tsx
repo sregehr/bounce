@@ -14,6 +14,8 @@ import { closeInput } from '@/engine/engine';
 import { TabBar, TopNav } from '@/ui/TabBar';
 import { C } from '@/ui/theme';
 
+// Screens anyone can open before the welcome is done.
+const OPEN = ['/onboarding', '/privacy'];
 const LISTENING = ['/onboarding', '/capture', '/record', '/vocals'];
 
 export default function Layout() {
@@ -43,7 +45,7 @@ export default function Layout() {
       <StatusBar style="light" />
       <View style={{ flex: 1, backgroundColor: framed ? '#000' : C.bg, alignItems: framed ? 'center' : 'stretch', justifyContent: framed ? 'center' : 'flex-start' }}>
         <View style={framed ? { width: 390, height: 844, borderRadius: 32, overflow: 'hidden', backgroundColor: C.bg } : { flex: 1, backgroundColor: C.bg, width: '100%', maxWidth: 430, alignSelf: 'center' }}>
-          {!loaded ? null : !onboarded && pathname !== '/onboarding' ? (
+          {!loaded ? null : !onboarded && !OPEN.includes(pathname) ? (
             <Redirect href="/onboarding" />
           ) : (
             <>

@@ -91,6 +91,9 @@ export default function Settings() {
         <NavLink size={14} onPress={() => (setProfile({ onboarded: false }), router.replace('/onboarding'))}>
           Show the welcome again
         </NavLink>
+        <NavLink size={14} to="/privacy">
+          Privacy
+        </NavLink>
         <NavLink size={14} onPress={() => void wipe()}>
           {armed ? 'Tap again: this deletes every beat, take and cover here' : 'Delete everything on this device'}
         </NavLink>

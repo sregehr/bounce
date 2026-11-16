@@ -9,6 +9,7 @@ import type { Project } from '@/data/model';
 import { setProfile, setSettings, useLibrary } from '@/data/store';
 import { measureLatency, openInput, reportedLatencyMs, setPair, useEngine } from '@/engine/engine';
 import { Btn, Card, Eyebrow, Field, Foot, Muted, NavLink, Screen, TickIcon, TopBar, Txt, s } from '@/ui/kit';
+import { Logo } from '@/ui/Logo';
 import { useTiming } from '@/ui/timing';
 import { useTask } from '@/ui/hooks';
 import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
@@ -100,6 +101,7 @@ export default function Onboarding() {
       {step === 'welcome' && (
         <>
           <View style={{ gap: 12, paddingTop: 40 }}>
+            <Logo size={52} />
             <Txt size={64} w="display" ls={-0.04} lh={1}>
               Bounce
             </Txt>

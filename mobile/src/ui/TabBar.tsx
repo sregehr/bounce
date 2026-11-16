@@ -9,6 +9,7 @@ import { setCurrent, useLibrary } from '@/data/store';
 import { useEngine } from '@/engine/engine';
 
 import { MicIcon, Txt } from './kit';
+import { Logo } from './Logo';
 import { TOP_NAV_HEIGHT, tabFor, type Tab } from './tabs';
 import { C } from './theme';
 
@@ -147,9 +148,12 @@ export function TopNav() {
     <View style={[{ position: 'absolute', left: 0, right: 0, top: 0, paddingTop: insets.top, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.14)' }, glass]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: 24, paddingRight: 12 }}>
         <Pressable accessibilityRole="link" accessibilityLabel="Bounce: home" onPress={() => follow({ to: '/', id: null }, path)} hitSlop={8}>
-          <Txt size={20} w="display" ls={-0.02}>
-            Bounce
-          </Txt>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            <Logo size={20} />
+            <Txt size={20} w="display" ls={-0.02}>
+              Bounce
+            </Txt>
+          </View>
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Pressable

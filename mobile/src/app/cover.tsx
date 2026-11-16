@@ -177,7 +177,7 @@ export default function Cover() {
 
       <View style={[s.row, s.between]}>
         <Muted style={{ flex: 1 }}>
-          {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? (ai ? 'Add a photo to put the artist in the scene.' : hasAi ? 'The photo stays on this device unless you choose to send it to AI.' : 'The photo never leaves this device.') : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
+          {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? (ai ? 'Add a photo to put the artist in the scene.' : hasAi ? 'The photo only goes to AI if you choose that. Backup keeps a copy with your songs.' : 'The photo never leaves this device.') : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
         </Muted>
         {made && (
           <View style={[s.row, { gap: 16 }]}>

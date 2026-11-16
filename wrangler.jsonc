@@ -1,7 +1,8 @@
 // Bounce: the built Expo web app (mobile/dist-site/) served as static assets by a Worker.
 // Unknown paths get index.html so the app's own routes (/vocals, /player, ...) work.
 // Deploy with: npm run deploy (wrangler needs Node 22.12 or newer). That publishes the Convex
-// server first (it needs mobile/.env.deploy.local holding CONVEX_DEPLOY_KEY) and builds the
+// server first (it needs .deploy-key.local in this folder holding CONVEX_DEPLOY_KEY; keep it out of mobile/,
+// where the Expo dev server tries to read any .env file) and builds the
 // site against it. npm run deploy:site-only ships the site with no server behind it.
 {
   "name": "mpc-mastering",

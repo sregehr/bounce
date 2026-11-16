@@ -189,24 +189,6 @@ export function ClapCheck({ input, onDone, onCancel }: { input: EngineState['inp
   );
 }
 
-const HINTS: Record<Hint, string> = {
-  beat: 'Start with a beat. Capture one, import a file or pick a demo song, and the rest opens up.',
-  mix: 'Nothing to mix yet. Record a take here and it opens in the mix.',
-};
-
-/** What a tab says when it led here because its own screen has nothing to show yet. */
-export function Guide({ show }: { show: Hint[] }) {
-  const { hint } = useLocalSearchParams<{ hint?: Hint }>();
-  if (!hint || !show.includes(hint)) return null;
-  return (
-    <View accessibilityRole="alert" style={{ borderWidth: 1, borderColor: C.accent, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14 }}>
-      <Txt size={14} w="medium" lh={1.4} color={C.accent}>
-        {HINTS[hint]}
-      </Txt>
-    </View>
-  );
-}
-
 const TONES = { plain: C.muted, good: C.text, todo: C.accent, bad: C.recText } as const;
 
 /** A small pill that states one fact about the song. With `onPress` it also opens more detail. */

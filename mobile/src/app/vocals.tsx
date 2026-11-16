@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Redirect, router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { tempoLine } from '@/data/labels';
 import type { LoopChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studio';
 import { engineState, inputAllowed, openInput, startTake, stopTake, useEngine, wake } from '@/engine/engine';
-import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, StopButton, Txt, s } from '@/ui/kit';
+import { NoSong } from '@/ui/AddBeat';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
 import { useTiming } from '@/ui/timing';
 import { useOnScreen, useTask } from '@/ui/hooks';
-import { Guide } from '@/ui/parts';
+import { askForMic, setRecordControl } from '@/ui/recordControl';
 import { C, clock, meterPct, plural } from '@/ui/theme';
 
 const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
@@ -29,14 +30,22 @@ export default function Vocals() {
   const [saved, setSaved] = useState<string | null>(null);
   const [setup, setSetup] = useState(false);
   const finishing = useRef(false);
+  const [onScreen, setOnScreen] = useState(false);
+  const { hint } = useLocalSearchParams<{ hint?: string }>();
   const live = input.status === 'ready';
   const mode = take.mode;
 
   useOnScreen(() => {
     void inputAllowed().then((ok) => void (ok && engineState().input.status !== 'ready' && openInput(settings.inputId, 'mic')));
     if (project) void loadPcm(project.beat.key).catch(() => {});
-    // Leaving mid-take drops it, the same as the capture screen.
-    return () => void stopTake(false);
+    setOnScreen(true);
+    return () => {
+      setOnScreen(false);
+      setRecordControl(null);
+      askForMic(false);
+      // Leaving mid-take drops it, the same as the capture screen.
+      stopTake(false);
+    };
   });
 
   const loop = project ? loopSeconds(project.beat, project.loop) : null;
@@ -73,7 +82,15 @@ export default function Vocals() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [take.ended]);
 
-  if (!project) return <Redirect href="/" />;
+  // The mic in the bottom bar is the record button while this screen is open: with no
+  // microphone yet it offers to connect one, and otherwise it starts and stops the take.
+  const press = useRef(() => {});
+  const control = !live ? 'off' : mode === 'recording' ? 'recording' : 'ready';
+  useEffect(() => {
+    if (onScreen && project) setRecordControl({ state: control, busy: task.busy, press: () => press.current() });
+  }, [onScreen, !!project, control, task.busy]);
+
+  if (!project || project.saved) return <NoSong title="Nothing to record over yet" about="Add a beat, then come back here and rap over it." />;
 
   const begin = (next: 'listening' | 'recording') =>
     task.run(async () => {
@@ -83,6 +100,13 @@ export default function Vocals() {
       const beat = await loadPcm(project.beat.key);
       await startTake(next, beat, loop ? { start: loop.start, end: loop.end } : null);
     });
+
+  press.current = () => {
+    if (task.busy) return;
+    if (!live) return askForMic(true);
+    if (mode === 'recording') void finish();
+    else void begin('recording');
+  };
 
   const active = mode !== 'idle';
   const within = active ? take.elapsed % span : 0;
@@ -105,7 +129,19 @@ export default function Vocals() {
         </Pressable>
       </View>
 
-      {!active && project.takes.length === 0 && <Guide show={['mix']} />}
+      {!active && project.takes.length === 0 && (
+        <View accessibilityRole="alert" style={{ borderWidth: 1, borderColor: C.accent, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, gap: 2 }}>
+          <Txt size={15} w="semi" color={C.accent}>
+            {hint === 'mix' ? 'Nothing to mix yet' : 'No takes yet'}
+          </Txt>
+          <Txt size={14} lh={1.4} color={C.muted}>
+            Record one over this beat and it opens in the mix.
+          </Txt>
+          <NavLink size={14} w="semi" onPress={() => press.current()}>
+            Record a take
+          </NavLink>
+        </View>
+      )}
 
       <Card style={{ padding: 16, gap: 12 }}>
         <View style={[s.row, s.between]}>
@@ -160,7 +196,7 @@ export default function Vocals() {
             Always listening
           </Txt>
           <Txt size={13} color={C.muted}>
-            {mode === 'listening' ? `Holding the last ${clock(take.held)}. Missed the record button?` : 'Play the loop and rap. The last 60 s are held.'}
+            {mode === 'listening' ? `Holding the last ${clock(take.held)}. Missed the start?` : 'Play the loop and rap. The last 60 s are held.'}
           </Txt>
         </View>
         <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: mode === 'listening' && take.held >= 2 ? 1 : 0.35 }} onPress={() => mode === 'listening' && take.held >= 2 && finish(() => router.push('/playback'))} />
@@ -180,7 +216,7 @@ export default function Vocals() {
           <Disclosure
             title="Microphone and timing"
             summary={live ? `${input.label} · ${latencyMs} ms ${timing.measured ? 'measured' : 'estimated'}` : 'Not connected'}
-            open={setup || !live}
+            open={setup}
             onToggle={() => setSetup(!setup)}
             last
             size={15}
@@ -197,22 +233,17 @@ export default function Vocals() {
         </Txt>
       )}
 
-      <Foot center gap={14}>
-        <StopButton
-          size={132}
-          halo
-          recording={mode === 'recording'}
-          disabled={!live || task.busy}
-          label={mode === 'recording' ? 'Stop recording' : 'Start recording'}
-          onPress={() => (mode === 'recording' ? finish() : begin('recording'))}
-        />
-        <Btn
-          label={mode === 'recording' ? 'Done, hear it back' : project.takes.length ? 'Hear it back' : 'Record a take to hear it back'}
-          disabled={task.busy || (mode !== 'recording' && project.takes.length === 0)}
-          onPress={() => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')))}
-          style={{ alignSelf: 'stretch' }}
-        />
-      </Foot>
+      {/* Recording starts and stops from the mic in the bottom bar. Hearing a take back needs one to exist. */}
+      {(mode === 'recording' || project.takes.length > 0) && (
+        <Foot center gap={14}>
+          <Btn
+            label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
+            disabled={task.busy}
+            onPress={() => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')))}
+            style={{ alignSelf: 'stretch' }}
+          />
+        </Foot>
+      )}
     </Screen>
   );
 }

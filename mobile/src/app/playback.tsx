@@ -10,6 +10,7 @@ import { useSong } from '@/data/song';
 import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
 import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
+import { NoSong } from '@/ui/AddBeat';
 import { Btn, Chips, NavLink, Option, Screen, SliderRow, Txt } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
@@ -36,7 +37,7 @@ export default function Playback() {
   const [sent, setSent] = useState<string | null>(null);
   useStopOnLeave();
 
-  if (!project) return <Redirect href="/" />;
+  if (!project || project.saved) return <NoSong title="Nothing to mix yet" about="Add a beat and record a take over it, and the mix opens here." />;
   if (!take) return <Redirect href="/vocals" />;
 
   const { mix } = song;

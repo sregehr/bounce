@@ -495,17 +495,20 @@ async function library() {
   await expectText('FREESTYLE OVER', 'home shows the latest beat');
   await expectText('3 takes');
   await shot('23-home');
-  // The plus in the top bar starts a new song from anywhere.
-  await tap('New song');
-  await expectText('Every song starts with a beat', 'the plus opens the ways to start a song');
-  await shot('23b-new-song');
-  await tap('Pick a demo song');
-  await expectText('Ready-made beats', 'and leads into one of them');
+  // Home leads with the ways to bring a beat in.
+  await expectText('Add a beat', 'home offers the ways to add a beat');
+  await tap('Add a demo song');
+  await expectText('Ready-made beats', 'and leads into the demo songs');
   await tap('Home');
   await expectText('Add a beat');
   await tap('Open Night bus');
   await expectText('beat details', 'a beat opens its song', 10000);
   await tap('Home');
+  // The personal menu in the top bar holds Profile and Settings.
+  await tap('Your menu');
+  await tap('Profile');
+  await expectText('Used on a song', 'the personal menu opens the profile');
+  await tap('Your menu');
   await tap('Settings');
   await expectText('Storage');
   await expectText('Everything is backed up', 'the library is backed up to the server', 30000);
@@ -608,6 +611,26 @@ async function library() {
   await sleep(600);
   log(!/Basement tape/.test(await text()), 'swiping and tapping Delete removes a beat');
   await expectText('Night bus', 'and leaves the others');
+
+  // With no beat left, Song, the mic and Mix stay on their own screens and offer to add one.
+  for (let i = 0; i < 6; i++) {
+    const left = await page.evaluate(() => [...document.querySelectorAll('[role=button]')].map((n) => n.getAttribute('aria-label') ?? '').filter((l) => l.startsWith('Open ')).map((l) => l.slice(5)));
+    if (!left.length) break;
+    await swipeLeft(`Open ${left[0]}`);
+    await tap(`Delete ${left[0]}`, { exact: false });
+    await sleep(600);
+  }
+  await expectText('Bring a beat', 'home is empty once every beat is deleted');
+  await tap('Song');
+  await expectText('No song yet', 'Song stays put and says why it is empty');
+  await expectText('Add a beat', 'and offers the ways to add a beat');
+  await shot('30-no-song');
+  await tap('Mix');
+  await expectText('Nothing to mix yet', 'Mix does the same');
+  await tap('Add a beat to freestyle');
+  await expectText('Nothing to record over yet', 'and so does the mic');
+  await tap('Try a demo song');
+  await expectText('Ready-made beats', 'its tiles lead on, here to the demo songs');
 }
 
 const flows = { onboarding, song, finish, library };

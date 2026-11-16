@@ -8,7 +8,6 @@ const TABS: Record<string, Tab> = {
   '/capture': 'home',
   '/record': 'home',
   '/demos': 'home',
-  '/new': 'home',
   // Recording over it: the mic button in the middle.
   '/vocals': 'mic',
   // The song being worked on: its takes and lyrics.
@@ -16,6 +15,8 @@ const TABS: Record<string, Tab> = {
   // The sound of the chosen take, and the steps that finish a song.
   '/playback': 'mix',
   '/vault': 'vault',
+  // Behind the personal menu in the top bar.
+  '/profile': 'settings',
   '/settings': 'settings',
 };
 

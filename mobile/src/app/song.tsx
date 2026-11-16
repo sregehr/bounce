@@ -1,11 +1,12 @@
 import { Pressable, TextInput, View } from 'react-native';
-import { Redirect, router } from 'expo-router';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { tempoLine } from '@/data/labels';
 import type { Take } from '@/data/model';
 import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
+import { NoSong } from '@/ui/AddBeat';
 import { Btn, Eyebrow, Muted, Screen, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
 import { Status, SwipeRow } from '@/ui/parts';
@@ -26,7 +27,7 @@ export default function Song() {
   const insets = useSafeAreaInsets();
   useStopOnLeave();
 
-  if (!project || project.saved) return <Redirect href="/" />;
+  if (!project || project.saved) return <NoSong title="No song yet" about="A song starts with a beat. Add one and its takes and lyrics live here." />;
 
   const about = (k: Take) => [dayLabel(k.createdAt), clock(k.durationSec), k.origin === 'kept' ? 'kept' : k.origin === 'punched' ? 'punched in' : null].filter(Boolean).join(' · ');
   /** Tapping a take picks it and plays it polished over the beat; tapping the picked one plays or pauses. */

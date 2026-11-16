@@ -2,22 +2,19 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { router } from 'expo-router';
 
-import { AccountPanel } from '@/auth/account';
-import { backendAvailable } from '@/auth/backend';
 import { backupAvailable, backupNow, useBackup } from '@/data/backup';
 import { blobs, kv } from '@/data/db';
 import { storageEstimate } from '@/data/files';
 import { emptyLibrary } from '@/data/model';
 import { setProfile, setSettings, update, useLibrary } from '@/data/store';
 import { closeInput, stopTransport } from '@/engine/engine';
-import { Eyebrow, Field, Muted, NavLink, Option, Screen, TopBar } from '@/ui/kit';
+import { Eyebrow, Muted, NavLink, Option, Screen, TopBar } from '@/ui/kit';
 import { useArmed } from '@/ui/hooks';
 import { plural } from '@/ui/theme';
 
 const mb = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 
 export default function Settings() {
-  const artist = useLibrary((l) => l.profile.artist);
   const settings = useLibrary((l) => l.settings);
   const count = useLibrary((l) => l.projects.length);
   const backup = useBackup();
@@ -41,19 +38,6 @@ export default function Settings() {
   return (
     <Screen gap={18} padBottom={40}>
       <TopBar left="Settings" />
-
-      <View style={{ gap: 8 }}>
-        <Eyebrow>Your name</Eyebrow>
-        <Field label="Artist name" value={artist} onChangeText={(name) => setProfile({ artist: name })} placeholder="Artist name" maxLength={40} autoCapitalize="words" />
-        <Muted size={13}>Used on a song when no other artist is named on it.</Muted>
-      </View>
-
-      {backendAvailable && (
-        <View style={{ gap: 8 }}>
-          <Eyebrow>Account</Eyebrow>
-          <AccountPanel />
-        </View>
-      )}
 
       <View style={{ gap: 4 }}>
         <Eyebrow>Backup</Eyebrow>

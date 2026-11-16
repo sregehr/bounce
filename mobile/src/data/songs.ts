@@ -42,26 +42,26 @@ export function loadedSong(l: Library): Project | null {
   return songs.find((s) => s.id === l.songId) ?? songs[0] ?? null;
 }
 
-export type Hint = 'beat' | 'mix';
+export type Hint = 'mix';
 /** A screen to open, the project to make current first, and what to tell the user there. */
 export type Lead = { to: '/' | '/vocals' | '/song' | '/playback'; id: string | null; hint?: Hint };
 
-/** The mic always works: it records over a beat, or leads to adding one. */
+/** The mic always works: it records over a beat. With no beat, its screen offers the ways to add one. */
 export function micLead(l: Library): Lead {
   const beat = workBeat(l);
-  return beat ? { to: '/vocals', id: beat.id } : { to: '/', id: null, hint: 'beat' };
+  return beat ? { to: '/vocals', id: beat.id } : { to: '/vocals', id: null };
 }
 
-/** Song always works: it opens the song being worked on, or leads to adding a beat to start one. */
+/** Song always works: it opens the song being worked on. With no beat, its screen offers the ways to add one. */
 export function songLead(l: Library): Lead {
   const beat = workBeat(l);
-  return beat ? { to: '/song', id: beat.id } : { to: '/', id: null, hint: 'beat' };
+  return beat ? { to: '/song', id: beat.id } : { to: '/song', id: null };
 }
 
-/** Mix always works: it opens the mix of a beat with takes, or leads to recording one. */
+/** Mix always works: it opens the mix of a beat with takes, or leads to recording one. With no beat, its screen offers the ways to add one. */
 export function mixLead(l: Library): Lead {
   const beat = workBeat(l);
   const recorded = beat?.takes.length ? beat : beatsIn(l.projects).find((p) => p.takes.length);
   if (recorded) return { to: '/playback', id: recorded.id };
-  return beat ? { to: '/vocals', id: beat.id, hint: 'mix' } : { to: '/', id: null, hint: 'beat' };
+  return beat ? { to: '/vocals', id: beat.id, hint: 'mix' } : { to: '/playback', id: null };
 }

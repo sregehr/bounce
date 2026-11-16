@@ -46,7 +46,7 @@ const older = makeSong(a, 'Older', 50);
 check('beats and songs are told apart', beatsIn([song, a, older]).length === 1 && songsIn([older, a, song]).map((p) => p.name).join() === 'Night bus,Older');
 
 // Where the tabs lead.
-check('with nothing, every tab leads to adding a beat', [micLead, mixLead, songLead].every((f) => f(lib([])).to === '/' && f(lib([])).hint === 'beat'));
+check('with nothing, every tab stays on its own screen, which offers to add a beat', micLead(lib([])).to === '/vocals' && songLead(lib([])).to === '/song' && mixLead(lib([])).to === '/playback' && [micLead, mixLead, songLead].every((f) => f(lib([])).id === null && !f(lib([])).hint));
 const bare = lib([beat('b')], { currentId: 'b' });
 check('with a beat and no takes, the mic records and Song opens it', micLead(bare).to === '/vocals' && !micLead(bare).hint && songLead(bare).to === '/song' && songLead(bare).id === 'b');
 check('…and Mix leads to recording, with its reason', mixLead(bare).to === '/vocals' && mixLead(bare).hint === 'mix');
@@ -56,7 +56,7 @@ const full = lib([song, older, a], { currentId: song.id, songId: older.id });
 check('the song played last is remembered', loadedSong(full)?.id === older.id);
 check('…or the newest when none has been', loadedSong({ ...full, songId: null })?.id === song.id);
 check('with a finished song open, Song, Mix and the mic go to the beat it came from', workBeat(full)?.id === 'a' && micLead(full).id === 'a' && songLead(full).id === 'a' && mixLead(full).id === 'a');
-check('if that beat is gone, the mic leads to adding one', micLead(lib([song], { currentId: song.id })).to === '/');
+check('if that beat is gone, the mic has nothing to record over', micLead(lib([song], { currentId: song.id })).id === null);
 
 // Carrying over a library from before the Vault held finished songs only.
 const old: Library = { ...emptyLibrary(), projects: [beat('plain', [take(1)]), beat('lyric', [take(1)], { lyrics: 'bars' }), beat('cover', [take(1)], { cover: { scene: 'stage', photoKey: 'p', cutoutKey: null, imageKey: 'c' } }), beat('notake', [], { lyrics: 'bars' })] };

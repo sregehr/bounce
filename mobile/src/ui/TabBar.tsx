@@ -6,10 +6,12 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { micLead, mixLead, songLead, type Lead } from '@/data/songs';
 import { setCurrent, useLibrary } from '@/data/store';
-import { useEngine } from '@/engine/engine';
+import { openInput, useEngine } from '@/engine/engine';
 
-import { MicIcon, Txt } from './kit';
+import { Btn, MicIcon, Muted, Txt } from './kit';
 import { Logo } from './Logo';
+import { PersonalMenu } from './PersonalMenu';
+import { askForMic, useAskingForMic, useRecordControl } from './recordControl';
 import { TOP_NAV_HEIGHT, tabFor, type Tab } from './tabs';
 import { C } from './theme';
 
@@ -67,24 +69,11 @@ function MixGlyph({ on, color }: IconProps) {
   );
 }
 
-function GearGlyph({ color }: { color: string }) {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M10.3 3.6h3.4l.5 2.3 1.6.9 2.2-.8 1.7 3-1.7 1.6v1.8l1.7 1.6-1.7 3-2.2-.8-1.6.9-.5 2.3h-3.4l-.5-2.3-1.6-.9-2.2.8-1.7-3 1.7-1.6v-1.8L4.3 9l1.7-3 2.2.8 1.6-.9z"
-        stroke={color}
-        {...stroke}
-      />
-      <Circle cx={12} cy={12} r={2.8} stroke={color} strokeWidth={1.8} />
-    </Svg>
-  );
-}
-
 /**
  * Opens where a tab leads. Tabs sit one level above the home screen, so the stack never grows
  * as you move between them. A lead may carry a hint for the screen to show.
  */
-function follow(lead: Lead | { to: '/vault' | '/settings' | '/new'; id?: null; hint?: undefined }, from: string) {
+function follow(lead: Lead | { to: '/vault' | '/settings' | '/profile'; id?: null; hint?: undefined }, from: string) {
   if (lead.id) setCurrent(lead.id);
   if (lead.to === from) return router.setParams({ hint: lead.hint });
   const href = { pathname: lead.to, params: lead.hint ? { hint: lead.hint } : {} } as const;
@@ -138,12 +127,11 @@ function useNav() {
   return { path, library, tab: recording ? null : tab };
 }
 
-/** The logo, the plus that starts a new song, and Settings, above every screen after the welcome. */
+/** The logo and the personal menu, above every screen after the welcome. */
 export function TopNav() {
   const { path, tab } = useNav();
   const insets = useSafeAreaInsets();
   if (!tab) return null;
-  const on = tab === 'settings';
   return (
     <View style={[{ position: 'absolute', left: 0, right: 0, top: 0, paddingTop: insets.top, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.14)' }, glass]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: 24, paddingRight: 12 }}>
@@ -155,28 +143,7 @@ export function TopNav() {
             </Txt>
           </View>
         </Pressable>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Pressable
-          accessibilityRole="link"
-          accessibilityLabel="New song"
-          accessibilityState={{ selected: path === '/new' }}
-          onPress={() => follow({ to: '/new' }, path)}
-          style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.55 : 1 })}
-        >
-          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path d="M12 5v14M5 12h14" stroke={path === '/new' ? C.accent : C.text} strokeWidth={2} strokeLinecap="round" />
-          </Svg>
-        </Pressable>
-        <Pressable
-          accessibilityRole="link"
-          accessibilityLabel="Settings"
-          accessibilityState={{ selected: on }}
-          onPress={() => follow({ to: '/settings' }, path)}
-          style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.55 : 1 })}
-        >
-          <GearGlyph color={on ? C.accent : C.muted} />
-        </Pressable>
-        </View>
+        <PersonalMenu onNavigate={(to) => follow({ to }, path)} />
       </View>
     </View>
   );
@@ -190,41 +157,71 @@ export function TopNav() {
 export function TabBar() {
   const { path, library, tab } = useNav();
   const insets = useSafeAreaInsets();
-  if (!tab) return null;
+  const control = useRecordControl();
+  // On the mic screen the mic is the record button, and it stays up alone while a take runs.
+  const record = path === '/vocals' ? control : null;
+  const input = useEngine((e) => e.input);
+  const asking = useAskingForMic() && record?.state === 'off';
+  if (!tab && !record) return null;
   const is = (t: Tab) => tab === t;
   const mic = micLead(library);
   const beat = mic.id ? library.projects.find((p) => p.id === mic.id) : null;
+  const recording = record?.state === 'recording';
+  const lit = is('mic') || !!record;
+
+  const button = (
+    <View style={{ width: MIC + 12, height: BAR_HEIGHT, alignItems: 'center' }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={record ? (recording ? 'Stop recording' : 'Start recording') : beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
+        accessibilityState={{ selected: is('mic'), busy: !!record?.busy }}
+        hitSlop={6}
+        onPress={() => (record ? record.press() : follow(mic, path))}
+        style={({ pressed }) => ({
+          position: 'absolute',
+          top: -14,
+          width: MIC,
+          height: MIC,
+          borderRadius: MIC / 2,
+          backgroundColor: recording ? C.rec : C.accent,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: lit ? 2 : 0.5,
+          borderColor: lit ? C.text : 'rgba(255,255,255,0.4)',
+          boxShadow: `0 10px 28px rgba(0,0,0,0.5), 0 6px 18px ${recording ? 'rgba(255,75,62,0.35)' : 'rgba(255,176,32,0.25)'}, inset 0 1px 0 rgba(255,255,255,0.35)`,
+          opacity: record?.busy ? 0.6 : 1,
+          transform: [{ scale: pressed ? 0.93 : 1 }],
+        })}
+      >
+        {recording ? <View style={{ width: 22, height: 22, borderRadius: 5, backgroundColor: C.text }} /> : <MicIcon size={28} color={C.bg} />}
+      </Pressable>
+    </View>
+  );
+
+  // With no microphone connected, the button opens this above itself rather than recording.
+  const prompt = asking && (
+    <>
+      <Pressable accessibilityLabel="Close" onPress={() => askForMic(false)} style={{ position: 'absolute', left: -14, right: -14, bottom: -40, height: 2000 }} />
+      <View accessibilityRole="alert" style={{ position: 'absolute', left: 0, right: 0, bottom: BAR_HEIGHT + 24, borderRadius: 20, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: 18, gap: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
+        <Txt size={17} w="display" ls={0}>
+          No microphone yet
+        </Txt>
+        <Muted size={14}>{input.error ?? 'Bounce needs a microphone to record your take. It only listens while this screen is open.'}</Muted>
+        <Btn label="Connect a microphone" busy={input.status === 'opening'} onPress={() => void openInput(library.settings.inputId, 'mic')} />
+      </View>
+    </>
+  );
+
+  // While a take runs the tabs step aside, so a stray tap cannot end it; only the button stays.
+  if (!tab) return <View style={{ position: 'absolute', left: 14, right: 14, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, alignItems: 'center' }}>{button}</View>;
 
   return (
     <View accessibilityRole="tablist" style={[{ position: 'absolute', left: 14, right: 14, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
+      {prompt}
       <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
       <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
       {/* The mic sits in the middle, raised out of the capsule. */}
-      <View style={{ width: MIC + 12, height: BAR_HEIGHT, alignItems: 'center' }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
-          accessibilityState={{ selected: is('mic') }}
-          hitSlop={6}
-          onPress={() => follow(mic, path)}
-          style={({ pressed }) => ({
-            position: 'absolute',
-            top: -14,
-            width: MIC,
-            height: MIC,
-            borderRadius: MIC / 2,
-            backgroundColor: C.accent,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderWidth: is('mic') ? 2 : 0.5,
-            borderColor: is('mic') ? C.text : 'rgba(255,255,255,0.4)',
-            boxShadow: '0 10px 28px rgba(0,0,0,0.5), 0 6px 18px rgba(255,176,32,0.25), inset 0 1px 0 rgba(255,255,255,0.35)',
-            transform: [{ scale: pressed ? 0.93 : 1 }],
-          })}
-        >
-          <MicIcon size={28} color={C.bg} />
-        </Pressable>
-      </View>
+      {button}
       <Item label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
       <Item label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
     </View>

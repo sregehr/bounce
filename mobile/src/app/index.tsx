@@ -1,15 +1,14 @@
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
-import { importBeat } from '@/data/beats';
 import { tempoLine } from '@/data/labels';
 import type { Project } from '@/data/model';
 import { beatsIn } from '@/data/songs';
 import { deleteProject, setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { loopSeconds } from '@/data/studio';
-import { Btn, Eyebrow, Foot, MicIcon, Muted, NavLink, Screen, Txt, s } from '@/ui/kit';
-import { useTask } from '@/ui/hooks';
-import { Guide, SwipeRow } from '@/ui/parts';
+import { AddBeat } from '@/ui/AddBeat';
+import { Eyebrow, Foot, MicIcon, Muted, Screen, Txt, s } from '@/ui/kit';
+import { SwipeRow } from '@/ui/parts';
 import { C, plural } from '@/ui/theme';
 
 function loopLine(p: Project) {
@@ -21,18 +20,16 @@ export default function Home() {
   // Finished songs live in the Vault; this is the list of beats being worked on.
   const projects = beatsIn(useLibrary((l) => l.projects));
   const saveError = useSaveError();
-  const task = useTask();
   const latest = projects[0];
 
   const open = (p: Project, to: '/vocals' | '/song') => {
     setCurrent(p.id);
     router.push(to);
   };
-  const add = (work: () => Promise<Project | null>) => task.run(async () => void ((await work()) && router.push('/beat')));
 
   return (
     <Screen gap={20}>
-      {projects.length === 0 && <Guide show={['beat']} />}
+      <AddBeat />
 
       {latest ? (
         <Pressable accessibilityRole="button" accessibilityLabel={`Freestyle over ${latest.name}`} onPress={() => open(latest, '/vocals')} style={({ pressed }) => ({ backgroundColor: C.accent, borderRadius: 28, padding: 24, gap: 18, opacity: pressed ? 0.9 : 1 })}>
@@ -65,7 +62,7 @@ export default function Home() {
             Bring a beat
           </Txt>
           <Txt size={15} w="medium" lh={1.4} color={C.bg}>
-            Capture one from your MPC, import a file, or pick a demo song.
+            Capture one from your MPC, import a file, or pick a demo song, from the row above.
           </Txt>
         </View>
       )}
@@ -90,27 +87,16 @@ export default function Home() {
         </View>
       )}
 
-      <Foot>
-        {saveError && (
-          <Txt size={13} color={C.recText}>
-            Changes are not being saved: {saveError}
-          </Txt>
-        )}
-        <Eyebrow>Add a beat</Eyebrow>
-        {task.error && (
-          <Txt size={13} color={C.recText}>
-            {task.error}
-          </Txt>
-        )}
-        <View style={[s.row, { gap: 10 }]}>
-          <Btn kind="outline" label="Capture from MPC" to="/capture" style={{ flex: 1, minHeight: 56 }} disabled={task.busy} />
-          <Btn kind="outline" label="Import a file" busy={task.busy} onPress={() => add(importBeat)} style={{ flex: 1, minHeight: 56 }} />
-        </View>
-        <NavLink size={14} to="/demos">
-          {projects.length ? 'Add a demo song' : 'Try a demo song'}
-        </NavLink>
-        {projects.length === 0 && <Muted size={13}>No gear to hand? The demo songs let you try everything with just a microphone.</Muted>}
-      </Foot>
+      {(saveError || projects.length === 0) && (
+        <Foot>
+          {saveError && (
+            <Txt size={13} color={C.recText}>
+              Changes are not being saved: {saveError}
+            </Txt>
+          )}
+          {projects.length === 0 && <Muted size={13}>No gear to hand? The demo songs let you try everything with just a microphone.</Muted>}
+        </Foot>
+      )}
     </Screen>
   );
 }

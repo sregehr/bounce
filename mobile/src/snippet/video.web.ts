@@ -48,25 +48,30 @@ async function loadImage(url: string | null): Promise<HTMLImageElement | null> {
   });
 }
 
+/** How dark the photo is made behind the words and the waveform, top to bottom. The Snippet screen's card uses the same. */
+export const SCRIM: [number, number][] = [
+  [0, 0.8],
+  [0.4, 0.55],
+  [0.62, 0.6],
+  [1, 0.88],
+];
+
 function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageElement | null, progress: number) {
-  g.fillStyle = C.accent;
-  g.fillRect(0, 0, W, H);
   const pad = 56;
-  let y = 96;
+  let y = 136;
   if (cover) {
-    const size = W - pad * 2;
-    g.save();
-    g.beginPath();
-    g.roundRect(pad, y, size, size * 0.72, 36);
-    g.clip();
-    const scale = Math.max(size / cover.width, (size * 0.72) / cover.height);
-    g.drawImage(cover, pad + (size - cover.width * scale) / 2, y + (size * 0.72 - cover.height * scale) * 0.3, cover.width * scale, cover.height * scale);
-    g.restore();
-    y += size * 0.72 + 64;
+    // The song's photo fills the frame, darkened so light words and bars read on any picture.
+    const scale = Math.max(W / cover.width, H / cover.height);
+    g.drawImage(cover, (W - cover.width * scale) / 2, (H - cover.height * scale) * 0.3, cover.width * scale, cover.height * scale);
+    const shade = g.createLinearGradient(0, 0, 0, H);
+    for (const [at, dark] of SCRIM) shade.addColorStop(at, `rgba(18,18,18,${dark})`);
+    g.fillStyle = shade;
+    g.fillRect(0, 0, W, H);
   } else {
-    y += 40;
+    g.fillStyle = C.accent;
+    g.fillRect(0, 0, W, H);
   }
-  g.fillStyle = C.bg;
+  g.fillStyle = cover ? C.text : C.bg;
   g.textBaseline = 'top';
   g.font = `96px ${F.display}, sans-serif`;
   for (const line of wrap(g, card.title, W - pad * 2, 2)) {

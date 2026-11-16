@@ -476,6 +476,13 @@ async function finish() {
 
   await tap('Snippet');
   await expectText('Strongest stretch picked', 'snippet finds its stretch', 30000);
+  // The stretch can be moved along the song, and put back.
+  if (await state(() => !![...document.querySelectorAll('[role=slider]')].find((n) => n.getAttribute('aria-label') === 'Snippet position'))) {
+    await tapTrack('Snippet position', 0.2);
+    await expectText('Your pick', 'the snippet can be moved to another part of the song', 5000);
+    await tap('Strongest stretch');
+    await expectText('Strongest stretch picked', 'and put back on the strongest stretch', 5000);
+  }
   log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
   await shot('21-snippet');
   await tap('Save snippet');

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Platform, TextInput, View, type ViewStyle } from 'react-native';
 import { Redirect, router, useIsFocused } from 'expo-router';
 
 import { useStoredImage } from '@/cover/CoverImage';
@@ -13,12 +13,15 @@ import { strongestStretch } from '@/dsp/analysis';
 import { wavePeaks } from '@/dsp/core';
 import { encodeWav } from '@/dsp/wav';
 import { pause, play, seek, toggle } from '@/engine/engine';
-import { makeSnippetVideo, videoSupported } from '@/snippet/video';
+import { SCRIM, makeSnippetVideo, videoSupported } from '@/snippet/video';
 import { Btn, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
+import { WindowTrack } from '@/ui/WindowTrack';
 import { C, F, clock } from '@/ui/theme';
 
 const LENGTHS = ['15 s', '20 s', '30 s'] as const;
+/** How long a snippet takes to fade out at its end. */
+const FADE_OUT_SEC = 3;
 
 export default function Snippet() {
   const project = useProject();
@@ -40,27 +43,35 @@ export default function Snippet() {
   const bar = barSeconds(project?.beat.bpm ?? null);
 
   // The loudest stretch of the chosen length, starting on a bar line when the tempo is known.
+  const strongest = useMemo(() => (mix ? strongestStretch(mix.channels, mix.sampleRate, length, bar ?? 0.5) : 0), [mix, length, bar]);
+  // Where the snippet starts: there, unless it has been moved along the song.
+  const room = mix ? Math.max(0, mix.durationSec - length) : 0;
+  const moved = choice?.startSec ?? null;
+  const start = Math.max(0, Math.min(room, moved ?? strongest));
+  const whole = useMemo(() => (mix ? wavePeaks(mix.channels, 160) : []), [mix]);
+  // A stretch that was just picked plays straight away; the first one waits for the play button.
+  const playNext = useRef(false);
+
   const clip = useMemo(() => {
     if (!mix) return null;
-    const start = strongestStretch(mix.channels, mix.sampleRate, length, bar ?? 0.5);
     const from = Math.round(start * mix.sampleRate);
     const to = Math.min(mix.channels[0].length, from + Math.round(length * mix.sampleRate));
     const channels = mix.channels.map((ch) => {
       const part = ch.slice(from, to);
-      // Short fades so the cut does not click.
-      const fade = Math.min(part.length, Math.round(mix.sampleRate * 0.03));
-      for (let i = 0; i < fade; i++) {
-        part[i] *= i / fade;
-        part[part.length - 1 - i] *= i / fade;
-      }
+      // A quick fade in so the cut does not click, and a 3 second fade out so it ends like a song and not a cut.
+      const fadeIn = Math.min(part.length, Math.round(mix.sampleRate * 0.03));
+      for (let i = 0; i < fadeIn; i++) part[i] *= i / fadeIn;
+      const fadeOut = Math.min(Math.floor(part.length * 0.4), Math.round(mix.sampleRate * FADE_OUT_SEC));
+      for (let i = 0; i < fadeOut; i++) part[part.length - 1 - i] *= i / fadeOut;
       return part;
     });
     return { start, channels, sampleRate: mix.sampleRate, peaks: wavePeaks(channels, 59) };
-  }, [mix, length, bar]);
+  }, [mix, length, start]);
 
   const focused = useIsFocused();
   useEffect(() => {
-    if (clip && focused) void play(id, { a: clip, loop: true, autoplay: false }).catch(() => {});
+    if (clip && focused) void play(id, { a: clip, loop: true, autoplay: playNext.current }).catch(() => {});
+    playNext.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clip, focused]);
 
@@ -94,22 +105,36 @@ export default function Snippet() {
       setNote(result === 'saved' ? `Saved ${files[0].name} to your downloads.` : result === 'shared' ? 'Shared.' : null);
     });
 
+  // Dark ink on the plain amber card; light ink over a photo, which is shaded the same way the video shades it.
+  const ink = coverUrl ? C.text : C.bg;
+  const faint = coverUrl ? 'rgba(242,240,234,0.4)' : 'rgba(18,18,18,0.35)';
+  const shade = (Platform.OS === 'web'
+    ? { backgroundImage: `linear-gradient(to bottom, ${SCRIM.map(([at, dark]) => `rgba(18,18,18,${dark}) ${at * 100}%`).join(', ')})` }
+    : { backgroundColor: 'rgba(18,18,18,0.68)' }) as ViewStyle;
+
   const lengths = LENGTHS.filter((l) => !mix || parseInt(l, 10) <= Math.max(15, Math.floor(mix.durationSec)));
 
   return (
     <Screen>
-      <TopBar left="Snippet" right={<NavLink to="/player" back>Back</NavLink>} />
+      <TopBar left="Snippet" />
 
-      <View style={{ height: 356, borderRadius: 24, backgroundColor: C.accent, paddingVertical: 24, paddingHorizontal: 22, justifyContent: 'space-between' }}>
+      {/* What the video shows. With a cover photo it is the backdrop, darkened so the light words and bars read on any picture. */}
+      <View style={{ height: 356, borderRadius: 24, overflow: 'hidden', backgroundColor: coverUrl ? C.bg : C.accent, paddingVertical: 24, paddingHorizontal: 22, justifyContent: 'space-between' }}>
+        {coverUrl && (
+          <>
+            <Image source={{ uri: coverUrl }} accessibilityIgnoresInvertColors resizeMode="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+            <View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, shade]} />
+          </>
+        )}
         <View style={{ gap: 4 }}>
-          <Txt size={project.name.length > 14 ? 36 : 48} w="display" ls={-0.03} lh={1} color={C.bg} numberOfLines={2}>
+          <Txt size={project.name.length > 14 ? 36 : 48} w="display" ls={-0.03} lh={1} color={ink} numberOfLines={2}>
             {project.name}
           </Txt>
-          <Txt size={15} w="semi" color={C.bg}>
+          <Txt size={15} w="semi" color={ink}>
             {artist}
           </Txt>
         </View>
-        <SeekTrack peaks={clip?.peaks ?? []} height={96} progress={t.duration > 0 ? t.position / t.duration : 0} played={C.bg} rest={t.loaded && t.position > 0 ? 'rgba(18,18,18,0.35)' : C.bg} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
+        <SeekTrack peaks={clip?.peaks ?? []} height={96} progress={t.duration > 0 ? t.position / t.duration : 0} played={ink} rest={t.loaded && t.position > 0 ? faint : ink} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
         <View style={{ gap: 8, minHeight: 52, justifyContent: 'flex-end' }}>
           {choice.captions && (
             <TextInput
@@ -124,14 +149,14 @@ export default function Snippet() {
                 set({ caption: line });
               }}
               placeholder="Tap to add a caption line"
-              placeholderTextColor="rgba(18,18,18,0.5)"
-              selectionColor={C.bg}
+              placeholderTextColor={coverUrl ? 'rgba(242,240,234,0.6)' : 'rgba(18,18,18,0.5)'}
+              selectionColor={ink}
               maxLength={80}
-              style={{ fontFamily: F.display, fontSize: 22, lineHeight: 26, height: 54, color: C.bg, padding: 0 }}
+              style={{ fontFamily: F.display, fontSize: 22, lineHeight: 26, height: 54, color: ink, padding: 0 }}
             />
           )}
           {choice.credit && credit && (
-            <Txt size={13} w="semi" ls={0.06} upper color={C.bg}>
+            <Txt size={13} w="semi" ls={0.06} upper color={ink}>
               {credit}
             </Txt>
           )}
@@ -143,13 +168,40 @@ export default function Snippet() {
           <View style={[s.row, { gap: 10 }]}>
             <RoundPlay size={36} icon={13} playing={t.playing} onPress={toggle} disabled={!clip} />
             <Txt size={15} w="semi">
-              {error ? 'Could not render' : busy && !clip ? 'Finding the strongest stretch…' : 'Strongest stretch picked'}
+              {error ? 'Could not render' : busy && !clip ? 'Finding the strongest stretch…' : moved === null ? 'Strongest stretch picked' : 'Your pick'}
             </Txt>
           </View>
           <Txt size={13} color={C.muted}>
             {clip ? `${clock(clip.start)} – ${clock(clip.start + length)}` : ''}
           </Txt>
         </View>
+        {/* The whole song, with the snippet lit: drag it to another part and it plays from there. */}
+        {/* Only when there is somewhere to move it to: a song barely longer than the snippet has no other stretch. */}
+        {mix && room >= 2 && (
+          <View style={{ gap: 4 }}>
+            <WindowTrack
+              label="Snippet position"
+              peaks={whole}
+              height={56}
+              from={start / mix.durationSec}
+              span={length / mix.durationSec}
+              snap={(f) => (bar ? (Math.round((f * mix.durationSec) / bar) * bar) / mix.durationSec : f)}
+              disabled={task.busy}
+              onMove={(f) => {
+                playNext.current = true;
+                set({ startSec: Math.round(f * mix.durationSec * 1000) / 1000 });
+              }}
+            />
+            <View style={[s.row, s.between]}>
+              <Muted size={13}>Drag the lit part to choose another stretch.</Muted>
+              {moved !== null && (
+                <NavLink size={13} style={{ minHeight: 24 }} onPress={() => ((playNext.current = true), set({ startSec: null }))}>
+                  Strongest stretch
+                </NavLink>
+              )}
+            </View>
+          </View>
+        )}
         {lengths.length > 1 && <Segmented options={lengths} value={`${choice.lengthSec} s` as (typeof LENGTHS)[number]} onChange={(v) => set({ lengthSec: parseInt(v, 10) as SnippetChoice['lengthSec'] })} variant="compact" />}
       </View>
 

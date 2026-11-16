@@ -439,7 +439,7 @@ async function finish() {
   await type('Song title', 'Night bus');
   await type('Artist on this song', 'Mina Cole');
   await expectText('Add a photo of Mina Cole', 'the photo is asked for by the artist\'s name');
-  await expectText('Take a photo', 'with the camera offered first');
+  await expectText('Choose a photo', 'with one button to choose or take it');
   await shot('15-cover-empty');
   await choose('Choose a photo', PHOTO);
   const found = await waitFor(/Same person, same pose|colour treatment/i, 90000);
@@ -515,6 +515,16 @@ async function finish() {
   await expectText('Snippet made');
   await expectText('Last played', 'the Vault marks the song played last');
   await shot('22-vault');
+  // A song's dot menu leads to its cover, loaded to change, and back.
+  if (!WIDE) {
+    await tap('More for Night bus');
+    await tap('Edit image');
+    await expectText('Cover art', 'Edit image opens the cover screen for that song', 10000);
+    await tap('Skip');
+    await expectText('Prod. Lowkey', 'and leaving it returns to the song', 15000);
+    await tap('Close the player');
+    await expectText(IN_VAULT, 'then back to the Vault');
+  }
   await type('Search your songs', 'red light');
   await expectText('Has lyrics', 'search finds a word in the lyrics');
   await type('Search your songs', 'zzzz');

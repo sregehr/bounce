@@ -4,7 +4,7 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
 import { backendAvailable } from '@/auth/backend';
-import { AiScene } from '@/cover/AiScene';
+import { AiScene, Sparkle } from '@/cover/AiScene';
 import { composeScene, coverSupported, cutOut, normalisePhoto } from '@/cover/compose';
 import { blobUrl, blobs } from '@/data/db';
 import { newId, SCENES, type SceneId } from '@/data/model';
@@ -33,6 +33,17 @@ export default function Cover() {
   // A scene made from a description. It is kept apart from the drawn ones, and needs no photo.
   const [ai, setAi] = useState<Picture | null>(null);
   const [scene, setScene] = useState<SceneId | 'ai'>(project?.cover.scene ?? 'photo');
+  const [aiOpen, setAiOpen] = useState(false);
+  // The AI scene can be the saved choice with no AI picture left to show, after the photo was
+  // changed. Then the photo's own first scene is shown, so the picture is never empty above its scenes.
+  const lostAi = scene === 'ai' && !ai && !!made && !project?.cover.imageKey;
+  // Otherwise, picking the AI scene brings its card up, so another can be made straight away. Hide still puts it away.
+  useEffect(() => {
+    if (lostAi) {
+      setScene('photo');
+      setAiOpen(false);
+    } else if (scene === 'ai') setAiOpen(true);
+  }, [scene, lostAi]);
   const [hasCutout, setHasCutout] = useState(true);
   const [stage, setStage] = useState('');
   const urls = useRef<string[]>([]);
@@ -166,17 +177,58 @@ export default function Cover() {
     </>
   );
 
+  // The small buttons that sit on the picture.
+  const pill = { minHeight: 40, paddingHorizontal: 14, borderRadius: 20, justifyContent: 'center', backgroundColor: 'rgba(18,18,18,0.8)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' } as const;
+
   const preview = (
       <View style={[{ height: 320, borderRadius: 24, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }, wide && { flex: 1, height: undefined, minHeight: 320 }]}>
         {shown ? (
-          <Image source={{ uri: shown.url }} accessibilityLabel={`Cover preview: ${LABEL[scene]}`} style={wide ? { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' } : { width: '100%', height: 320 }} resizeMode="cover" />
+          <>
+            <Image source={{ uri: shown.url }} accessibilityLabel={`Cover preview: ${LABEL[scene]}`} style={wide ? { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' } : { width: '100%', height: 320 }} resizeMode="cover" />
+            {/* The photo is added or changed from the picture itself. The phone's picker offers the camera too. */}
+            {!working && (
+              <View style={{ position: 'absolute', right: 12, bottom: 12, flexDirection: 'row', gap: 8 }}>
+                {hasAi && !aiOpen && (
+                  <Pressable accessibilityRole="button" accessibilityLabel="Create with AI" onPress={() => setAiOpen(true)} style={({ pressed }) => [pill, { borderColor: C.accent, flexDirection: 'row', alignItems: 'center', gap: 6, opacity: pressed ? 0.7 : 1 }]}>
+                    <Sparkle size={15} />
+                    <Txt size={14} w="semi" color={C.accent}>
+                      {ai ? 'New AI scene' : 'Create with AI'}
+                    </Txt>
+                  </Pressable>
+                )}
+                <Pressable accessibilityRole="button" accessibilityLabel={made ? 'Change photo' : 'Choose a photo'} onPress={() => pick()} style={({ pressed }) => [pill, { opacity: pressed ? 0.7 : 1 }]}>
+                  <Txt size={14} w="semi">
+                    {made ? 'Change photo' : 'Choose a photo'}
+                  </Txt>
+                </Pressable>
+              </View>
+            )}
+          </>
         ) : (
-          <Pressable accessibilityRole="button" accessibilityLabel="Take a photo of the artist" disabled={working} onPress={() => pick('camera')} style={[{ alignItems: 'center', gap: 8, padding: 24 }, wide && { maxWidth: 460 }]}>
+          <View style={[{ alignItems: 'center', gap: 10, padding: 24 }, wide && { maxWidth: 460 }]}>
             <Txt size={22} w="display" center>
               {working ? `${stage || 'Working'}…` : `Add a photo of ${who}`}
             </Txt>
-            <Muted center>{working ? 'This takes a few seconds the first time.' : 'Take it now, while they are with you, or pick one you have. Head and shoulders in plain light works best. They get placed in a studio, on a stage and on a rooftop.'}</Muted>
-          </Pressable>
+            <Muted center>{working ? 'This takes a few seconds the first time.' : 'Pick one you have, or take one now while they are with you. Head and shoulders in plain light works best. They get placed in a studio, on a stage and on a rooftop.'}</Muted>
+            {!working && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 4 }}>
+                <Btn label="Choose a photo" onPress={() => pick()} style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 22 }} />
+                {hasAi && !aiOpen && (
+                  <Pressable accessibilityRole="button" accessibilityLabel="Create with AI" onPress={() => setAiOpen(true)} style={({ pressed }) => ({ minHeight: 56, paddingHorizontal: 20, borderRadius: 16, borderWidth: 1, borderColor: C.accent, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.7 : 1 })}>
+                    <Sparkle />
+                    <Txt size={16} w="semi" color={C.accent}>
+                      Create with AI
+                    </Txt>
+                  </Pressable>
+                )}
+              </View>
+            )}
+            {!working && lastPhoto && lastPhoto !== cover.photoKey && (
+              <NavLink center size={14} onPress={reuse}>
+                Use the photo from the last cover
+              </NavLink>
+            )}
+          </View>
         )}
       </View>
   );
@@ -186,16 +238,6 @@ export default function Cover() {
         <Muted style={{ flex: 1 }}>
           {task.error ?? (working && made ? `${stage || 'Working'}…` : !made ? (ai ? 'Add a photo to put the artist in the scene.' : hasAi ? 'The photo only goes to AI if you choose that. Backup keeps a copy with your songs.' : 'The photo never leaves this device.') : hasCutout ? 'Same person, same pose. Only the setting changes.' : 'No clear person was found, so each setting is applied as a colour treatment.')}
         </Muted>
-        {made && (
-          <View style={[s.row, { gap: 16 }]}>
-            <NavLink size={14} style={{ minHeight: wide ? 44 : 24 }} onPress={() => !working && pick('camera')}>
-              Retake
-            </NavLink>
-            <NavLink size={14} style={{ minHeight: wide ? 44 : 24 }} onPress={() => !working && pick('library')}>
-              Choose another
-            </NavLink>
-          </View>
-        )}
       </View>
   );
 
@@ -213,22 +255,15 @@ export default function Cover() {
         </View>
       );
 
-  // Until there is a photo, the ways to add one.
-  const add = !made && !working && (
-          <View style={{ gap: 4 }}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Btn kind="outline" label="Take a photo" onPress={() => pick('camera')} />
-              <Btn kind="outline" label="Choose a photo" onPress={() => pick('library')} />
-            </View>
-            {lastPhoto && lastPhoto !== cover.photoKey && (
-              <NavLink center size={14} onPress={reuse}>
-                Use the photo from the last cover
-              </NavLink>
-            )}
-          </View>
-        );
+  // The photo is added from the picture itself. With an AI scene showing and no photo yet, the last cover's photo is still offered here.
+  const add = !made && !working && !!shown && !!lastPhoto && lastPhoto !== cover.photoKey && (
+    <NavLink center size={14} onPress={reuse}>
+      Use the photo from the last cover
+    </NavLink>
+  );
 
-  const aiScene = hasAi && <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} onMade={showAi} />;
+  // Making a scene with AI stays out of the way until it is asked for, from the buttons on the picture.
+  const aiScene = hasAi && aiOpen && <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} made={!!ai} onMade={showAi} onClose={() => setAiOpen(false)} />;
 
   const foot = (
       <Foot gap={8}>

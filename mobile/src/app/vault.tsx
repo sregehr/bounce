@@ -9,6 +9,7 @@ import { CoverImage } from '@/cover/CoverImage';
 import type { Project } from '@/data/model';
 import { songLead, songsIn } from '@/data/songs';
 import { deleteProject, openSong, setCurrent, useLibrary } from '@/data/store';
+import { DotMenu } from '@/ui/DotMenu';
 import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTransport } from '@/ui/hooks';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
@@ -124,6 +125,11 @@ export default function Vault() {
   const play = (id: string) => {
     setAsked(id);
     openSong(id);
+  };
+  // The cover screen, with this song's picture loaded to change.
+  const editImage = (p: Project) => {
+    openSong(p.id);
+    router.push('/cover');
   };
   const remove = (p: Project) => {
     if (removing !== p.id) return setRemoving(p.id);
@@ -274,9 +280,13 @@ export default function Vault() {
                 </Txt>
               </View>
             </Pressable>
-            <NavLink size={13} onPress={() => remove(p)} style={{ minHeight: 36 }}>
-              {removing === p.id ? 'Sure?' : 'Remove'}
-            </NavLink>
+            <DotMenu
+              label={`More for ${p.name}`}
+              items={[
+                { label: 'Edit image', onPress: () => editImage(p) },
+                { label: 'Remove', confirm: true, onPress: () => void deleteProject(p.id) },
+              ]}
+            />
           </View>
         ))}
         {empty}

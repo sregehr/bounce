@@ -92,6 +92,24 @@ export const me = query({
   },
 });
 
+/**
+ * Lifts the AI limit for one account, or puts it back, and clears what it has used so far.
+ * Run by hand from the command line for now; the in-app purchase will call this too.
+ */
+export const setPro = internalMutation({
+  args: { email: v.string(), pro: v.boolean() },
+  returns: v.union(v.null(), v.object({ pro: v.boolean(), aiUsed: v.number() })),
+  handler: async (ctx, { email, pro }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase()))
+      .first();
+    if (!user) return null;
+    await ctx.db.patch(user._id, { pro, aiUsed: 0 });
+    return { pro, aiUsed: 0 };
+  },
+});
+
 const ready = (...values: (string | undefined)[]) => values.every((value) => !!value && value !== "unset");
 
 /** Which ways of signing in this server has been given credentials for. */

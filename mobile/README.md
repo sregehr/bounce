@@ -43,6 +43,8 @@ npx convex env set OPENROUTER_API_KEY <key>            # AI covers
 - `AI_IMAGE_MODEL` picks the OpenRouter image model (default `google/gemini-2.5-flash-image`),
   and `AI_FREE_IMAGES` how many covers a free account may make (default 5).
 
+`AI_UNLIMITED_EMAILS` is a comma-separated list of sign-in emails with no AI limit, for the people running Bounce.
+
 Who may use AI is decided in one place, `convex/entitlements.ts`: a signed-in account gets the
 free allowance, and an account with `pro` set has no limit. Nothing sets `pro` yet; that is
 where the in-app purchase plugs in.

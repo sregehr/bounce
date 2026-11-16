@@ -10,8 +10,16 @@ export const freeImages = () => {
   return Number.isFinite(set) && set >= 0 ? Math.floor(set) : 5;
 };
 
+/** Accounts with no AI limit by name: AI_UNLIMITED_EMAILS on the deployment, comma-separated. For the people running Bounce. */
+const unlimited = (email: string | undefined) =>
+  !!email &&
+  (process.env.AI_UNLIMITED_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .includes(email.toLowerCase());
+
 /** `left` is null when there is no limit. */
-export function aiAllowance(user: Pick<Doc<"users">, "pro" | "aiUsed">): { pro: boolean; left: number | null } {
-  if (user.pro) return { pro: true, left: null };
+export function aiAllowance(user: Pick<Doc<"users">, "pro" | "aiUsed" | "email">): { pro: boolean; left: number | null } {
+  if (user.pro || unlimited(user.email)) return { pro: true, left: null };
   return { pro: false, left: Math.max(0, freeImages() - (user.aiUsed ?? 0)) };
 }

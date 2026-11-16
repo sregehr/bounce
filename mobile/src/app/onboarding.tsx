@@ -110,7 +110,7 @@ export default function Onboarding() {
             </Txt>
           </View>
           <View style={{ gap: 14, paddingTop: 16 }}>
-            {['Record a beat straight from your MPC, or bring a file', 'Loop a section and rap; every take is kept', 'One tap polishes the vocal and masters the song', 'Add a cover, cut a snippet, export the WAV'].map((line) => (
+            {['Record a beat straight from your MPC, or any sampler or audio interface', 'Loop a section and rap; every take is kept', 'One tap polishes the vocal and masters the song', 'Add a cover, cut a snippet, export the WAV'].map((line) => (
               <View key={line} style={[s.row, { gap: 12, alignItems: 'flex-start' }]}>
                 <View style={{ paddingTop: 4 }}>
                   <TickIcon size={16} />
@@ -163,7 +163,7 @@ export default function Onboarding() {
             <Txt size={34} w="display" lh={1.05}>
               Sound check
             </Txt>
-            <Muted size={15}>Bounce needs an audio input: your MPC over USB to capture beats, and a microphone for vocals.</Muted>
+            <Muted size={15}>Bounce needs an audio input: your MPC, sampler or audio interface over USB to capture beats, and a microphone for vocals.</Muted>
           </View>
           <Card>
             <View style={[s.row, { gap: 8 }]}>
@@ -264,7 +264,7 @@ export default function Onboarding() {
             </Txt>
           )}
           <View style={{ gap: 12 }}>
-            <Choice primary title="Capture from your MPC" body="Plug it in by USB-C and press play. Recording starts by itself." disabled={start.busy} onPress={() => finish(undefined, '/capture')} />
+            <Choice primary title="Capture from your gear" body="Plug in your MPC, sampler or audio interface by USB and press play. Recording starts by itself." disabled={start.busy} onPress={() => finish(undefined, '/capture')} />
             <Choice title="Import a file" body="A WAV, MP3 or M4A of a beat you already have." disabled={start.busy} onPress={() => finish(importBeat)} />
             <Choice title="Try a demo song" body="No gear needed: pick a ready-made beat and go straight to the mic." disabled={start.busy} onPress={() => finish(undefined, '/demos')} />
           </View>

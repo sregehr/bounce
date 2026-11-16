@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 
+import { gearName } from '@/data/labels';
 import { nextBeatName } from '@/data/store';
 import { addBeat, TooShort } from '@/data/studio';
 import { toDb } from '@/dsp/core';
@@ -79,7 +80,7 @@ export default function Record() {
         <Txt size={84} w="display" ls={-0.03} lh={1} style={{ fontVariant: ['tabular-nums'] }}>
           {clock(cap.elapsed)}
         </Txt>
-        <Muted>{saving ? 'Trimming silence and finding the tempo' : recording ? 'Started automatically at first sound' : 'Press play on the MPC to start'}</Muted>
+        <Muted>{saving ? 'Trimming silence and finding the tempo' : recording ? 'Started automatically at first sound' : `Press play on ${gearName(input.label)} to start`}</Muted>
         {notice && !recording && (
           <Txt size={14} color={C.recText} center>
             {notice}

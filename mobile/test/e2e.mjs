@@ -491,9 +491,24 @@ async function finish() {
 }
 
 async function library() {
+  // Home lists the beats still being worked on, so one whose song is in the Vault leaves it.
   await tap('Home');
-  await expectText('FREESTYLE OVER', 'home shows the latest beat');
-  await expectText('3 takes');
+  await expectText('1 beat has a finished song', 'a beat with a song in the Vault leaves Home');
+  log(!(await text()).includes('FREESTYLE OVER'), 'and Home no longer leads with it');
+  await shot('23-home-done');
+  // Its song in the Vault leads back to the beat, and recording over it again brings it back.
+  await tap('Vault');
+  await tap('Open Night bus');
+  await tap('Record another version');
+  await expectText('Always listening', 'a finished song leads back to its beat', 10000);
+  await sleep(800);
+  await tap('Start recording');
+  await sleep(3000);
+  await tap('Stop recording');
+  await expectText('Take 4 saved', 'another take is recorded over it', 10000);
+  await tap('Home');
+  await expectText('FREESTYLE OVER', 'and the beat is back on Home');
+  await expectText('4 takes');
   await shot('23-home');
   // Home leads with the ways to bring a beat in.
   await expectText('Add a beat', 'home offers the ways to add a beat');
@@ -535,8 +550,8 @@ async function library() {
   await expectText('FREESTYLE OVER', 'the library is still there after a reload', 30000);
   await expectText('Night bus');
 
-  // Capture a beat from the input (the test tone stands in for an MPC).
-  await tap('Capture from MPC');
+  // Capture a beat from the input (the test tone stands in for a sampler).
+  await tap('Capture from your gear');
   await tap('Connect', { optional: true });
   await expectText('Connected', 'capture screen connects', 10000);
   await tap('Arm recording');

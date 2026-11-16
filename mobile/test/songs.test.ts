@@ -1,7 +1,8 @@
 import { DEFAULT_MASTER, DEFAULT_POLISH } from '../src/dsp/presets';
 import { emptyLibrary, type Library, type Project, type Take } from '../src/data/model';
 import { routeKey, timingFor, withTiming } from '../src/data/timing';
-import { beatsIn, carryOver, loadedSong, makeSong, micLead, mixLead, songLead, songsIn, workBeat } from '../src/data/songs';
+import { gearName } from '../src/data/labels';
+import { activeBeats, beatsIn, carryOver, loadedSong, makeSong, micLead, mixLead, songLead, songsIn, workBeat } from '../src/data/songs';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -42,6 +43,16 @@ check('it gets its own id, the typed title and a link to its beat', song.id !== 
 check('an empty title falls back to the beat name', makeSong(a, '  ', 1).name === 'Beat a');
 check('the beat is left as it was', a.takes.length === 3 && !a.saved);
 check('an instrumental can be finished', makeSong(beat('i'), 'Inst', 1).takes.length === 0);
+// What capture calls the thing a beat is played from.
+check('a connected sampler or interface goes by its own name', gearName('MPC LIVE III') === 'MPC LIVE III' && gearName('Scarlett 2i2 USB') === 'Scarlett 2i2 USB');
+check('a built-in microphone, or nothing, is "your gear"', gearName('MacBook Pro Microphone') === 'your gear' && gearName(null) === 'your gear' && gearName('') === 'your gear');
+
+// Home lists the beats still being worked on.
+const untouched = beat('f', [take(1)]);
+check('a beat with nothing in the Vault is active', activeBeats([a, untouched]).length === 2);
+check('a beat whose song is in the Vault leaves the list', activeBeats([song, a, untouched]).map((p) => p.id).join() === 'f');
+check('recording over it again brings it back', activeBeats([song, { ...a, takes: [...a.takes, { ...take(4), createdAt: 101 }] }]).length === 1);
+check('finished songs are never listed', activeBeats([song]).length === 0);
 const older = makeSong(a, 'Older', 50);
 check('beats and songs are told apart', beatsIn([song, a, older]).length === 1 && songsIn([older, a, song]).map((p) => p.name).join() === 'Night bus,Older');
 

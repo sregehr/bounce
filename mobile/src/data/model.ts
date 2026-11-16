@@ -88,7 +88,7 @@ export type Profile = { artist: string; producer: string; onboarded: boolean };
 export type Settings = {
   /** The microphone used for vocals. */
   inputId: string | null;
-  /** The input beats are captured from (the MPC, usually). */
+  /** The input beats are captured from: a sampler, groovebox or audio interface. */
   beatInputId: string | null;
   /** Round-trip delay measured on this device, or null to use what the browser reports. */
   latencyMs: number | null;

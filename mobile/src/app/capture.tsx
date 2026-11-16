@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
+import { gearName } from '@/data/labels';
 import { setSettings, useLibrary } from '@/data/store';
 import { closeInput, inputAllowed, openInput, setPair, useEngine, wake } from '@/engine/engine';
 import { Btn, Card, Eyebrow, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
@@ -38,9 +39,9 @@ export default function Capture() {
         ) : (
           <>
             <Txt size={30} w="display">
-              Plug in the MPC
+              Plug in your gear
             </Txt>
-            <Muted>{input.error ?? 'Connect it by USB-C, then allow audio input when the browser asks. Any other input works too.'}</Muted>
+            <Muted>{input.error ?? 'Connect your MPC, sampler or audio interface by USB, then allow audio input when the browser asks.'}</Muted>
             <Btn label={input.status === 'opening' ? 'Connecting…' : input.error ? 'Try again' : 'Connect'} busy={input.status === 'opening'} onPress={() => void openInput(inputId)} />
           </>
         )}
@@ -65,12 +66,12 @@ export default function Capture() {
           </View>
         </Pressable>
         <Muted size={15} center style={{ maxWidth: 260 }}>
-          Arm, then press play on the MPC. Recording starts when the beat does.
+          Arm, then press play on {gearName(live ? input.label : null)}. Recording starts when the beat does.
         </Muted>
       </View>
 
       <Muted size={13} center>
-        Silence at the start and end is trimmed after capture.
+        Silence at the start and end is trimmed after capture.{live ? '' : ' No USB audio on your machine? Run its line out into any audio interface.'}
       </Muted>
     </Screen>
   );

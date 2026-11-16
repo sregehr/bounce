@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 
 import { tempoLine } from '@/data/labels';
 import type { Project } from '@/data/model';
-import { beatsIn } from '@/data/songs';
+import { activeBeats, beatsIn } from '@/data/songs';
 import { deleteProject, setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { loopSeconds } from '@/data/studio';
 import { AddBeat } from '@/ui/AddBeat';
@@ -17,8 +17,10 @@ function loopLine(p: Project) {
 }
 
 export default function Home() {
-  // Finished songs live in the Vault; this is the list of beats being worked on.
-  const projects = beatsIn(useLibrary((l) => l.projects));
+  // Finished songs live in the Vault; this is the list of beats still being worked on.
+  const all = useLibrary((l) => l.projects);
+  const projects = activeBeats(all);
+  const done = beatsIn(all).length - projects.length;
   const saveError = useSaveError();
   const latest = projects[0];
 
@@ -56,13 +58,13 @@ export default function Home() {
       ) : (
         <View style={{ backgroundColor: C.accent, borderRadius: 28, padding: 24, gap: 14 }}>
           <Txt size={12} w="semi" ls={0.1} color={C.bg}>
-            START HERE
+            {done ? 'ALL CAUGHT UP' : 'START HERE'}
           </Txt>
           <Txt size={38} w="display" ls={-0.03} lh={1} color={C.bg}>
-            Bring a beat
+            {done ? 'Bring a new beat' : 'Bring a beat'}
           </Txt>
           <Txt size={15} w="medium" lh={1.4} color={C.bg}>
-            Capture one from your MPC, import a file, or pick a demo song, from the row above.
+            Capture one from your gear, import a file, or pick a demo song, from the row above.
           </Txt>
         </View>
       )}
@@ -87,6 +89,12 @@ export default function Home() {
         </View>
       )}
 
+      {done > 0 && (
+        <Muted size={13}>
+          {done === 1 ? '1 beat has a finished song' : `${done} beats have finished songs`} in the Vault. Open a song there to record another version.
+        </Muted>
+      )}
+
       {(saveError || projects.length === 0) && (
         <Foot>
           {saveError && (
@@ -94,7 +102,7 @@ export default function Home() {
               Changes are not being saved: {saveError}
             </Txt>
           )}
-          {projects.length === 0 && <Muted size={13}>No gear to hand? The demo songs let you try everything with just a microphone.</Muted>}
+          {projects.length === 0 && done === 0 && <Muted size={13}>No gear to hand? The demo songs let you try everything with just a microphone.</Muted>}
         </Foot>
       )}
     </Screen>

@@ -3,6 +3,19 @@
 import { newId, type Library, type Profile, type Project } from './model';
 
 export const beatsIn = (projects: Project[]) => projects.filter((p) => !p.saved);
+/**
+ * Beats still being worked on, which is what Home lists: ones with no song in the Vault yet,
+ * and ones with a take recorded since their last song went in. A beat that is done stays in
+ * the library and is reached from its song in the Vault.
+ */
+export function activeBeats(projects: Project[]): Project[] {
+  const lastSaved = new Map<string, number>();
+  for (const p of projects) if (p.saved) lastSaved.set(p.saved.from, Math.max(lastSaved.get(p.saved.from) ?? 0, p.saved.at));
+  return beatsIn(projects).filter((beat) => {
+    const at = lastSaved.get(beat.id);
+    return at === undefined || beat.takes.some((take) => take.createdAt > at);
+  });
+}
 export const songsIn = (projects: Project[]) => projects.filter((p) => p.saved).sort((a, b) => b.saved!.at - a.saved!.at);
 
 /**

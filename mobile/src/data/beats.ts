@@ -1,5 +1,6 @@
 // The three ways a beat gets into the library, shared by Home and onboarding.
 import * as DocumentPicker from 'expo-document-picker';
+import { Platform } from 'react-native';
 
 import { detectTempo } from '@/dsp/analysis';
 import { DEMO, makeDemoBeat } from '@/dsp/demoBeat';
@@ -42,9 +43,17 @@ export async function addDemoSong(song: DemoSong) {
   return addBeat(pcm, { source: 'demo', label: 'Demo song', name: freeName(song.title), trim: false, bpm });
 }
 
+// In a browser, "audio/*" makes iPhone offer the photo library and the video camera, because iOS has
+// no audio-only recorder to offer. Naming the audio formats one by one sends it straight to Files.
+// (No video containers such as .mp4 or .mov here: those bring the camera options back.)
+const AUDIO_TYPES =
+  Platform.OS === 'web'
+    ? ['.wav', '.mp3', '.m4a', '.aac', '.aif', '.aiff', '.flac', '.ogg', '.caf', 'audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/aiff', 'audio/x-aiff', 'audio/flac', 'audio/ogg']
+    : ['audio/*'];
+
 /** Lets the user pick an audio file. Resolves to null if they cancel. */
 export async function importBeat() {
-  const picked = await DocumentPicker.getDocumentAsync({ type: ['audio/*'], copyToCacheDirectory: true, multiple: false });
+  const picked = await DocumentPicker.getDocumentAsync({ type: AUDIO_TYPES, copyToCacheDirectory: true, multiple: false });
   if (picked.canceled || !picked.assets?.[0]) return null;
   const asset = picked.assets[0];
   let pcm;

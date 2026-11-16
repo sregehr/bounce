@@ -16,7 +16,7 @@ export const useEngine = <T,>(pick: (s: EngineState) => T): T => pick(state);
 export const engineState = () => state;
 export const wake = () => {};
 export const inputAllowed = async () => false;
-export const openInput = async (_deviceId?: string | null, _prefer?: 'mpc' | 'mic') => {};
+export const openInput = async (_deviceId?: string | null, _prefer?: 'gear' | 'mic') => {};
 export const takeSalvaged = (): Captured | null => null;
 export const closeInput = (_quiet?: boolean) => {};
 export const setPair = (_pair: number) => {};

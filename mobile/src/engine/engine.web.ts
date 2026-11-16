@@ -174,15 +174,21 @@ export async function inputAllowed(): Promise<boolean> {
   }
 }
 
-const MUSIC_GEAR = /mpc|akai|rane|serato|pioneer|traktor|blackhole|loopback|soundflower|aggregate/i;
-const MICROPHONE = /microphone|\bmic\b|airpods|headset|headphones|webcam|facetime/i;
+// Samplers and grooveboxes a beat is likely to come from, by the names they report.
+const SAMPLERS = /mpc|akai|maschine|native instruments|sp-?404|roland|verselab|elektron|digitakt|octatrack|syntakt|teenage|op-?1|op-?z|polyend|novation|circuit|ableton|deluge|synthstrom|korg|electribe|volca/i;
+// Audio interfaces carry a beat too, but a vocal microphone is just as likely to be plugged into one.
+const INTERFACES = /scarlett|focusrite|audient|motu|presonus|behringer|steinberg|universal audio|apollo|interface|usb audio|line in/i;
+const BEAT_GEAR = new RegExp(`${SAMPLERS.source}|${INTERFACES.source}`, 'i');
+const MUSIC_GEAR = new RegExp(`${SAMPLERS.source}|rane|serato|pioneer|traktor|blackhole|loopback|soundflower|aggregate`, 'i');
+const MICROPHONE = /microphone|\bmic\b|built-in|airpods|headset|headphones|webcam|facetime/i;
 
 /**
  * Opens an input and starts metering. With no id, the kind of input the caller wants is
- * looked for first: an MPC for capturing beats, or a microphone (rather than DJ or studio
- * gear that happens to be the system default) for vocals.
+ * looked for first. For capturing beats that is a sampler or audio interface: one known by
+ * name, or else anything that is not a microphone when the system default is one. For vocals
+ * it is a microphone, rather than studio gear that happens to be the system default.
  */
-export function openInput(deviceId?: string | null, prefer: 'mpc' | 'mic' = 'mpc'): Promise<void> {
+export function openInput(deviceId?: string | null, prefer: 'gear' | 'mic' = 'gear'): Promise<void> {
   if (opening) return opening;
   opening = doOpen(deviceId, prefer).finally(() => {
     opening = null;
@@ -190,7 +196,7 @@ export function openInput(deviceId?: string | null, prefer: 'mpc' | 'mic' = 'mpc
   return opening;
 }
 
-async function doOpen(deviceId: string | null | undefined, prefer: 'mpc' | 'mic') {
+async function doOpen(deviceId: string | null | undefined, prefer: 'gear' | 'mic') {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
     set('input', { status: 'error', error: 'This browser cannot record audio here. The page has to be opened over HTTPS or on localhost.' });
     return;
@@ -211,8 +217,8 @@ async function doOpen(deviceId: string | null | undefined, prefer: 'mpc' | 'mic'
       const track0 = s.getAudioTracks()[0];
       const current = track0.getSettings().deviceId;
       const better =
-        prefer === 'mpc'
-          ? inputs.find((d) => /mpc|akai/i.test(d.label))
+        prefer === 'gear'
+          ? (inputs.find((d) => SAMPLERS.test(d.label) && !MICROPHONE.test(d.label)) ?? inputs.find((d) => BEAT_GEAR.test(d.label) && !MICROPHONE.test(d.label)) ?? (MICROPHONE.test(track0.label) ? inputs.find((d) => !MICROPHONE.test(d.label)) : undefined))
           : MUSIC_GEAR.test(track0.label)
             ? inputs.find((d) => MICROPHONE.test(d.label) && !MUSIC_GEAR.test(d.label))
             : undefined;

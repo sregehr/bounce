@@ -68,7 +68,7 @@ export function AddBeat() {
     <View style={{ gap: 10 }}>
       <Eyebrow>Add a beat</Eyebrow>
       <View style={[s.row, { gap: 10 }]}>
-        <Create icon="capture" label="Capture" name="Capture from MPC" to="/capture" disabled={task.busy} />
+        <Create icon="capture" label="Capture" name="Capture from your gear" to="/capture" disabled={task.busy} />
         <Create icon="file" label="Import" name="Import a file" busy={task.busy} onPress={add} />
         <Create icon="demo" label="Demos" name={any ? 'Add a demo song' : 'Try a demo song'} to="/demos" disabled={task.busy} />
       </View>

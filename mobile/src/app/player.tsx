@@ -7,10 +7,10 @@ import { CoverImage } from '@/cover/CoverImage';
 import { exportFiles } from '@/data/exporting';
 import { shareFiles } from '@/data/files';
 import { artistOf, songsIn } from '@/data/songs';
-import { activeTake, openSong, patchProject, useLibrary, useProject } from '@/data/store';
+import { activeTake, openSong, patchProject, setCurrent, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { spectrum } from '@/engine/engine';
-import { Btn, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
+import { Btn, NavLink, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
 import { C, F, clock, lufs } from '@/ui/theme';
 
@@ -70,6 +70,14 @@ export default function Player() {
   const close = () => {
     if (router.canDismiss()) router.dismissAll();
     router.push('/vault');
+  };
+  // The beat this song was made from, if it is still in the library: recording over it again starts another version.
+  const beat = projects.find((p) => !p.saved && p.id === project.saved?.from);
+  const again = () => {
+    if (!beat) return;
+    setCurrent(beat.id);
+    if (router.canDismiss()) router.dismissAll();
+    router.push('/vocals');
   };
   const artist = artistOf(project, profile);
   const credit = [artist, profile.producer ? `Prod. ${profile.producer}` : null].filter(Boolean).join(' · ');
@@ -188,6 +196,11 @@ export default function Player() {
           <Btn kind="outline" label={lyrics ? 'Done' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
           <Btn kind="outline" label="Share" busy={share.busy} onPress={onShare} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
         </View>
+        {beat && (
+          <NavLink center size={14} onPress={again}>
+            Record another version
+          </NavLink>
+        )}
       </View>
     </View>
   );

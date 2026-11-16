@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 
 import { backupAvailable, backupNow, useBackup } from '@/data/backup';
 import { blobs, kv } from '@/data/db';
@@ -13,7 +13,6 @@ import { useArmed } from '@/ui/hooks';
 import { plural } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
-import Profile from './profile';
 
 const mb = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`);
 
@@ -90,7 +89,7 @@ export function SettingsBody() {
 
 export default function Settings() {
   // Wide: Profile and Settings are one page, whichever of the two was asked for.
-  if (useWide()) return <Profile />;
+  if (useWide()) return <Redirect href="/profile" />;
 
   return (
     <Screen gap={18} padBottom={40}>

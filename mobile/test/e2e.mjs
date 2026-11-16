@@ -494,6 +494,9 @@ async function finish() {
   }
   log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
   await shot('21-snippet');
+  // The snippet is made first; saving or sharing it is then one more tap.
+  await tap('Make snippet');
+  await expectText('Snippet ready', 'the snippet video is made', 60000);
   await tap('Save snippet');
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));

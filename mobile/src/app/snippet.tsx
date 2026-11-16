@@ -4,7 +4,7 @@ import { Redirect, router, useIsFocused } from 'expo-router';
 
 import { useStoredImage } from '@/cover/CoverImage';
 import { fileBase } from '@/data/exporting';
-import { canShareFiles, saveFiles, shareFiles } from '@/data/files';
+import { canShareFiles, saveFiles, shareFiles, type OutFile } from '@/data/files';
 import type { SnippetChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { artistOf } from '@/data/songs';
@@ -37,6 +37,8 @@ export default function Snippet() {
   const [note, setNote] = useState<string | null>(null);
   // What is being typed into the caption, once it has been touched.
   const [draft, setDraft] = useState<string | null>(null);
+  // The snippet once it has been made, and what it was made from, so a change makes it again.
+  const [ready, setReady] = useState<{ recipe: string; files: OutFile[] } | null>(null);
   const wide = useWide();
   useStopOnLeave();
 
@@ -88,12 +90,17 @@ export default function Snippet() {
   const artist = artistOf(project, profile);
   const base = `${fileBase(project.name)} snippet`;
 
-  const share = (how: 'share' | 'save') =>
+  // Making the snippet takes as long as the snippet is, and a phone only opens its share sheet
+  // straight after a tap. So it is made first, and sharing or saving it is a second tap.
+  const recipe = clip ? JSON.stringify([project.id, clip.start, length, choice.captions && caption, choice.credit && credit, coverUrl]) : '';
+  const fresh = ready && ready.recipe === recipe ? ready.files : null;
+
+  const make = () =>
     clip &&
     task.run(async () => {
       setNote(null);
       pause();
-      let files;
+      let files: OutFile[];
       if (videoSupported()) {
         setLeft(Math.ceil(length));
         const video = await makeSnippetVideo(clip, { title: project.name, artist, caption: choice.captions && caption ? caption : null, credit: choice.credit ? credit : null, peaks: clip.peaks, coverUrl }, setLeft);
@@ -102,9 +109,16 @@ export default function Snippet() {
         files = [{ name: `${base}.wav`, data: encodeWav(clip.channels, clip.sampleRate, 16), type: 'audio/wav' }];
       }
       setLeft(null);
-      const result = how === 'save' ? (await saveFiles(files), 'saved') : await shareFiles(files, project.name);
+      setReady({ recipe, files });
       set({ made: true });
-      setNote(result === 'saved' ? `Saved ${files[0].name} to your downloads.` : result === 'shared' ? 'Shared.' : null);
+      setNote(canShareFiles() ? 'Snippet ready. Share it, or save it to this device.' : 'Snippet ready to save.');
+    });
+
+  const send = (how: 'share' | 'save') =>
+    fresh &&
+    task.run(async () => {
+      const result = how === 'save' ? (await saveFiles(fresh), 'saved') : await shareFiles(fresh, project.name);
+      setNote(result === 'saved' ? `Saved ${fresh[0].name} to your downloads.` : result === 'shared' ? 'Shared.' : null);
     });
 
   // Dark ink on the plain amber card; light ink over a photo, which is shaded the same way the video shades it.
@@ -219,9 +233,14 @@ export default function Snippet() {
             {task.error ?? (left !== null ? `Recording the video: ${left} s left. Keep this tab open.` : note)}
           </Txt>
         );
-  // With a share sheet, sharing leads and saving is the second button. Without one, the snippet can only be saved.
-  const lead = <Btn label={canShareFiles() ? 'Share snippet' : 'Save snippet'} busy={task.busy} disabled={!clip} onPress={() => share(canShareFiles() ? 'share' : 'save')} style={wide && { flex: 1 }} />;
-  const second = canShareFiles() && <Btn kind="outline" label="Save snippet" size={16} disabled={task.busy || !clip} onPress={() => share('save')} style={wide ? { flex: 1, minHeight: 56 } : { flex: 0 }} />;
+  // Once made: with a share sheet, sharing leads and saving is the second button. Without one, it can only be saved.
+  // Until it has been made (or after a change), the one button makes it.
+  const lead = !fresh ? (
+    <Btn label="Make snippet" busy={task.busy} disabled={!clip} onPress={make} style={wide && { flex: 1 }} />
+  ) : (
+    <Btn label={canShareFiles() ? 'Share snippet' : 'Save snippet'} busy={task.busy} onPress={() => send(canShareFiles() ? 'share' : 'save')} style={wide && { flex: 1 }} />
+  );
+  const second = !!fresh && canShareFiles() && <Btn kind="outline" label="Save snippet" size={16} disabled={task.busy} onPress={() => send('save')} style={wide ? { flex: 1, minHeight: 56 } : { flex: 0 }} />;
   const finish = (
         <NavLink
           center

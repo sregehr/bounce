@@ -4,7 +4,6 @@ export type Tab = 'home' | 'song' | 'mic' | 'mix' | 'vault' | 'settings';
 const TABS: Record<string, Tab> = {
   // Getting a beat in.
   '/': 'home',
-  '/beat': 'home',
   '/capture': 'home',
   '/record': 'home',
   '/demos': 'home',

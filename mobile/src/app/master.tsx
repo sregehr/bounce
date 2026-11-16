@@ -34,7 +34,7 @@ export default function Master() {
 
   return (
     <Screen gap={14} padBottom={32}>
-      <TopBar left="Master" right={<NavLink to={project.saved ? '/player' : take ? '/playback' : '/beat'} back>Back</NavLink>} />
+      <TopBar left="Master" right={<NavLink to={project.saved ? '/player' : take ? '/playback' : '/song'} back>Back</NavLink>} />
 
       <Segmented options={SIDES} value={t.side === 'b' ? 'Original' : 'Mastered'} onChange={(v) => song.setSide(v === 'Original' ? 'b' : 'a')} />
       <MiniTransport playing={t.playing} position={t.position} duration={t.duration} onToggle={song.toggle} onSeek={song.seek} busy={song.busy} />

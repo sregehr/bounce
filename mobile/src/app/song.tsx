@@ -1,16 +1,16 @@
+import { useEffect, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { tempoLine } from '@/data/labels';
 import type { Take } from '@/data/model';
 import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { NoSong } from '@/ui/AddBeat';
-import { BeatPlayer } from '@/ui/BeatPlayer';
+import { BeatCard } from '@/ui/BeatDetails';
 import { Btn, Eyebrow, Muted, Screen, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
 import { Status, SwipeRow } from '@/ui/parts';
+import { SongHeader } from '@/ui/SongHeader';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
@@ -26,7 +26,14 @@ export default function Song() {
   const song = useSong(take ? project : null, { autoplay: false, repeat });
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const insets = useSafeAreaInsets();
+  const [details, setDetails] = useState(false);
   useStopOnLeave();
+
+  // Mastering the beat alone sets the take aside. Back here, the song has its newest take again.
+  const newest = project && !project.saved && !take ? project.takes[project.takes.length - 1] : undefined;
+  useEffect(() => {
+    if (project && newest) patchProject(project.id, { takeId: newest.id }, false);
+  }, [project?.id, newest?.id]);
 
   if (!project || project.saved) return <NoSong title="No song yet" about="A song starts with a beat. Add one and its takes and lyrics live here." />;
 
@@ -41,21 +48,11 @@ export default function Song() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Screen gap={20}>
-        <View style={{ gap: 12 }}>
-          <Pressable accessibilityRole="link" accessibilityLabel={`${project.name}: beat details`} onPress={() => router.push('/beat')} style={{ gap: 4 }}>
-            <Txt size={30} w="display" ls={-0.03} lh={1.05} numberOfLines={2}>
-              {project.name}
-            </Txt>
-            <Txt size={13} color={C.muted}>
-              {[tempoLine(project) || 'Tempo not set', clock(project.beat.durationSec), 'beat details ›'].join(' · ')}
-            </Txt>
-          </Pressable>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Status label={project.takes.length ? plural(project.takes.length, 'take') : 'No takes yet'} tone={project.takes.length ? 'plain' : 'todo'} />
-            {project.lyrics.trim() ? <Status label="Has lyrics" /> : null}
-            <Status label={vaulted === 0 ? 'Not in the Vault yet' : vaulted === 1 ? 'In the Vault' : `${vaulted} in the Vault`} tone={vaulted ? 'good' : 'todo'} />
-          </View>
-        </View>
+        <SongHeader project={project}>
+          <Status label={project.takes.length ? plural(project.takes.length, 'take') : 'No takes yet'} tone={project.takes.length ? 'plain' : 'todo'} />
+          {project.lyrics.trim() ? <Status label="Has lyrics" /> : null}
+          <Status label={vaulted === 0 ? 'Not in the Vault yet' : vaulted === 1 ? 'In the Vault' : `${vaulted} in the Vault`} tone={vaulted ? 'good' : 'todo'} />
+        </SongHeader>
 
         {take ? (
           <View>
@@ -80,10 +77,12 @@ export default function Song() {
             })}
           </View>
         ) : (
-          <View style={{ gap: 12 }}>
-            <BeatPlayer project={project} note="Nothing recorded over it yet" />
-            <Muted>Tap the mic below to record a take, and it shows up here.</Muted>
-          </View>
+          <Muted>Nothing recorded over this beat yet. Tap the mic below to record a take, and it shows up here.</Muted>
+        )}
+
+        {/* Until there is a take, the beat is the thing to play, so its card comes first. After that the lyrics do. */}
+        {!take && (
+          <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />
         )}
 
         <View style={{ gap: 8 }}>
@@ -99,6 +98,10 @@ export default function Song() {
             style={{ minHeight: 120, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, color: C.text, fontFamily: F.regular, fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }}
           />
         </View>
+
+        {take && (
+          <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />
+        )}
 
         {take && <View style={{ height: NEXT_HEIGHT }} />}
       </Screen>

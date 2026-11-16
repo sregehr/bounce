@@ -6,10 +6,10 @@ import { loadPcm } from '@/data/studio';
 import { play, seek, toggle } from '@/engine/engine';
 
 import { useTask, useTransport } from './hooks';
-import { Card, RoundPlay, SeekTrack, Txt, s } from './kit';
+import { RoundPlay, SeekTrack, Txt, s } from './kit';
 import { C, clock } from './theme';
 
-/** Plays a beat by itself, with its waveform to seek on. For a song that has no take to play yet. */
+/** Plays a beat by itself, with its waveform to seek on. It sits inside the beat card on the Song screen. */
 export function BeatPlayer({ project, note }: { project: Project; note?: string }) {
   const beat = project.beat;
   const id = `beat:${project.id}`;
@@ -28,7 +28,7 @@ export function BeatPlayer({ project, note }: { project: Project; note?: string 
   const progress = t.duration > 0 ? t.position / t.duration : 0;
 
   return (
-    <Card style={{ paddingVertical: 18, paddingHorizontal: 16 }}>
+    <View style={{ gap: 14 }}>
       <SeekTrack peaks={beat.wave} height={64} progress={t.loaded ? progress : 0} rest={C.text} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in beat" />
       <View style={[s.row, { gap: 14 }]}>
         <RoundPlay size={48} icon={18} playing={t.playing} onPress={onPlay} disabled={task.busy} label={t.playing ? 'Pause the beat' : 'Play the beat'} />
@@ -41,6 +41,6 @@ export function BeatPlayer({ project, note }: { project: Project; note?: string 
           </Txt>
         </View>
       </View>
-    </Card>
+    </View>
   );
 }

@@ -14,6 +14,7 @@ import { Btn, Chips, Muted, NavLink, Option, Screen, SliderRow, Txt } from '@/ui
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
 import { Status } from '@/ui/parts';
+import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { C, clock } from '@/ui/theme';
@@ -41,11 +42,12 @@ export default function Playback() {
   if (!take)
     return (
       <Screen gap={20}>
-        <View style={{ gap: 6, paddingTop: 8 }}>
-          <Txt size={26} w="display">
+        <SongHeader project={project} />
+        <View style={{ gap: 4 }}>
+          <Txt size={17} w="semi">
             Nothing to mix yet
           </Txt>
-          <Muted size={15}>Record a take over {project.name} and its mix opens here.</Muted>
+          <Muted size={15}>Record a take over this beat and its mix opens here.</Muted>
         </View>
         <Btn label="Record a take" to="/vocals" />
       </Screen>
@@ -77,15 +79,12 @@ export default function Playback() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Screen gap={18}>
         <View style={{ gap: 12 }}>
-          <Txt size={30} w="display" ls={-0.03} lh={1.05} numberOfLines={2}>
-            {project.name}
-          </Txt>
           {/* Where the song stands, at a glance. */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <SongHeader project={project}>
             <Status label={`Take ${take.number} · ${clock(take.durationSec)}`} />
             <Status label={state} tone={song.error ? 'bad' : song.busy ? 'plain' : 'good'} />
             <Status label={vaulted === 0 ? 'Not in the Vault yet' : vaulted === 1 ? 'In the Vault' : `${vaulted} in the Vault`} tone={vaulted ? 'good' : 'todo'} />
-          </View>
+          </SongHeader>
           {song.error && (
             <Txt size={13} color={C.recText}>
               {song.error}

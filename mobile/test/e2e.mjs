@@ -85,6 +85,8 @@ async function type(label, value) {
   const handle = await page.evaluateHandle((label) => [...document.querySelectorAll('input,textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop(), label);
   const el = handle.asElement();
   if (!el) return log(false, `type into "${label}"`, 'no such field');
+  // Bring it to the middle first, clear of the bars pinned to the top and bottom of the screen.
+  await el.evaluate((n) => n.scrollIntoView({ block: 'center' }));
   await el.click();
   // Select what is there so typing replaces it; a triple click only picks one line or word.
   await el.evaluate((n) => n.select());
@@ -534,7 +536,7 @@ async function library() {
   await tap('Home');
   await expectText('Add a beat');
   await tap('Open Night bus');
-  await expectText('beat details', 'a beat opens its song', 10000);
+  await expectText('Beat details', 'a beat opens its song', 10000);
   await tap('Home');
   // The personal menu in the top bar holds Profile and Settings.
   await tap('Your menu');
@@ -577,17 +579,20 @@ async function library() {
   await shot('25-record');
   await tap('Stop recording');
   await expectText('Not in the Vault yet', 'a captured beat opens on the Song tab', 20000);
-  // Its details, where it is named and mastered alone, are one tap away.
-  await tap('beat details', { exact: false });
+  // Its details, where it is named and mastered alone, open in place.
+  await tap('Beat details', { exact: false });
   await expectText('Beat captured', 'captured beat is saved', 10000);
-  await expectText('What next?');
+  await expectText('Master the beat', 'its details open inside the Song tab');
   await shot('26-captured');
   // Master it as an instrumental.
   await tap('Master the beat', { exact: false });
   await expectText(/−\d+\.\d LUFS/, 'an instrumental can be mastered on its own', 30000);
   await tap('Back');
-  await expectText('What next?');
-  await tap('Delete this beat');
+  await expectText('Not in the Vault yet', 'mastering the beat alone returns to its song');
+  if (!(await tap('Delete this beat', { optional: true }))) {
+    await tap('Beat details', { exact: false });
+    await tap('Delete this beat');
+  }
   await tap('Tap again to delete this beat', { exact: false });
   await expectText('FREESTYLE OVER', 'deleting a beat returns home', 10000);
   const body = await text();
@@ -596,7 +601,7 @@ async function library() {
   // Import one of the exported files as a new beat.
   await choose('Import a file', path.join(DOWNLOADS, 'Night bus.wav'));
   await expectText('Not in the Vault yet', 'an imported file opens on the Song tab', 30000);
-  await tap('beat details', { exact: false });
+  await tap('Beat details', { exact: false });
   await expectText('Beat imported', 'an imported file becomes a beat', 10000);
   await expectText(/\d+ BPM/, 'a tempo is found for it');
   await shot('27-imported');
@@ -621,9 +626,9 @@ async function library() {
   await choose('Import a file', path.join(DOWNLOADS, 'Basement tape.wav'));
   await expectText('Not in the Vault yet', 'a 48 kHz file is imported', 30000);
   await expectText('100 BPM', 'its tempo is found');
-  await tap('beat details', { exact: false });
+  await tap('Beat details', { exact: false });
   await expectText('48 kHz');
-  await tap('Freestyle over it', { exact: false });
+  await tap('Freestyle over Basement tape');
   await expectText(/Fake .* ms (estimated|measured)/, 'the microphone reconnects for the new beat', 10000);
   await tap('8 bars');
   await tap('Start recording');

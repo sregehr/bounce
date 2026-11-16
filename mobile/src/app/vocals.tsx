@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
-import { tempoLine } from '@/data/labels';
 import type { LoopChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studio';
@@ -13,6 +12,7 @@ import { MicSetup } from '@/ui/MicSetup';
 import { useTiming } from '@/ui/timing';
 import { useOnScreen, useTask } from '@/ui/hooks';
 import { askForMic, setRecordControl } from '@/ui/recordControl';
+import { SongHeader } from '@/ui/SongHeader';
 import { C, clock, meterPct, plural } from '@/ui/theme';
 
 const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
@@ -117,28 +117,18 @@ export default function Vocals() {
 
   return (
     <Screen gap={14}>
-      <View style={[s.topbar, { minHeight: 48 }]}>
-        <Pressable accessibilityRole="link" accessibilityLabel={`${project.name}: beat details`} onPress={() => !active && router.push('/beat')} style={{ gap: 2, flexShrink: 1 }}>
-          <Txt size={24} w="display" numberOfLines={1}>
-            {project.name}
-          </Txt>
-          <Txt size={13} color={C.muted}>
-            {tempoLine(project) || 'Tempo not set'}
-          </Txt>
-        </Pressable>
-      </View>
+      <SongHeader project={project} locked={active} />
 
+      {/* The same empty state as Mix: what is missing, and one button that starts it. */}
       {!active && project.takes.length === 0 && (
-        <View accessibilityRole="alert" style={{ borderWidth: 1, borderColor: C.accent, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, gap: 2 }}>
-          <Txt size={15} w="semi" color={C.accent}>
-            No takes yet
-          </Txt>
-          <Txt size={14} lh={1.4} color={C.muted}>
-            Record one over this beat and it opens in the mix.
-          </Txt>
-          <NavLink size={14} w="semi" onPress={() => press.current()}>
-            Record a take
-          </NavLink>
+        <View style={{ gap: 12 }}>
+          <View style={{ gap: 4 }}>
+            <Txt size={17} w="semi">
+              No takes yet
+            </Txt>
+            <Muted size={15}>Record one over this beat and it opens in the mix.</Muted>
+          </View>
+          <Btn label="Record a take" disabled={task.busy} onPress={() => press.current()} />
         </View>
       )}
 
@@ -165,7 +155,7 @@ export default function Vocals() {
           {bar ? (
             <Segmented options={LENGTHS} value={length} onChange={(l) => setLoop({ bars: toBars(l) })} variant="inset" />
           ) : (
-            <Muted size={13}>Set the tempo on the beat screen to loop 8 or 16 bars. Until then the whole beat plays through.</Muted>
+            <Muted size={13}>Set the tempo in the beat details on the Song tab to loop 8 or 16 bars. Until then the whole beat plays through.</Muted>
           )}
           {loop && total > loop.bars && !active && (
             <View style={[s.row, s.between]}>

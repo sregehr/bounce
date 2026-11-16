@@ -15,7 +15,7 @@ const unlimited = (email: string | undefined) =>
   !!email &&
   (process.env.AI_UNLIMITED_EMAILS ?? "")
     .split(",")
-    .map((e) => e.trim().toLowerCase())
+    .map((e: string) => e.trim().toLowerCase())
     .includes(email.toLowerCase());
 
 /** `left` is null when there is no limit. */

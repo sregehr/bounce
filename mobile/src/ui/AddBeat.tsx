@@ -63,7 +63,7 @@ function Create({ icon, label, name, busy, disabled, ...nav }: Nav & { icon: key
 export function AddBeat() {
   const any = useLibrary((l) => beatsIn(l.projects).length > 0);
   const task = useTask();
-  const add = () => task.run(async () => void ((await importBeat()) && router.push('/beat')));
+  const add = () => task.run(async () => void ((await importBeat()) && router.push('/song')));
   return (
     <View style={{ gap: 10 }}>
       <Eyebrow>Add a beat</Eyebrow>

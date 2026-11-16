@@ -36,7 +36,7 @@ export default function Vault() {
   const next = songLead(library);
   const start = () => {
     if (next.id) setCurrent(next.id);
-    router.push({ pathname: next.to, params: next.hint ? { hint: next.hint } : {} });
+    router.push(next.to);
   };
 
   return (

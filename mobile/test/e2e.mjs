@@ -195,13 +195,25 @@ async function onboarding() {
   await tap('Try a demo song');
   await expectText('Ready-made beats', 'the demo songs are listed');
   await shot('05b-demo-songs');
+  // A demo can be heard before it is added.
+  const has = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=button]')].some((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label), label);
+  await tap('Preview Small Steps, Big City');
+  let previewing = false;
+  for (let i = 0; i < 40 && !previewing; i++) (previewing = await has('Pause Small Steps, Big City')) || (await sleep(500));
+  log(previewing, 'a demo plays as a preview before it is added');
   await tap('Add Small Steps, Big City');
-  await expectText('What next?', 'a demo song lands on the beat screen', 30000);
+  await expectText('No takes yet', 'a demo song opens on the Song tab', 30000);
+  // With no take yet, the beat can still be played from the Song tab.
+  await tap('Play the beat');
+  let beatPlaying = false;
+  for (let i = 0; i < 20 && !beatPlaying; i++) (beatPlaying = await has('Pause the beat')) || (await sleep(500));
+  log(beatPlaying, 'the beat plays from the Song tab before any take');
+  await tap('Pause the beat', { optional: true });
   await expectText('94 BPM', 'and keeps the tempo it was written at');
   await page.goto(BASE + '/demos', { waitUntil: 'networkidle2', timeout: 120000 });
   await expectText('Ready-made beats', 'the demo songs open again');
   await tap('Add Night bus');
-  await expectText('What next?', 'demo beat lands on the beat screen', 20000);
+  await expectText('No takes yet', 'a demo beat opens on the Song tab', 20000);
   await expectText('92 BPM', 'tempo detected');
   await expectText('F minor', 'key detected');
   await shot('06-beat');
@@ -211,15 +223,20 @@ async function onboarding() {
 const transportPlaying = () => state(() => !![...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).find((n) => n.getAttribute('aria-label') === 'Pause'));
 
 async function song() {
-  // Nothing is recorded yet: Song opens the song and says so, and Mix leads to the mic and says why.
+  // Nothing is recorded yet: Song opens the song and says so, and Mix says there is nothing to mix and leads to the mic.
   await tap('Song');
   await expectText('No takes yet', 'Song opens the song before anything is recorded');
   await shot('06b-song-empty');
   await tap('Mix');
-  await expectText('Nothing to mix yet', 'Mix leads to recording when there are no takes');
+  await expectText('Nothing to mix yet', 'Mix stays on its own tab and says why it is empty');
+  log(await state(() => { const lit = (name) => getComputedStyle([...document.querySelectorAll('[role=tab]')].find((n) => n.getAttribute('aria-label') === name)).backgroundColor !== 'rgba(0, 0, 0, 0)'; return lit('Mix') && !lit('Song'); }), 'the Mix tab is the one lit');
+  await tap('Record a take');
   await expectText('Always listening', 'vocals screen opens');
   await expectText(/Fake .* ms (estimated|measured)/, 'microphone connects by itself once allowed', 8000);
   await shot('07-vocals-idle');
+  // A new beat plays through whole until a loop is chosen.
+  await expectText('Whole beat · once through', 'a new beat starts as the whole beat');
+  await tap('8 bars');
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass', 5000);
   await sleep(2500);
@@ -494,7 +511,7 @@ async function library() {
   // Home lists the beats still being worked on, so one whose song is in the Vault leaves it.
   await tap('Home');
   await expectText('1 beat has a finished song', 'a beat with a song in the Vault leaves Home');
-  log(!(await text()).includes('FREESTYLE OVER'), 'and Home no longer leads with it');
+  log(await state(() => ![...document.querySelectorAll('[role=button]')].some((n) => n.getAttribute('aria-label') === 'Open Night bus')), 'and Home no longer lists it');
   await shot('23-home-done');
   // Its song in the Vault leads back to the beat, and recording over it again brings it back.
   await tap('Vault');
@@ -559,7 +576,10 @@ async function library() {
   await sleep(4500);
   await shot('25-record');
   await tap('Stop recording');
-  await expectText('Beat captured', 'captured beat is saved', 20000);
+  await expectText('Not in the Vault yet', 'a captured beat opens on the Song tab', 20000);
+  // Its details, where it is named and mastered alone, are one tap away.
+  await tap('beat details', { exact: false });
+  await expectText('Beat captured', 'captured beat is saved', 10000);
   await expectText('What next?');
   await shot('26-captured');
   // Master it as an instrumental.
@@ -575,7 +595,9 @@ async function library() {
 
   // Import one of the exported files as a new beat.
   await choose('Import a file', path.join(DOWNLOADS, 'Night bus.wav'));
-  await expectText('Beat imported', 'an imported file becomes a beat', 30000);
+  await expectText('Not in the Vault yet', 'an imported file opens on the Song tab', 30000);
+  await tap('beat details', { exact: false });
+  await expectText('Beat imported', 'an imported file becomes a beat', 10000);
   await expectText(/\d+ BPM/, 'a tempo is found for it');
   await shot('27-imported');
 
@@ -597,11 +619,13 @@ async function library() {
   fs.writeFileSync(path.join(DOWNLOADS, 'Basement tape.wav'), wav48);
   await tap('Home');
   await choose('Import a file', path.join(DOWNLOADS, 'Basement tape.wav'));
-  await expectText('Beat imported', 'a 48 kHz file is imported', 30000);
+  await expectText('Not in the Vault yet', 'a 48 kHz file is imported', 30000);
   await expectText('100 BPM', 'its tempo is found');
+  await tap('beat details', { exact: false });
   await expectText('48 kHz');
   await tap('Freestyle over it', { exact: false });
   await expectText(/Fake .* ms (estimated|measured)/, 'the microphone reconnects for the new beat', 10000);
+  await tap('8 bars');
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 8000);
   await sleep(3500);

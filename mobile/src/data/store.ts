@@ -104,7 +104,8 @@ export function createProject(beat: Beat, name: string): Project {
     createdAt: now,
     updatedAt: now,
     beat,
-    loop: { bars: 8, startBar: 0 },
+    // A new beat plays through whole; looping 8 or 16 bars is a choice made on the mic screen.
+    loop: { bars: 0, startBar: 0 },
     takes: [],
     takeId: null,
     polish: DEFAULT_POLISH,

@@ -1,10 +1,6 @@
 // Larger building blocks shared by several screens.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-
-import type { Hint } from '@/data/songs';
-
 import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';

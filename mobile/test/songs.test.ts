@@ -57,12 +57,12 @@ const older = makeSong(a, 'Older', 50);
 check('beats and songs are told apart', beatsIn([song, a, older]).length === 1 && songsIn([older, a, song]).map((p) => p.name).join() === 'Night bus,Older');
 
 // Where the tabs lead.
-check('with nothing, every tab stays on its own screen, which offers to add a beat', micLead(lib([])).to === '/vocals' && songLead(lib([])).to === '/song' && mixLead(lib([])).to === '/playback' && [micLead, mixLead, songLead].every((f) => f(lib([])).id === null && !f(lib([])).hint));
+check('with nothing, every tab stays on its own screen, which offers to add a beat', micLead(lib([])).to === '/vocals' && songLead(lib([])).to === '/song' && mixLead(lib([])).to === '/playback' && [micLead, mixLead, songLead].every((f) => f(lib([])).id === null));
 const bare = lib([beat('b')], { currentId: 'b' });
-check('with a beat and no takes, the mic records and Song opens it', micLead(bare).to === '/vocals' && !micLead(bare).hint && songLead(bare).to === '/song' && songLead(bare).id === 'b');
-check('…and Mix leads to recording, with its reason', mixLead(bare).to === '/vocals' && mixLead(bare).hint === 'mix');
+check('with a beat and no takes, the mic records and Song opens it', micLead(bare).to === '/vocals' && songLead(bare).to === '/song' && songLead(bare).id === 'b');
+check('…and Mix stays on its own screen for that beat', mixLead(bare).to === '/playback' && mixLead(bare).id === 'b');
 const recorded = lib([beat('b'), a], { currentId: 'b' });
-check('Mix opens a beat that has takes when the current one has none', mixLead(recorded).to === '/playback' && mixLead(recorded).id === 'a' && !mixLead(recorded).hint);
+check('Mix opens a beat that has takes when the current one has none', mixLead(recorded).to === '/playback' && mixLead(recorded).id === 'a');
 const full = lib([song, older, a], { currentId: song.id, songId: older.id });
 check('the song played last is remembered', loadedSong(full)?.id === older.id);
 check('…or the newest when none has been', loadedSong({ ...full, songId: null })?.id === song.id);

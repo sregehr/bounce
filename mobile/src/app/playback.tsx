@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { View } from 'react-native';
-import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
@@ -11,7 +10,7 @@ import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
 import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
 import { NoSong } from '@/ui/AddBeat';
-import { Btn, Chips, NavLink, Option, Screen, SliderRow, Txt } from '@/ui/kit';
+import { Btn, Chips, Muted, NavLink, Option, Screen, SliderRow, Txt } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
 import { Status } from '@/ui/parts';
@@ -38,7 +37,19 @@ export default function Playback() {
   useStopOnLeave();
 
   if (!project || project.saved) return <NoSong title="Nothing to mix yet" about="Add a beat and record a take over it, and the mix opens here." />;
-  if (!take) return <Redirect href="/vocals" />;
+  // A beat with nothing recorded over it: Mix says so, and leads to the mic.
+  if (!take)
+    return (
+      <Screen gap={20}>
+        <View style={{ gap: 6, paddingTop: 8 }}>
+          <Txt size={26} w="display">
+            Nothing to mix yet
+          </Txt>
+          <Muted size={15}>Record a take over {project.name} and its mix opens here.</Muted>
+        </View>
+        <Btn label="Record a take" to="/vocals" />
+      </Screen>
+    );
 
   const { mix } = song;
   const polish = project.polish;

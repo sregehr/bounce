@@ -87,7 +87,7 @@ export default function Onboarding() {
     route.set(outcome.ms !== null ? ms : null);
     setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, taps: true });
   };
-  const finish = (work?: () => Promise<Project | null>, to: '/beat' | '/capture' | '/demos' | '/' = '/beat') =>
+  const finish = (work?: () => Promise<Project | null>, to: '/song' | '/capture' | '/demos' | '/' = '/song') =>
     start.run(async () => {
       if (work && !(await work())) return;
       setProfile({ onboarded: true });

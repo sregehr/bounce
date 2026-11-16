@@ -71,12 +71,12 @@ function MixGlyph({ on, color }: IconProps) {
 
 /**
  * Opens where a tab leads. Tabs sit one level above the home screen, so the stack never grows
- * as you move between them. A lead may carry a hint for the screen to show.
+ * as you move between them.
  */
-function follow(lead: Lead | { to: '/vault' | '/settings' | '/profile'; id?: null; hint?: undefined }, from: string) {
+function follow(lead: Lead | { to: '/' | '/vault' | '/settings' | '/profile'; id?: null }, from: string) {
   if (lead.id) setCurrent(lead.id);
-  if (lead.to === from) return router.setParams({ hint: lead.hint });
-  const href = { pathname: lead.to, params: lead.hint ? { hint: lead.hint } : {} } as const;
+  if (lead.to === from) return;
+  const href = lead.to;
   if (router.canDismiss()) router.dismissAll();
   if (lead.to === '/') router.replace(href);
   else router.push(href);

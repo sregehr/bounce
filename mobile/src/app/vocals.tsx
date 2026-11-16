@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 
 import { tempoLine } from '@/data/labels';
 import type { LoopChoice } from '@/data/model';
@@ -31,7 +31,6 @@ export default function Vocals() {
   const [setup, setSetup] = useState(false);
   const finishing = useRef(false);
   const [onScreen, setOnScreen] = useState(false);
-  const { hint } = useLocalSearchParams<{ hint?: string }>();
   const live = input.status === 'ready';
   const mode = take.mode;
 
@@ -132,7 +131,7 @@ export default function Vocals() {
       {!active && project.takes.length === 0 && (
         <View accessibilityRole="alert" style={{ borderWidth: 1, borderColor: C.accent, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, gap: 2 }}>
           <Txt size={15} w="semi" color={C.accent}>
-            {hint === 'mix' ? 'Nothing to mix yet' : 'No takes yet'}
+            No takes yet
           </Txt>
           <Txt size={14} lh={1.4} color={C.muted}>
             Record one over this beat and it opens in the mix.
@@ -143,41 +142,44 @@ export default function Vocals() {
         </View>
       )}
 
-      <Card style={{ padding: 16, gap: 12 }}>
-        <View style={[s.row, s.between]}>
-          <Eyebrow>{loop ? `Loop · bars ${first}–${first + loop.bars - 1}` : 'Whole beat · once through'}</Eyebrow>
-          {active ? (
-            <Txt size={13} w="semi" color={mode === 'recording' ? C.recText : C.accent}>
-              {loop ? `Bar ${first + cell} · pass ${pass}` : clock(take.elapsed)}
-            </Txt>
-          ) : (
-            <NavLink size={13} w="semi" style={{ minHeight: 24 }} onPress={() => live && begin('listening')}>
-              Play the loop
-            </NavLink>
-          )}
-        </View>
-        <View accessible={false} style={{ flexDirection: 'row', gap: 3 }}>
-          {Array.from({ length: cells }, (_, i) => (
-            <View key={i} style={{ flex: 1, height: 34, borderRadius: 4, backgroundColor: !active ? C.dim : i < cell ? C.text : i === cell ? (mode === 'recording' ? C.rec : C.accent) : C.dim }} />
-          ))}
-        </View>
-        {bar ? (
-          <Segmented options={LENGTHS} value={length} onChange={(l) => setLoop({ bars: toBars(l) })} variant="inset" />
-        ) : (
-          <Muted size={13}>Set the tempo on the beat screen to loop 8 or 16 bars. Until then the whole beat plays through.</Muted>
-        )}
-        {loop && total > loop.bars && !active && (
+      {/* Looping and listening both play the beat against the microphone, so they wait for one. */}
+      {live && (
+        <Card style={{ padding: 16, gap: 12 }}>
           <View style={[s.row, s.between]}>
-            <NavLink size={13} style={{ minHeight: 28 }} onPress={() => setLoop({ startBar: Math.max(0, loop.startBar - 4) })}>
-              Start 4 bars earlier
-            </NavLink>
-            <NavLink size={13} style={{ minHeight: 28 }} onPress={() => setLoop({ startBar: Math.min(total - loop.bars, loop.startBar + 4) })}>
-              Start 4 bars later
-            </NavLink>
+            <Eyebrow>{loop ? `Loop · bars ${first}–${first + loop.bars - 1}` : 'Whole beat · once through'}</Eyebrow>
+            {active ? (
+              <Txt size={13} w="semi" color={mode === 'recording' ? C.recText : C.accent}>
+                {loop ? `Bar ${first + cell} · pass ${pass}` : clock(take.elapsed)}
+              </Txt>
+            ) : (
+              <NavLink size={13} w="semi" style={{ minHeight: 24 }} onPress={() => live && begin('listening')}>
+                {loop ? 'Play the loop' : 'Play the beat'}
+              </NavLink>
+            )}
           </View>
-        )}
-        {project.loop.bars > total && bar && !active ? <Muted size={13}>This beat is {plural(total, 'bar')} long, so that is what loops.</Muted> : null}
-      </Card>
+          <View accessible={false} style={{ flexDirection: 'row', gap: 3 }}>
+            {Array.from({ length: cells }, (_, i) => (
+              <View key={i} style={{ flex: 1, height: 34, borderRadius: 4, backgroundColor: !active ? C.dim : i < cell ? C.text : i === cell ? (mode === 'recording' ? C.rec : C.accent) : C.dim }} />
+            ))}
+          </View>
+          {bar ? (
+            <Segmented options={LENGTHS} value={length} onChange={(l) => setLoop({ bars: toBars(l) })} variant="inset" />
+          ) : (
+            <Muted size={13}>Set the tempo on the beat screen to loop 8 or 16 bars. Until then the whole beat plays through.</Muted>
+          )}
+          {loop && total > loop.bars && !active && (
+            <View style={[s.row, s.between]}>
+              <NavLink size={13} style={{ minHeight: 28 }} onPress={() => setLoop({ startBar: Math.max(0, loop.startBar - 4) })}>
+                Start 4 bars earlier
+              </NavLink>
+              <NavLink size={13} style={{ minHeight: 28 }} onPress={() => setLoop({ startBar: Math.min(total - loop.bars, loop.startBar + 4) })}>
+                Start 4 bars later
+              </NavLink>
+            </View>
+          )}
+          {project.loop.bars > total && bar && !active ? <Muted size={13}>This beat is {plural(total, 'bar')} long, so that is what loops.</Muted> : null}
+        </Card>
+      )}
 
       {canPunch && (
         <Option
@@ -190,17 +192,19 @@ export default function Vocals() {
         />
       )}
 
-      <View style={[s.row, s.divided, { minHeight: 56 }]}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Txt size={15} w="semi">
-            Always listening
-          </Txt>
-          <Txt size={13} color={C.muted}>
-            {mode === 'listening' ? `Holding the last ${clock(take.held)}. Missed the start?` : 'Play the loop and rap. The last 60 s are held.'}
-          </Txt>
+      {live && (
+        <View style={[s.row, s.divided, { minHeight: 56 }]}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Txt size={15} w="semi">
+              Always listening
+            </Txt>
+            <Txt size={13} color={C.muted}>
+              {mode === 'listening' ? `Holding the last ${clock(take.held)}. Missed the start?` : `Play the ${loop ? 'loop' : 'beat'} and rap. The last 60 s are held.`}
+            </Txt>
+          </View>
+          <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: mode === 'listening' && take.held >= 2 ? 1 : 0.35 }} onPress={() => mode === 'listening' && take.held >= 2 && finish(() => router.push('/playback'))} />
         </View>
-        <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: mode === 'listening' && take.held >= 2 ? 1 : 0.35 }} onPress={() => mode === 'listening' && take.held >= 2 && finish(() => router.push('/playback'))} />
-      </View>
+      )}
 
       {live && (
         <View accessible={false} style={{ height: 4, borderRadius: 2, backgroundColor: C.line, overflow: 'hidden' }}>
@@ -212,19 +216,33 @@ export default function Vocals() {
           Mic: {input.label}. Timing is corrected by {latencyMs} ms.
         </Muted>
       ) : (
-        <View>
-          <Disclosure
-            title="Microphone and timing"
-            summary={live ? `${input.label} · ${latencyMs} ms ${timing.measured ? 'measured' : 'estimated'}` : 'Not connected'}
-            open={setup}
-            onToggle={() => setSetup(!setup)}
-            last
-            size={15}
-          >
-            <MicSetup />
-          </Disclosure>
-          {live && !setup && <Muted size={13} style={{ paddingTop: 8 }}>Wear headphones so the beat stays out of the take.</Muted>}
-        </View>
+        !live ? (
+          <View style={[s.row, s.between, { minHeight: 56, borderTopWidth: 1, borderTopColor: C.line }, s.divided]}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt size={15} w="semi">
+                Microphone
+              </Txt>
+              <Txt size={13} color={input.error ? C.recText : C.muted}>
+                {input.error ?? 'Not connected yet.'}
+              </Txt>
+            </View>
+            <Chip label={input.status === 'opening' ? 'Connecting…' : 'Connect'} style={{ paddingHorizontal: 16, borderColor: C.text }} onPress={() => void openInput(settings.inputId, 'mic')} />
+          </View>
+        ) : (
+          <View>
+            <Disclosure
+              title="Microphone and timing"
+              summary={live ? `${input.label} · ${latencyMs} ms ${timing.measured ? 'measured' : 'estimated'}` : 'Not connected'}
+              open={setup}
+              onToggle={() => setSetup(!setup)}
+              last
+              size={15}
+            >
+              <MicSetup />
+            </Disclosure>
+            {live && !setup && <Muted size={13} style={{ paddingTop: 8 }}>Wear headphones so the beat stays out of the take.</Muted>}
+          </View>
+        )
       )}
 
       {(task.error || saved) && (

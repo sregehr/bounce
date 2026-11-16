@@ -31,7 +31,7 @@ export default function Record() {
     setSaving(true);
     try {
       await addBeat({ channels: captured.channels, sampleRate: captured.sampleRate }, { source: 'capture', label: captured.label, name: nextBeatName(), clipped: captured.clipped });
-      router.replace('/beat');
+      router.replace('/song');
     } catch (e) {
       setSaving(false);
       setNotice(e instanceof TooShort ? e.message : 'That capture could not be saved. Storage on this device may be full.');

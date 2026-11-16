@@ -7,6 +7,7 @@ import type { Take } from '@/data/model';
 import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { NoSong } from '@/ui/AddBeat';
+import { BeatPlayer } from '@/ui/BeatPlayer';
 import { Btn, Eyebrow, Muted, Screen, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
 import { Status, SwipeRow } from '@/ui/parts';
@@ -79,7 +80,10 @@ export default function Song() {
             })}
           </View>
         ) : (
-          <Muted>Nothing recorded over this beat yet. Tap the mic below to record a take, and it shows up here.</Muted>
+          <View style={{ gap: 12 }}>
+            <BeatPlayer project={project} note="Nothing recorded over it yet" />
+            <Muted>Tap the mic below to record a take, and it shows up here.</Muted>
+          </View>
         )}
 
         <View style={{ gap: 8 }}>

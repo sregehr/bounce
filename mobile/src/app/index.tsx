@@ -77,10 +77,11 @@ export default function Home() {
           {projects.map((p, i) => (
             <SwipeRow key={p.id} label={`Delete ${p.name}${p.takes.length ? ' and its takes' : ''}`} onDelete={() => void deleteProject(p.id)}>
             <Pressable accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, '/song')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
-              <Txt size={16} w="semi" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {/* A long name gives way; the tempo and take count always fit on one line. */}
+              <Txt size={16} w="semi" numberOfLines={1} style={{ flex: 1, minWidth: 0 }}>
                 {p.name}
               </Txt>
-              <Txt size={13} color={C.muted}>
+              <Txt size={13} color={C.muted} numberOfLines={1} style={{ flexShrink: 0 }}>
                 {[p.beat.bpm ? `${Math.round(p.beat.bpm)} BPM` : null, p.takes.length ? plural(p.takes.length, 'take') : 'no takes yet'].filter(Boolean).join(' · ')}
               </Txt>
             </Pressable>

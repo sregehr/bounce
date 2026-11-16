@@ -4,14 +4,12 @@ import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CoverImage } from '@/cover/CoverImage';
-import { exportFiles } from '@/data/exporting';
-import { shareFiles } from '@/data/files';
 import { artistOf, songsIn } from '@/data/songs';
 import { activeTake, openSong, patchProject, setCurrent, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { spectrum } from '@/engine/engine';
 import { Btn, NavLink, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
-import { useStopOnLeave, useTask } from '@/ui/hooks';
+import { useStopOnLeave } from '@/ui/hooks';
 import { C, F, clock, lufs } from '@/ui/theme';
 
 const BARS = 34;
@@ -46,10 +44,8 @@ export default function Player() {
   const projects = useLibrary((l) => l.projects);
   const profile = useLibrary((l) => l.profile);
   const song = useSong(project);
-  const share = useTask();
   const [drag, setDrag] = useState<number | null>(null);
   const [lyrics, setLyrics] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   useStopOnLeave();
 
@@ -81,13 +77,6 @@ export default function Player() {
   };
   const artist = artistOf(project, profile);
   const credit = [artist, profile.producer ? `Prod. ${profile.producer}` : null].filter(Boolean).join(' · ');
-  const onShare = () =>
-    share.run(async () => {
-      setNote(null);
-      const files = await exportFiles({ ...project, exporting: { ...project.exporting, instrumental: false, vocals: false } });
-      const result = await shareFiles(files, `${project.name}${artist !== 'You' ? ` by ${artist}` : ''}`);
-      setNote(result === 'saved' ? `Saved ${files[0].name} to your downloads.` : result === 'shared' ? 'Shared.' : null);
-    });
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -186,15 +175,11 @@ export default function Player() {
           </>
         )}
 
-        {(share.error || note) && (
-          <Txt size={13} color={share.error ? C.recText : C.muted} center>
-            {share.error ?? note}
-          </Txt>
-        )}
         <View style={[s.row, { gap: 10 }]}>
           <Btn kind="outline" label="Snippet" to="/snippet" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
           <Btn kind="outline" label={lyrics ? 'Done' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
-          <Btn kind="outline" label="Share" busy={share.busy} onPress={onShare} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
+          {/* Sharing opens the choices first (loudness, format, stems), then the share sheet or a saved file. */}
+          <Btn kind="outline" label="Share" to="/export" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
         </View>
         {beat && (
           <NavLink center size={14} onPress={again}>

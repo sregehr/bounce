@@ -105,9 +105,6 @@ export default function Playback() {
             <View style={{ paddingTop: 10, paddingBottom: 6 }}>
               <ChainEditor project={project} song={song} />
             </View>
-            <NavLink size={14} to="/export">
-              Export without saving
-            </NavLink>
             <NavLink size={14} onPress={() => !stems.busy && sendStems()}>
               {stems.busy ? 'Gathering the stems…' : 'Send stems to an engineer'}
             </NavLink>

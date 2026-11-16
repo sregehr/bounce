@@ -137,7 +137,7 @@ export default function Cover() {
 
   return (
     <Screen>
-      <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to="/playback" back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />
+      <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to={project.takeId ? '/playback' : '/master'} back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />
 
       {finishing && (
         <View style={{ gap: 6 }}>

@@ -34,7 +34,8 @@ export default function Master() {
 
   return (
     <Screen gap={14} padBottom={32}>
-      <TopBar left="Master" right={<NavLink to={project.saved ? '/player' : take ? '/playback' : '/song'} back>Back</NavLink>} />
+      {/* No way back here: the bar at the bottom leads everywhere, and a finished song has Done below. */}
+      <TopBar left="Master" />
 
       <Segmented options={SIDES} value={t.side === 'b' ? 'Original' : 'Mastered'} onChange={(v) => song.setSide(v === 'Original' ? 'b' : 'a')} />
       <MiniTransport playing={t.playing} position={t.position} duration={t.duration} onToggle={song.toggle} onSeek={song.seek} busy={song.busy} />
@@ -93,7 +94,8 @@ export default function Master() {
             </Txt>
           </View>
         </View>
-        <Btn label="Export" to="/export" disabled={!mix} />
+        {/* A song is finished by saving it to the Vault; its files are exported from there. */}
+        {project.saved ? <Btn label="Done" to="/player" back disabled={!mix} /> : <Btn label="Save to the Vault" to="/cover?finish=1" disabled={!mix} />}
       </Foot>
     </Screen>
   );

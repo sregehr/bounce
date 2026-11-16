@@ -420,31 +420,6 @@ async function finish() {
   await tap('Finish song');
   await expectText('Save to the Vault', 'Finish song opens the last step directly');
   await expectText('Add a photo of the artist');
-  await tap('Back');
-  await expectText('Export without saving', 'Back returns to the mix');
-  await tap('Export without saving');
-  await expectText('Loud, for socials and demos', 'export screen opens');
-  await tap('Loud, for socials and demos');
-  await tap('Vocals only');
-  await tap('WAV, 16-bit');
-  await shot('14-export');
-  // Chrome offers a share sheet, so saving is the second button; without one it is the only button.
-  if (!(await tap('Save to Files', { optional: true }))) await tap('Save 3 files');
-  await expectText('3 files saved to your downloads as Night bus.zip', 'export finishes', 60000);
-  const files = await waitDownloads(2);
-  const names = files.includes('Night bus.zip') ? unzipNames(path.join(DOWNLOADS, 'Night bus.zip')) : [];
-  log(names.length === 3 && names.every((n) => n.endsWith('.wav')), 'the ZIP holds three WAV files', names.join(', ') || files.join(', '));
-  // Then one file on its own, to check the audio itself.
-  await tap('Vocals only');
-  await tap('Instrumental, mastered to match');
-  if (!(await tap('Save to Files', { optional: true }))) await tap('Save 1 file');
-  await expectText('Saved Night bus.wav to your downloads', 'a single file is saved as it is', 60000);
-  await waitDownloads(3);
-  const header = fs.existsSync(path.join(DOWNLOADS, 'Night bus.wav')) ? fs.readFileSync(path.join(DOWNLOADS, 'Night bus.wav')) : null;
-  log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
-
-  await tap('Name it and save it to the Vault');
-  await expectText('Finish song', 'the last step names the song');
   await expectText('Add a photo of the artist', 'and asks for a cover photo');
   await type('Song title', 'Night bus');
   await type('Artist on this song', 'Mina Cole');
@@ -471,11 +446,34 @@ async function finish() {
   await sleep(1500);
   log(await transportPlaying(), 'the song plays in the player');
   await shot('20-player');
+  // Files are shared or saved from a finished song, after choosing what and how.
+  await tap('Share');
+  await expectText('Loud, for socials and demos', 'Share on a finished song opens the choices first');
+  await tap('Loud, for socials and demos');
+  await tap('Vocals only');
+  await tap('WAV, 16-bit');
+  await shot('14-export');
+  // Chrome offers a share sheet, so saving is the second button; without one it is the only button.
+  if (!(await tap('Save to Files', { optional: true }))) await tap('Save 3 files');
+  await expectText('3 files saved to your downloads as Night bus.zip', 'export finishes', 60000);
+  const files = await waitDownloads(2);
+  const names = files.includes('Night bus.zip') ? unzipNames(path.join(DOWNLOADS, 'Night bus.zip')) : [];
+  log(names.length === 3 && names.every((n) => n.endsWith('.wav')), 'the ZIP holds three WAV files', names.join(', ') || files.join(', '));
+  // Then one file on its own, to check the audio itself.
+  await tap('Vocals only');
+  await tap('Instrumental, mastered to match');
+  if (!(await tap('Save to Files', { optional: true }))) await tap('Save 1 file');
+  await expectText('Saved Night bus.wav to your downloads', 'a single file is saved as it is', 60000);
+  await waitDownloads(3);
+  const header = fs.existsSync(path.join(DOWNLOADS, 'Night bus.wav')) ? fs.readFileSync(path.join(DOWNLOADS, 'Night bus.wav')) : null;
+  log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
+  await tap('Back');
+  await expectText('Prod. Lowkey', 'Back returns to the player');
   await tap('Lyrics');
   const carried = await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Lyrics').pop()?.value ?? '');
   log(carried.includes('Every red light is a breath I use'), 'the lyrics written on the song came with it', carried.slice(0, 60));
   await tap('Done');
-  await tap('Pause');
+  await tap('Pause', { optional: true });
 
   await tap('Snippet');
   await expectText('Strongest stretch picked', 'snippet finds its stretch', 30000);
@@ -587,7 +585,8 @@ async function library() {
   // Master it as an instrumental.
   await tap('Master the beat', { exact: false });
   await expectText(/−\d+\.\d LUFS/, 'an instrumental can be mastered on its own', 30000);
-  await tap('Back');
+  await expectText('Save to the Vault', 'and saved to the Vault from there');
+  await tap('Song');
   await expectText('Not in the Vault yet', 'mastering the beat alone returns to its song');
   if (!(await tap('Delete this beat', { optional: true }))) {
     await tap('Beat details', { exact: false });

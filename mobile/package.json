@@ -41,7 +41,8 @@
     "test": "tsx test/dsp.test.ts && tsx test/render.test.ts && tsx test/songs.test.ts",
     "e2e": "node test/e2e.mjs",
     "build:web": "expo export -p web",
-    "build:site": "EXPO_PUBLIC_CONVEX_URL= expo export -p web --output-dir dist-site",
+    "build:site": "EXPO_PUBLIC_CONVEX_URL=${BOUNCE_SERVER_URL:-} EXPO_PUBLIC_CONVEX_SITE_URL= expo export -p web --output-dir dist-site",
+    "deploy:server": "convex deploy --env-file .env.deploy.local --cmd 'npm run build:site' --cmd-url-env-var-name BOUNCE_SERVER_URL",
     "serve": "node scripts/serve.mjs",
     "serve:phone": "node scripts/serve.mjs --phone",
     "typecheck": "tsc --noEmit"

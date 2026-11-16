@@ -7,4 +7,5 @@ const url = process.env.EXPO_PUBLIC_CONVEX_URL;
 export const convex = url ? new ConvexReactClient(url, { unsavedChangesWarning: false }) : null;
 export const backendAvailable = !!convex;
 /** Where the server answers plain web requests; a phone sign-in comes back through it. */
-export const siteUrl = process.env.EXPO_PUBLIC_CONVEX_SITE_URL ?? '';
+// A hosted server's web address is its own address with `.site` in place of `.cloud`.
+export const siteUrl = process.env.EXPO_PUBLIC_CONVEX_SITE_URL || (url ?? '').replace(/\.convex\.cloud$/, '.convex.site');

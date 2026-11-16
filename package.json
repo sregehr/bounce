@@ -8,7 +8,8 @@
     "dev:phone": "BOUNCE_PHONE=1 vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "deploy": "npm --prefix mobile run build:site && wrangler deploy",
+    "deploy": "npm --prefix mobile run deploy:server && wrangler deploy",
+    "deploy:site-only": "npm --prefix mobile run build:site && wrangler deploy",
     "deploy:prototype": "npm run build && wrangler deploy --assets ./dist"
   },
   "dependencies": {

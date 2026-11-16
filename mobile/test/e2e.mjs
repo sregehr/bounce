@@ -1,6 +1,7 @@
 // End-to-end run of the web app in headless Chrome, with a fake microphone
 // (Chrome's built-in test tone) standing in for real audio input.
 // Usage: node test/e2e.mjs [flow]   Screenshots go to $SHOTS (default ./.e2e).
+// VIEW=<width>x<height> sets the window size (default 390x844, a phone).
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
@@ -17,7 +18,11 @@ const browser = await puppeteer.launch({
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--mute-audio', `--user-data-dir=${path.join(SHOTS, 'profile-' + Date.now())}`],
 });
 const page = await browser.newPage();
-await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+// VIEW=1194x834 runs the same flows in the wide (tablet, landscape) layout.
+const [viewWidth, viewHeight] = (process.env.VIEW ?? '390x844').split('x').map(Number);
+// In the wide layout some things the phone tucks away are always on show, so the taps that reveal them are skipped.
+const WIDE = viewWidth >= 1000 && viewWidth > viewHeight;
+await page.setViewport({ width: viewWidth, height: viewHeight, deviceScaleFactor: 2 });
 const problems = [];
 const chatter = new Set();
 page.on('console', (m) => {
@@ -177,6 +182,8 @@ async function onboarding() {
   await shot('03-soundcheck');
   await tap('Continue');
   await expectText('Line up your takes');
+  await expectText(/An estimate for .+\./, 'the timing step starts from an estimate for the connected setup');
+  await shot('04a-timing-estimate');
   await tap('Play the clicks');
   await expectText(/Heard all the clicks|clicks came back/i, 'latency check finishes', 12000);
   await shot('04-timing');
@@ -214,6 +221,8 @@ async function onboarding() {
   await expectText('94 BPM', 'and keeps the tempo it was written at');
   await page.goto(BASE + '/demos', { waitUntil: 'networkidle2', timeout: 120000 });
   await expectText('Ready-made beats', 'the demo songs open again');
+  // The wide layout shows one group of demos at a time; the built-in beat is behind its own chip.
+  await tap('Built in', { optional: true });
   await tap('Add Night bus');
   await expectText('No takes yet', 'a demo beat opens on the Song tab', 20000);
   await expectText('92 BPM', 'tempo detected');
@@ -336,14 +345,14 @@ async function song() {
   await shot('11-advanced');
   await slide('Gain', 0.9);
   await expectText('Set by hand', 'editing a band marks the chain as set by hand', 5000);
-  await tap('Compressor', { exact: false });
+  await tap('Compressor', { exact: false, optional: WIDE });
   await slide('Threshold', 0.3);
   await tap('Save as my preset');
   await expectText('Saved as my preset');
   await tap('Reset');
   await expectText('Starting from what Auto chose', 'reset returns to the automatic chain', 5000);
   await tap('Master');
-  await tap('EQ', { exact: false });
+  await tap('EQ', { exact: false, optional: WIDE });
   await slide('Gain', 0.7);
   await shot('12-advanced-master');
 
@@ -405,12 +414,12 @@ async function finish() {
   await expectText(/Polished\s/, 'the mix opens from the song', 30000);
   await shot('13c-mix');
   await expectText(/Reverb 60% · Echo off/i, 'the vocal reverb starts where the style puts it');
-  await tap('Reverb and echo', { exact: false });
+  await tap('Reverb and echo', { exact: false, optional: WIDE });
   await expectText('Room cut', 'reverb, echo and room cut are on the mix page');
   await slide('Echo', 0.3);
   await expectText(/Echo 30%/i, 'echo can be added to the vocal');
   await expectText(/Polished\s/, 'and the mix renders with it', 30000);
-  await tap('Reverb and echo', { exact: false });
+  await tap('Reverb and echo', { exact: false, optional: WIDE });
   await tap('Send stems to an engineer');
   await expectText('stems.zip to your downloads', 'stems are saved from the song page', 30000);
   const stemZip = (await waitDownloads(1)).find((f) => f.endsWith('stems.zip'));

@@ -32,16 +32,16 @@ function OpenTag({ id, tag: line }: { id: string; tag: string }) {
  * The open song, playing beside the list in the wide layout. It is mounted once per song, so
  * leaving the Vault, opening another song or removing this one stops it.
  */
-function Docked({ project, autoplay, open, toggle, sure, onRemove }: { project: Project; autoplay: boolean; open: (id: string) => void; toggle: RefObject<(() => void) | null>; sure: boolean; onRemove: () => void }) {
+function Docked({ project, autoplay, open, toggleRef, sure, onRemove }: { project: Project; autoplay: boolean; open: (id: string) => void; toggleRef: RefObject<(() => void) | null>; sure: boolean; onRemove: () => void }) {
   const now = useNowPlaying(project, { autoplay, open });
   const { song } = now;
   useStopOnLeave();
 
   // Tapping the open song's card in the list plays or pauses it.
   useEffect(() => {
-    toggle.current = song.toggle;
+    toggleRef.current = song.toggle;
     return () => {
-      toggle.current = null;
+      toggleRef.current = null;
     };
   });
 
@@ -109,7 +109,7 @@ export default function Vault() {
   const insets = useSafeAreaInsets();
   // Wide: the song a tap in the list asked to hear, which starts by itself once it is ready; the one found open when arriving waits for play.
   const [asked, setAsked] = useState<string | null>(null);
-  const toggle = useRef<(() => void) | null>(null);
+  const toggleRef = useRef<(() => void) | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const all = songsIn(library.projects);
   const q = query.trim().toLowerCase();
@@ -191,7 +191,7 @@ export default function Vault() {
               shown.map((p) => {
                 const on = p.id === docked?.id;
                 return (
-                  <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Play ${p.name}`} accessibilityState={{ selected: on }} onPress={() => (on && toggle.current ? toggle.current() : play(p.id))} style={{ width: cell, gap: 10 }}>
+                  <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={`Play ${p.name}`} accessibilityState={{ selected: on }} onPress={() => (on && toggleRef.current ? toggleRef.current() : play(p.id))} style={{ width: cell, gap: 10 }}>
                     {/* The open song's cover is ringed. */}
                     <View style={{ borderWidth: 3, borderRadius: 21, borderColor: on ? C.text : C.bg }}>
                       <CoverImage project={p} size={cell - 6} radius={18} />
@@ -224,7 +224,7 @@ export default function Vault() {
             showsVerticalScrollIndicator={false}
           >
             {docked ? (
-              <Docked key={docked.id} project={docked} autoplay={asked === docked.id} open={play} toggle={toggle} sure={removing === docked.id} onRemove={() => remove(docked)} />
+              <Docked key={docked.id} project={docked} autoplay={asked === docked.id} open={play} toggleRef={toggleRef} sure={removing === docked.id} onRemove={() => remove(docked)} />
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', gap: 8 }}>
                 <Txt size={22} w="display" center>

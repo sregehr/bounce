@@ -12,6 +12,7 @@ import { setProfile, setSettings, useLibrary } from '@/data/store';
 import { measureLatency, openInput, reportedLatencyMs, setPair, useEngine } from '@/engine/engine';
 import { Btn, Card, Eyebrow, Field, Foot, Muted, NavLink, Screen, TickIcon, TopBar, Txt, s } from '@/ui/kit';
 import { Logo } from '@/ui/Logo';
+import { estimateMs } from '@/data/timing';
 import { useTiming } from '@/ui/timing';
 import { useTask } from '@/ui/hooks';
 import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
@@ -102,16 +103,19 @@ export default function Onboarding() {
     next();
   };
   const route = useTiming();
+  // What this setup starts at before any check: 84 ms on a phone's own microphone, 230 ms on wireless earbuds, and so on.
+  const estimate = estimateMs(route.route, reportedLatencyMs());
+  const setupName = [route.route.input, route.route.output].filter(Boolean).join(' and ') || 'this setup';
   const runCheck = () =>
     check.run(async () => {
       const result = await measureLatency();
-      const ms = result.medianMs !== null ? Math.round(result.medianMs) : reportedLatencyMs();
+      const ms = result.medianMs !== null ? Math.round(result.medianMs) : estimate;
       route.set(result.medianMs !== null ? ms : null);
       setTiming({ ms, measured: result.medianMs !== null, heard: result.detected, of: result.clicks });
     });
   const clapped = (outcome: ClapOutcome) => {
     setTapping(false);
-    const ms = outcome.ms !== null ? Math.min(500, outcome.ms) : reportedLatencyMs();
+    const ms = outcome.ms !== null ? Math.min(500, outcome.ms) : estimate;
     route.set(outcome.ms !== null ? ms : null);
     setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, taps: true });
   };
@@ -238,9 +242,9 @@ export default function Onboarding() {
             <Muted size={15}>Every setup hears itself a little late. Bounce plays six clicks and listens for them, then shifts your vocals by exactly that much so they land on the beat.</Muted>
           </View>
           <Card>
-            <Eyebrow accent={!!timing?.measured}>{timing ? (timing.measured ? 'Measured' : 'Using an estimate') : 'Not measured yet'}</Eyebrow>
+            <Eyebrow accent={timing ? timing.measured : route.measured}>{(timing ? timing.measured : route.measured) ? 'Measured' : 'Using an estimate'}</Eyebrow>
             <Txt size={44} w="display" lh={1}>
-              {timing ? `${timing.ms} ms` : `~${reportedLatencyMs()} ms`}
+              {timing ? timing.ms : route.ms} ms
             </Txt>
             {tapping ? (
               <ClapCheck input={input} onDone={clapped} onCancel={() => setTapping(false)} />
@@ -254,9 +258,9 @@ export default function Onboarding() {
                           ? `Measured from ${timing.heard} of ${timing.of} claps. Your takes will be moved ${timing.ms} ms earlier.`
                           : `Heard all the clicks it needed (${timing.heard} of ${timing.of}). Your takes will be moved ${timing.ms} ms earlier.`
                         : timing.taps
-                          ? `Only ${timing.heard} of ${timing.of} claps lined up, so the browser's own estimate is used. Try again, clapping right on each click.`
-                          : `Only ${timing.heard} of ${timing.of} clicks came back, so the browser's own estimate is used. With headphones on, hold one ear cup to the mic and try again, or clap along instead.`
-                      : 'Turn the volume up and take your headphones off, or hold one ear cup to the mic. The clicks are short and loud.')}
+                          ? `Only ${timing.heard} of ${timing.of} claps lined up, so the estimate for this setup is used. Try again, clapping right on each click.`
+                          : `Only ${timing.heard} of ${timing.of} clicks came back, so the estimate for this setup is used. With headphones on, hold one ear cup to the mic and try again, or clap along instead.`
+                      : `${route.measured ? `Measured for ${setupName}.` : `An estimate for ${setupName}.`} For an exact figure, turn the volume up and take your headphones off, or hold one ear cup to the mic. The clicks are short and loud.`)}
                 </Muted>
                 <Btn kind={timing ? 'outline' : 'primary'} label={timing ? 'Run it again' : 'Play the clicks'} busy={check.busy} onPress={runCheck} style={timing ? { flex: 0 } : undefined} />
                 <NavLink center size={14} onPress={() => !check.busy && setTapping(true)}>

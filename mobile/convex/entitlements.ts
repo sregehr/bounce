@@ -7,7 +7,7 @@ import type { Doc } from "./_generated/dataModel";
 /** AI images a free account may make. Override with AI_FREE_IMAGES on the deployment. */
 export const freeImages = () => {
   const set = Number(process.env.AI_FREE_IMAGES);
-  return Number.isFinite(set) && set >= 0 ? Math.floor(set) : 5;
+  return Number.isFinite(set) && set >= 0 ? Math.floor(set) : 10;
 };
 
 /** Accounts with no AI limit by name: AI_UNLIMITED_EMAILS on the deployment, comma-separated. For the people running Bounce. */

@@ -41,7 +41,7 @@ npx convex env set OPENROUTER_API_KEY <key>            # AI covers
 - `APP_ORIGINS` lists the web addresses a sign-in may return to, comma-separated. It defaults
   to `http://localhost:8081`; set it on any deployment the app is served from elsewhere.
 - `AI_IMAGE_MODEL` picks the OpenRouter image model (default `google/gemini-2.5-flash-image`),
-  and `AI_FREE_IMAGES` how many covers a free account may make (default 5).
+  and `AI_FREE_IMAGES` how many covers a free account may make (default 10).
 
 `AI_UNLIMITED_EMAILS` is a comma-separated list of sign-in emails with no AI limit, for the people running Bounce.
 

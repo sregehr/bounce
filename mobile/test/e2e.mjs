@@ -470,16 +470,15 @@ async function finish() {
   await tap('Back');
   await expectText('Prod. Lowkey', 'Back returns to the player');
   await tap('Lyrics');
-  const carried = await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Lyrics').pop()?.value ?? '');
-  log(carried.includes('Every red light is a breath I use'), 'the lyrics written on the song came with it', carried.slice(0, 60));
+  await expectText('Every red light is a breath I use', 'the lyrics written on the song came with it');
   await tap('Done');
   await tap('Pause', { optional: true });
 
   await tap('Snippet');
   await expectText('Strongest stretch picked', 'snippet finds its stretch', 30000);
-  await expectText('Night bus rolling, city on mute', 'caption defaults to the first lyric line');
+  log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
   await shot('21-snippet');
-  if (!(await tap('Save video', { optional: true }))) await tap('Share video');
+  await tap('Save snippet');
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');

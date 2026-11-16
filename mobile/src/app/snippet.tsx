@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { TextInput, View } from 'react-native';
 import { Redirect, router, useIsFocused } from 'expo-router';
 
 import { useStoredImage } from '@/cover/CoverImage';
@@ -14,9 +14,9 @@ import { wavePeaks } from '@/dsp/core';
 import { encodeWav } from '@/dsp/wav';
 import { pause, play, seek, toggle } from '@/engine/engine';
 import { makeSnippetVideo, videoSupported } from '@/snippet/video';
-import { Btn, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
-import { C, clock } from '@/ui/theme';
+import { C, F, clock } from '@/ui/theme';
 
 const LENGTHS = ['15 s', '20 s', '30 s'] as const;
 
@@ -31,6 +31,8 @@ export default function Snippet() {
   const task = useTask();
   const [left, setLeft] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // What is being typed into the caption, once it has been touched.
+  const [draft, setDraft] = useState<string | null>(null);
   useStopOnLeave();
 
   const choice = project?.snippet;
@@ -66,7 +68,9 @@ export default function Snippet() {
 
   const set = (patch: Partial<SnippetChoice>) => patchProject(project.id, { snippet: { ...choice, ...patch } }, false);
   const firstLine = project.lyrics.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
-  const caption = choice.caption.trim() || firstLine;
+  // The caption is written on the card itself. Until it is touched it starts as the first lyric line.
+  const shown = draft ?? (choice.caption || firstLine);
+  const caption = shown.trim();
   const credit = profile.producer ? `Prod. ${profile.producer}` : profile.artist ? `Prod. ${profile.artist}` : null;
   const artist = artistOf(project, profile);
   const base = `${fileBase(project.name)} snippet`;
@@ -108,9 +112,23 @@ export default function Snippet() {
         <SeekTrack peaks={clip?.peaks ?? []} height={96} progress={t.duration > 0 ? t.position / t.duration : 0} played={C.bg} rest={t.loaded && t.position > 0 ? 'rgba(18,18,18,0.35)' : C.bg} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
         <View style={{ gap: 8, minHeight: 52, justifyContent: 'flex-end' }}>
           {choice.captions && (
-            <Txt size={22} w="display" lh={1.2} ls={0} color={caption ? C.bg : 'rgba(18,18,18,0.5)'} numberOfLines={2}>
-              {caption || 'Add a caption line below'}
-            </Txt>
+            <TextInput
+              accessibilityLabel="Caption line"
+              multiline
+              numberOfLines={2}
+              submitBehavior="blurAndSubmit"
+              value={shown}
+              onChangeText={(text) => {
+                const line = text.replace(/\n/g, ' ');
+                setDraft(line);
+                set({ caption: line });
+              }}
+              placeholder="Tap to add a caption line"
+              placeholderTextColor="rgba(18,18,18,0.5)"
+              selectionColor={C.bg}
+              maxLength={80}
+              style={{ fontFamily: F.display, fontSize: 22, lineHeight: 26, height: 54, color: C.bg, padding: 0 }}
+            />
           )}
           {choice.credit && credit && (
             <Txt size={13} w="semi" ls={0.06} upper color={C.bg}>
@@ -136,12 +154,7 @@ export default function Snippet() {
       </View>
 
       <View>
-        <Option label="Caption on screen" checked={choice.captions} onChange={(captions) => set({ captions })} divided={!choice.captions} minHeight={46} />
-        {choice.captions && (
-          <View style={[s.divided, { paddingBottom: 10 }]}>
-            <Field label="Caption line" value={choice.caption} onChangeText={(text) => set({ caption: text })} placeholder={firstLine || 'The line people should remember'} maxLength={80} />
-          </View>
-        )}
+        <Option label="Caption on screen" sub={choice.captions ? 'Tap the line on the card to change it.' : undefined} checked={choice.captions} onChange={(captions) => set({ captions })} divided minHeight={46} />
         <Option label="Producer credit on screen" checked={choice.credit} onChange={(credit2) => set({ credit: credit2 })} minHeight={46} />
       </View>
 
@@ -151,8 +164,9 @@ export default function Snippet() {
             {task.error ?? (left !== null ? `Recording the video: ${left} s left. Keep this tab open.` : note)}
           </Txt>
         )}
-        <Btn label={videoSupported() ? 'Share video' : 'Share audio'} busy={task.busy} disabled={!clip} onPress={() => share(canShareFiles() ? 'share' : 'save')} />
-        {canShareFiles() && <Btn kind="outline" label={videoSupported() ? 'Save video' : 'Save audio'} size={16} disabled={task.busy || !clip} onPress={() => share('save')} style={{ flex: 0 }} />}
+        {/* With a share sheet, sharing leads and saving is the second button. Without one, the snippet can only be saved. */}
+        <Btn label={canShareFiles() ? 'Share snippet' : 'Save snippet'} busy={task.busy} disabled={!clip} onPress={() => share(canShareFiles() ? 'share' : 'save')} />
+        {canShareFiles() && <Btn kind="outline" label="Save snippet" size={16} disabled={task.busy || !clip} onPress={() => share('save')} style={{ flex: 0 }} />}
         <NavLink
           center
           onPress={() => {
@@ -162,7 +176,7 @@ export default function Snippet() {
         >
           Done, back to the Vault
         </NavLink>
-        {!videoSupported() && <Muted size={12} center>This browser cannot record video, so the snippet is shared as audio.</Muted>}
+        {!videoSupported() && <Muted size={12} center>This browser cannot record video, so the snippet is audio only.</Muted>}
       </Foot>
     </Screen>
   );

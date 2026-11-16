@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CoverImage } from '@/cover/CoverImage';
 import { artistOf, songsIn } from '@/data/songs';
-import { activeTake, openSong, patchProject, setCurrent, useLibrary, useProject } from '@/data/store';
+import { activeTake, openSong, setCurrent, useLibrary, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { spectrum } from '@/engine/engine';
 import { Btn, NavLink, PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
-import { C, F, clock, lufs } from '@/ui/theme';
+import { C, clock, lufs } from '@/ui/theme';
 
 const BARS = 34;
 
@@ -53,6 +53,7 @@ export default function Player() {
 
   const { t, mix } = song;
   const take = activeTake(project);
+  const hasLyrics = !!project?.lyrics.trim();
   // Skipping moves through the finished songs in the Vault.
   const songs = songsIn(projects);
   const at = songs.findIndex((p) => p.id === project.id);
@@ -115,19 +116,13 @@ export default function Player() {
           </View>
         </View>
 
-        {lyrics ? (
-          <View style={{ gap: 6 }}>
-            <TextInput
-              accessibilityLabel="Lyrics"
-              multiline
-              value={project.lyrics}
-              onChangeText={(text) => patchProject(project.id, { lyrics: text })}
-              placeholder="Write the bars here. They show up in vault search, and the first line can caption a snippet."
-              placeholderTextColor={C.muted}
-              selectionColor={C.accent}
-              style={{ minHeight: 132, maxHeight: 132, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, color: C.text, fontFamily: F.regular, fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }}
-            />
-          </View>
+        {lyrics && hasLyrics ? (
+          // Lyrics are written on the Song tab; a finished song shows the ones it was saved with.
+          <ScrollView accessibilityLabel="Lyrics" style={{ minHeight: 132, maxHeight: 132, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14 }} contentContainerStyle={{ padding: 14 }}>
+            <Txt size={15} lh={1.4}>
+              {project.lyrics.trim()}
+            </Txt>
+          </ScrollView>
         ) : (
           <>
             <View style={{ gap: 2 }}>
@@ -177,13 +172,13 @@ export default function Player() {
 
         <View style={[s.row, { gap: 10 }]}>
           <Btn kind="outline" label="Snippet" to="/snippet" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
-          <Btn kind="outline" label={lyrics ? 'Done' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
+          {hasLyrics && <Btn kind="outline" label={lyrics ? 'Done' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />}
           {/* Sharing opens the choices first (loudness, format, stems), then the share sheet or a saved file. */}
           <Btn kind="outline" label="Share" to="/export" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
         </View>
         {beat && (
           <NavLink center size={14} onPress={again}>
-            Record another version
+            {project.takes.length ? 'Record another version' : 'Record a vocal over this beat'}
           </NavLink>
         )}
       </View>

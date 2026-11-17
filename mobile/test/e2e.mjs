@@ -130,6 +130,26 @@ async function slide(label, fraction) {
   await sleep(200);
 }
 const state = (expr) => page.evaluate(expr);
+/** Puts a finger down on a slider (found by its label), away from its thumb, and drags up the page, as scrolling does. */
+async function scrollOver(label) {
+  const box = await page.evaluate((label) => {
+    const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    if (!n) return null;
+    n.scrollIntoView({ block: 'center' });
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, label);
+  if (!box) return log(false, `scroll over "${label}"`, 'no such slider');
+  const x = box.x + box.w * 0.15;
+  const y = box.y + box.h / 2;
+  const finger = await page.touchscreen.touchStart(x, y);
+  for (let i = 1; i <= 8; i++) {
+    await finger.move(x + (i % 2), y - i * 14);
+    await sleep(16);
+  }
+  await finger.end();
+  await sleep(300);
+}
 /** Drags a row (found by its label) to the left, as a finger would, to show its Delete button. */
 async function swipeLeft(label) {
   const box = await page.evaluate((label) => {
@@ -373,6 +393,10 @@ async function song() {
   await tap('Punchy');
   await expectText('Slower compressor attack', 'choosing a master style explains itself', 20000);
   await expectText('Starting from the Punchy master');
+  // A finger that lands on a slider while scrolling the page must not move it.
+  const intensityBefore = await trackAt('Intensity');
+  await scrollOver('Intensity');
+  log((await trackAt('Intensity')) === intensityBefore, 'scrolling the page over a slider leaves it where it was', `${intensityBefore} -> ${await trackAt('Intensity')}`);
   await slide('Intensity', 1);
   await expectText('100%');
   await expectText(/Polished\s/, 'the mix renders with the master', 30000);

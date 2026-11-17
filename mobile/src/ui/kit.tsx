@@ -454,6 +454,9 @@ export function Meter({ label, pct, height = 6, accent }: { label?: string; pct:
 
 // ---------- Slider ----------
 
+/** How far a finger travels, in points, before a touch counts as a drag or a scroll. */
+const SLOP = 6;
+
 export function Slider({
   value,
   min = 0,
@@ -482,6 +485,8 @@ export function Slider({
   const box = useRef({ left: 0, width: 1 });
   const latest = useRef(value);
   latest.current = value;
+  // The touch in progress: where it began, the value then, and whether it has turned out to be a drag or a scroll.
+  const touch = useRef<{ x: number; y: number; mode: 'wait' | 'drag' | 'scroll'; from: number } | null>(null);
 
   const snap = (v: number) => {
     const stepped = Math.round((v - min) / step) * step + min;
@@ -512,6 +517,9 @@ export function Slider({
     Platform.OS === 'web'
       ? {
           tabIndex: disabled ? -1 : 0,
+          'aria-valuemin': min,
+          'aria-valuemax': max,
+          'aria-valuenow': value,
           onKeyDown: (e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
             if (e.key === 'ArrowRight' || e.key === 'ArrowUp') (e.preventDefault(), nudge(1, e.shiftKey));
             if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') (e.preventDefault(), nudge(-1, e.shiftKey));
@@ -523,23 +531,48 @@ export function Slider({
     <View
       ref={ref}
       {...(web as object)}
+      accessible
       accessibilityRole="adjustable"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
       accessibilityValue={{ min, max, now: value }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
       onLayout={() => measure()}
       onStartShouldSetResponder={() => !disabled}
       onMoveShouldSetResponder={() => !disabled}
-      onResponderTerminationRequest={() => false}
+      // Until the finger has clearly gone sideways the page may take the touch back to scroll.
+      onResponderTerminationRequest={() => touch.current?.mode !== 'drag'}
       onResponderGrant={(e) => {
-        const x = e.nativeEvent.pageX;
-        measure(() => setFromPage(x));
+        touch.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, mode: 'wait', from: latest.current };
+        measure();
       }}
-      onResponderMove={(e) => setFromPage(e.nativeEvent.pageX)}
-      onResponderRelease={() => onCommit?.(latest.current)}
-      onResponderTerminate={() => onCommit?.(latest.current)}
-      style={[{ height, justifyContent: 'center', opacity: disabled ? 0.4 : 1 }, Platform.OS === 'web' && ({ cursor: 'pointer', userSelect: 'none', touchAction: 'none' } as object), style]}
+      onResponderMove={(e) => {
+        const g = touch.current;
+        if (!g || g.mode === 'scroll') return;
+        const dx = Math.abs(e.nativeEvent.pageX - g.x);
+        const dy = Math.abs(e.nativeEvent.pageY - g.y);
+        // Nothing changes on touch-down: a finger passing over on its way up or down the page is
+        // scrolling, and only one that sets off sideways is moving the slider.
+        if (g.mode === 'wait') {
+          if (dy > SLOP && dy > dx) g.mode = 'scroll';
+          else if (dx > SLOP) g.mode = 'drag';
+        }
+        if (g.mode === 'drag') setFromPage(e.nativeEvent.pageX);
+      }}
+      onResponderRelease={() => {
+        const g = touch.current;
+        touch.current = null;
+        // A tap that never moved sets the value where it landed.
+        if (g?.mode === 'wait') setFromPage(g.x);
+        if (g && g.mode !== 'scroll' && latest.current !== g.from) onCommit?.(latest.current);
+      }}
+      onResponderTerminate={() => {
+        const g = touch.current;
+        touch.current = null;
+        if (g && latest.current !== g.from) onCommit?.(latest.current);
+      }}
+      style={[{ height, justifyContent: 'center', opacity: disabled ? 0.4 : 1 }, Platform.OS === 'web' && ({ cursor: 'pointer', userSelect: 'none', touchAction: 'pan-y' } as object), style]}
     >
       <View pointerEvents="none" style={{ height: 4, borderRadius: 2, backgroundColor: C.dim, marginHorizontal: 9 }}>
         <View style={{ width: `${t * 100}%`, height: 4, borderRadius: 2, backgroundColor: C.accent }} />

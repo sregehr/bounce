@@ -73,6 +73,30 @@ export default defineSchema({
     size: v.number(),
   }).index("by_device_key", ["deviceId", "key"]),
 
+  // A song put up for friends to hear, behind a link nobody could guess. The link opens a small
+  // player page (convex/http.ts) where they can leave notes at a moment in the song.
+  shares: defineTable({
+    token: v.string(),
+    deviceId: v.string(),
+    /** The song's id on the device that shared it. */
+    localId: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    audio: v.id("_storage"),
+    durationSec: v.number(),
+    /** The waveform drawn on the page, as 0 to 1 peaks. */
+    peaks: v.array(v.number()),
+  })
+    .index("by_token", ["token"])
+    .index("by_device_local", ["deviceId", "localId"]),
+
+  shareNotes: defineTable({
+    shareId: v.id("shares"),
+    atSec: v.number(),
+    name: v.string(),
+    text: v.string(),
+  }).index("by_share", ["shareId"]),
+
   takes: defineTable({
     beatId: v.id("beats"),
     audio: v.id("_storage"),

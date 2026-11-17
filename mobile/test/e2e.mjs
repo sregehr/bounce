@@ -569,6 +569,38 @@ async function finish() {
   await waitDownloads(3);
   const header = fs.existsSync(path.join(DOWNLOADS, 'Night bus.wav')) ? fs.readFileSync(path.join(DOWNLOADS, 'Night bus.wav')) : null;
   log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
+  // A listening link: the song goes up behind a private link, and a note left on its page comes back here.
+  if (await tap('Make a listening link', { optional: true })) {
+    await expectText('Update the link', 'a listening link is made for the song', 90000);
+    const link = await state(() => [...document.querySelectorAll('input,textarea')].find((n) => n.getAttribute('aria-label') === 'Listening link')?.value ?? '');
+    log(/\/s\/[a-z0-9]{20,}$/.test(link), 'the link ends in a long random token', link.replace(/[a-z0-9]{20,}$/, '<token>'));
+    const listener = await browser.newPage();
+    const response = await listener.goto(link, { waitUntil: 'domcontentloaded' });
+    const pageText = await listener.evaluate(() => document.body.innerText);
+    log(response.status() === 200 && /Night bus/.test(pageText) && /Leave a note/i.test(pageText), 'the link opens a player page with the song on it', `status ${response.status()}`);
+    const playable = await listener.evaluate(() => new Promise((resolve) => { const a = document.getElementById('audio'); if (a.readyState >= 1) return resolve(a.duration); a.addEventListener('loadedmetadata', () => resolve(a.duration)); a.addEventListener('error', () => resolve(-1)); setTimeout(() => resolve(-2), 15000); }));
+    log(playable > 3, 'the page can play the audio', `duration ${Number(playable).toFixed(2)} s`);
+    await listener.evaluate(() => { document.getElementById('audio').currentTime = 3; });
+    await sleep(400);
+    await listener.type('input[name=name]', 'Sam <b>');
+    await listener.type('textarea[name=text]', 'This bar <script>alert(1)</script> hits');
+    await Promise.all([listener.waitForNavigation({ waitUntil: 'domcontentloaded' }), listener.click('button[type=submit]')]);
+    const after = await listener.evaluate(() => ({ text: document.body.innerText, scripts: document.querySelectorAll('li script, li b:not([data-at])').length }));
+    log(/0:03/.test(after.text) && /This bar <script>alert\(1\)<\/script> hits/.test(after.text) && after.scripts === 0, 'a note is pinned to its moment and shown as plain text', after.text.split('NOTES')[1]?.trim().slice(0, 80) ?? '');
+    const gone = await listener.goto(link.replace(/[a-z0-9]{20,}$/, 'a'.repeat(36)), { waitUntil: 'domcontentloaded' });
+    log(gone.status() === 404, 'a wrong token finds nothing', `status ${gone.status()}`);
+    await listener.close();
+    await page.bringToFront();
+    await tap('Check for notes');
+    await expectText('hits', 'the note comes back into the app on the song', 15000);
+    await tap('Take it down');
+    await expectText('Make a listening link', 'the link can be taken down', 15000);
+    const again = await browser.newPage();
+    const down = await again.goto(link, { waitUntil: 'domcontentloaded' });
+    log(down.status() === 404, 'and then no longer opens', `status ${down.status()}`);
+    await again.close();
+    await page.bringToFront();
+  }
   // Credits and splits: naming people adds a split sheet to what goes out.
   await tap('Add credits');
   await expectText('Splits add up to 100%', 'credits start from the artist and producer, split evenly');

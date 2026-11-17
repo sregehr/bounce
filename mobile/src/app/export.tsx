@@ -7,6 +7,7 @@ import { canShareFiles, saveFiles, shareFiles, type OutFile } from '@/data/files
 import type { Credit, ExportChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { artistOf } from '@/data/songs';
+import { linkNotes, linksAvailable, makeLink, removeLink, type Note } from '@/data/shares';
 import { useSong } from '@/data/song';
 import { aacSupported } from '@/dsp/aac';
 import { Btn, Card, Chip, Eyebrow, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
@@ -112,6 +113,75 @@ export default function Export() {
         </View>
       );
 
+  // A link friends can open to hear the song and leave notes at a moment in it.
+  const [link, setLink] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const linking = useTask();
+  const [linkStage, setLinkStage] = useState('');
+  const [copied, setCopied] = useState(false);
+  const loadLink = () =>
+    linkNotes(project.id).then(
+      (found) => (setLink(found?.link ?? null), setNotes(found?.notes ?? [])),
+      () => {},
+    );
+  useEffect(() => {
+    if (linksAvailable) void loadLink();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
+  const listening = linksAvailable && (
+      <View style={{ gap: 8 }}>
+        <View style={{ paddingBottom: 2 }}>
+          <Eyebrow>Listening link</Eyebrow>
+        </View>
+        <Muted size={13}>{link ? 'Anyone with this link can hear the song and leave notes at a moment in it. Make it again after a new mix and the same link plays the new one.' : 'A private link to a simple player page. Friends tap the waveform and leave a note at that moment; the notes show up here.'}</Muted>
+        {link && <Field label="Listening link" value={link} editable={false} selectTextOnFocus />}
+        <View style={[s.row, { gap: 8, flexWrap: 'wrap' }]}>
+          <Chip
+            label={linking.busy ? `${linkStage || 'Working'}…` : link ? 'Update the link' : 'Make a listening link'}
+            on={!link}
+            onPress={() =>
+              !linking.busy &&
+              linking.run(async () => {
+                song.pause();
+                setLink(await makeLink(project, setLinkStage));
+                setLinkStage('');
+              })
+            }
+            style={{ paddingHorizontal: 16 }}
+          />
+          {link && !linking.busy && (
+            <>
+              <Chip
+                label={copied ? 'Copied' : 'Copy'}
+                onPress={() => void navigator.clipboard?.writeText(link).then(() => (setCopied(true), setTimeout(() => setCopied(false), 2000)), () => {})}
+                style={{ paddingHorizontal: 16, borderColor: C.text }}
+              />
+              <Chip label="Check for notes" onPress={() => void loadLink()} style={{ paddingHorizontal: 16 }} />
+              <Chip label="Take it down" onPress={() => linking.run(async () => (await removeLink(project.id), setLink(null), setNotes([])))} style={{ paddingHorizontal: 16 }} />
+            </>
+          )}
+        </View>
+        {linking.error && (
+          <Txt size={13} color={C.recText}>
+            {linking.error}
+          </Txt>
+        )}
+        {notes.map((n, i) => (
+          <View key={i} style={[s.row, { gap: 10, alignItems: 'flex-start', paddingVertical: 6, borderTopWidth: 0.5, borderTopColor: C.border }]}>
+            <Txt size={13} w="semi" color={C.accent} style={{ width: 40 }}>
+              {clock(n.atSec)}
+            </Txt>
+            <View style={{ flex: 1 }}>
+              <Txt size={14}>{n.text}</Txt>
+              <Txt size={12} color={C.muted}>
+                {n.name}
+              </Txt>
+            </View>
+          </View>
+        ))}
+      </View>
+  );
+
   // Who did what and who gets what. With anyone named, a split sheet goes out with the files.
   const setCredits = (next: Credit[]) => (setDone(null), setReady(null), patchProject(project.id, { credits: next }, false));
   const editCredit = (i: number, patch: Partial<Credit>) => setCredits(credits.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -193,6 +263,7 @@ export default function Export() {
               {loudness}
               {format}
               {include}
+              {listening}
               {splits}
             </>
           }
@@ -217,6 +288,8 @@ export default function Export() {
       {format}
 
       {include}
+
+      {listening}
 
       {splits}
 

@@ -4,7 +4,7 @@ import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/s
 
 // A backup belongs to whoever holds the secret its device made up on first launch. The id says
 // which backup; the secret proves the caller is that device. Only a hash of it is kept here.
-const owner = { deviceId: v.string(), secret: v.string() };
+export const owner = { deviceId: v.string(), secret: v.string() };
 
 async function hashOf(secret: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
@@ -18,13 +18,13 @@ const secretRow = (ctx: QueryCtx, deviceId: string) =>
     .unique();
 
 /** True when the secret is the one this device registered. A device nobody has registered owns nothing yet. */
-async function owns(ctx: QueryCtx, deviceId: string, secret: string) {
+export async function owns(ctx: QueryCtx, deviceId: string, secret: string) {
   const row = await secretRow(ctx, deviceId);
   return !!row && row.hash === (await hashOf(secret));
 }
 
 /** Refuses anyone but the device itself. The first call from a device registers its secret. */
-async function requireOwner(ctx: MutationCtx, deviceId: string, secret: string) {
+export async function requireOwner(ctx: MutationCtx, deviceId: string, secret: string) {
   if (deviceId.length < 16 || deviceId.length > 128 || secret.length < 32 || secret.length > 128) throw new Error("Not allowed.");
   const hash = await hashOf(secret);
   const row = await secretRow(ctx, deviceId);

@@ -94,7 +94,7 @@ export function AddBeat() {
   const task = useTask();
   const add = () => task.run(async () => void ((await importBeat()) && router.push('/song')));
   const wide = useWide();
-  useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, () => file.arrayBuffer())) && router.push('/song'))));
+  useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, file)) && router.push('/song'))));
   return (
     <View style={{ gap: 10 }}>
       <Eyebrow>Add a beat</Eyebrow>

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 
 import { decodeRate, sniffAudio, SNIFF_BYTES } from '../src/dsp/sniff';
 import { encodeWav } from '../src/dsp/wav';
+import { importRefusal, MAX_UNMEASURED_BYTES, TOO_BIG, TOO_LONG } from '../src/data/importLimit';
 import { recordState } from '../src/ui/recordControl';
 
 let failed = 0;
@@ -76,6 +77,16 @@ check('anything else says nothing rather than guessing', junk.format === null &&
 
 check('a file is decoded at 44.1 or 48 kHz, whichever its own rate belongs with', decodeRate(44100) === 44100 && decodeRate(22050) === 44100 && decodeRate(88200) === 44100 && decodeRate(48000) === 48000 && decodeRate(96000) === 48000 && decodeRate(16000) === 48000);
 check('and at 44.1 kHz when the file does not say', decodeRate(null) === 44100);
+
+// ---------- Turning away files that are too long, unread ----------
+
+const said = (seconds: number | null, atLeastSeconds: number | null = null) => ({ format: null, sampleRate: null, seconds, atLeastSeconds });
+check('an hour-long WAV is refused from its header', importRefusal(sniffAudio(hour, 44 + 3600 * 44100 * 4), 44 + 3600 * 44100 * 4) === TOO_LONG);
+check('twelve minutes is allowed and a second more is not', importRefusal(said(720), 1e6) === null && importRefusal(said(721), 1e6) === TOO_LONG);
+check('a big file that says it is short is believed', importRefusal(said(600), MAX_UNMEASURED_BYTES * 2) === null);
+check('an MP3 too big to be twelve minutes at any bitrate is refused', importRefusal(mp3Says, 30 + 320 * 125 * 800) === TOO_LONG, JSON.stringify(mp3Says));
+check('an MP3 that might be short enough is left to the decoder', importRefusal(said(null, 400), 16e6) === null);
+check('a file that says nothing is judged by size alone', importRefusal(junk, 5e6) === null && importRefusal(junk, MAX_UNMEASURED_BYTES + 1) === TOO_BIG);
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);

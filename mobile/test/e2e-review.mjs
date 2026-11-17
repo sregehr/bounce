@@ -41,6 +41,13 @@ await page.evaluateOnNewDocument(() => {
     if (this instanceof File || this.size > 4e6) window.__bytesRead += this.size;
     return whole.call(this);
   };
+  for (const way of ['readAsDataURL', 'readAsArrayBuffer', 'readAsBinaryString', 'readAsText']) {
+    const read = FileReader.prototype[way];
+    FileReader.prototype[way] = function (blob, ...rest) {
+      if (blob instanceof File || blob.size > 4e6) window.__bytesRead += blob.size;
+      return read.call(this, blob, ...rest);
+    };
+  }
   const Real = window.AudioContext;
   window.AudioContext = class extends Real {
     constructor(options) {
@@ -240,6 +247,21 @@ async function imports() {
     log(tone?.sampleRate === 48000, 'and kept at 48 kHz', `${tone?.sampleRate} Hz`);
   }
   await page.evaluate(() => sessionStorage.removeItem('liveRate'));
+
+  // Thirteen minutes of silence as a WAV: over the limit, and said so by its header.
+  const long = path.join(FILES, 'Thirteen minutes.wav');
+  const frames = 13 * 60 * 8000;
+  const wav = Buffer.alloc(44 + frames * 2);
+  wav.write('RIFF', 0), wav.writeUInt32LE(36 + frames * 2, 4), wav.write('WAVEfmt ', 8), wav.writeUInt32LE(16, 16), wav.writeUInt16LE(1, 20), wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24), wav.writeUInt32LE(16000, 28), wav.writeUInt16LE(2, 32), wav.writeUInt16LE(16, 34), wav.write('data', 36), wav.writeUInt32LE(frames * 2, 40);
+  fs.writeFileSync(long, wav);
+  await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
+  await page.evaluate(() => (window.__bytesRead = 0));
+  await choose('Import a file', long);
+  await expectText('That file is over 12 minutes long', 'a file over 12 minutes is refused', 20000);
+  const read = await page.evaluate(() => window.__bytesRead);
+  log(read === 0, 'without the whole file being read first', `${read} of ${wav.length} bytes read whole`);
+  log(!(await library()).projects.some((p) => p.name === 'Thirteen minutes'), 'and nothing is added');
 }
 
 const flows = { mic, imports };

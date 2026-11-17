@@ -17,7 +17,7 @@ import { router, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, tabFor } from './tabs';
+import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { RAIL_WIDTH, useWide } from './wide';
 import { C, F, type Weight } from './theme';
 
@@ -108,7 +108,8 @@ export function Screen({
 }) {
   const insets = useSafeAreaInsets();
   // On tabbed screens the content runs under the floating bar, so it ends clear of it.
-  const tabbed = tabFor(usePathname()) !== null;
+  const pathname = usePathname();
+  const tabbed = tabFor(pathname) !== null;
   const top = Math.max(60, insets.top + 16);
   // In the wide layout the navigation is a rail down the left, so the content starts beside it and runs to the bottom.
   const wide = useWide();
@@ -126,7 +127,7 @@ export function Screen({
         gap,
         paddingHorizontal: padX,
         paddingTop: tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top,
-        paddingBottom: tabbed ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
+        paddingBottom: tabbed && !hidesTabBar(pathname) ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
       };
   if (!scroll) return <View style={[{ flex: 1, backgroundColor: C.bg }, content, style]}>{children}</View>;
   return (

@@ -4,13 +4,17 @@ import { router } from 'expo-router';
 
 import type { LoopChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
+import { fileBase } from '@/data/exporting';
+import { saveFiles } from '@/data/files';
 import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studio';
+import { encodeWav } from '@/dsp/wav';
 import { engineState, inputAllowed, openInput, startTake, stopTake, useEngine, wake } from '@/engine/engine';
+import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
 import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
 import { useTiming } from '@/ui/timing';
-import { useOnScreen, useTask } from '@/ui/hooks';
+import { useArmed, useOnScreen, useRecordingGuard, useTask } from '@/ui/hooks';
 import { askForMic, setRecordControl } from '@/ui/recordControl';
 import { SongHeader } from '@/ui/SongHeader';
 import { C, clock, meterPct, plural } from '@/ui/theme';
@@ -20,6 +24,8 @@ const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
 type Length = (typeof LENGTHS)[number];
 const toBars = (l: Length): LoopChoice['bars'] => (l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0);
 const toLength = (b: LoopChoice['bars']): Length => (b === 8 ? '8 bars' : b === 16 ? '16 bars' : 'Whole beat');
+/** A recording on its way into the song, with what is needed to store it. */
+type Pending = { recorded: RecordedTake; origin: 'kept' | 'recorded'; punchAtSec?: number };
 
 export default function Vocals() {
   const project = useProject();
@@ -29,8 +35,13 @@ export default function Vocals() {
   const task = useTask();
   const [punch, setPunch] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  // What was being held when a beat played through to its end while listening: still there to keep.
+  const [parked, setParked] = useState<RecordedTake | null>(null);
+  // A take that could not be written to storage. It stays here until it is saved, exported or dropped.
+  const [unsaved, setUnsaved] = useState<Pending | null>(null);
   const [setup, setSetup] = useState(false);
   const finishing = useRef(false);
+  const [dropArmed, armDrop, disarmDrop] = useArmed();
   const [onScreen, setOnScreen] = useState(false);
   const live = input.status === 'ready';
   const mode = take.mode;
@@ -61,26 +72,59 @@ export default function Vocals() {
   const timing = useTiming();
   const latencyMs = timing.ms;
 
+  useRecordingGuard(mode === 'recording' || !!unsaved);
+
+  /** Writes a recording into the song. If storage refuses it, the recording is kept in hand. */
+  const store = async (pending: Pending, then?: () => void) => {
+    if (!project) return;
+    let made;
+    try {
+      made = await saveTake(project.id, pending.recorded, { latencyMs, origin: pending.origin, punchAtSec: pending.punchAtSec });
+    } catch {
+      setUnsaved(pending);
+      throw new Error('That take could not be saved. Storage on this device may be full. It is still here.');
+    }
+    setUnsaved(null);
+    if (!made) throw new Error('That take was too short to keep.');
+    setSaved(`Take ${made.number} saved · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
+    setPunch(false);
+    then?.();
+  };
+
   const finish = async (then?: () => void) => {
     if (!project || finishing.current) return;
     finishing.current = true;
-    const wasListening = mode === 'listening';
-    const recorded = stopTake(true);
+    const wasListening = mode !== 'recording';
+    const recorded = mode === 'idle' ? parked : stopTake(true);
+    setParked(null);
     await task.run(async () => {
       if (!recorded) throw new Error('Nothing was recorded. Check the microphone level and try again.');
       if (recorded.peak < 0.003) throw new Error('That take was silent. Check that the right microphone is picked under Microphone and timing, then try again.');
-      const made = await saveTake(project.id, recorded, { latencyMs, origin: wasListening ? 'kept' : 'recorded', punchAtSec: !wasListening && punch && canPunch && bar ? punchBar * bar : undefined });
-      if (!made) throw new Error('That take was too short to keep.');
-      setSaved(`Take ${made.number} saved · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
-      setPunch(false);
-      then?.();
+      await store({ recorded, origin: wasListening ? 'kept' : 'recorded', punchAtSec: !wasListening && punch && canPunch && bar ? punchBar * bar : undefined }, then);
     });
     finishing.current = false;
   };
 
-  // A beat that plays through once ends the take by itself.
+  const retry = () => unsaved && task.run(() => store(unsaved, () => router.push('/playback')));
+  const saveAsFile = () =>
+    unsaved &&
+    project &&
+    task.run(async () => {
+      const name = await saveFiles([{ name: `${fileBase(project.name)} take.wav`, data: encodeWav([unsaved.recorded.mono], unsaved.recorded.sampleRate, 24), type: 'audio/wav' }]);
+      if (!name) throw new Error('This device could not save the file either. Free some space, then try again.');
+      setUnsaved(null);
+      setSaved(`Saved to your downloads as ${name}. It is not in this song.`);
+    });
+
+  // A beat that plays through once ends by itself. A recording is saved; a listen-through is
+  // not, but what was held stays in hand so "Keep that" still works.
   useEffect(() => {
-    if (take.ended && mode !== 'idle') void finish(mode === 'recording' ? () => router.push('/playback') : undefined);
+    if (!take.ended || mode === 'idle') return;
+    if (mode === 'recording') void finish(() => router.push('/playback'));
+    else {
+      const held = stopTake(true);
+      setParked(held && held.peak >= 0.003 ? held : null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [take.ended]);
 
@@ -98,13 +142,15 @@ export default function Vocals() {
     task.run(async () => {
       wake();
       setSaved(null);
+      setParked(null);
       if (mode !== 'idle') stopTake(false);
       const beat = await loadPcm(project.beat.key);
       await startTake(next, beat, loop ? { start: loop.start, end: loop.end } : null);
     });
 
   press.current = () => {
-    if (task.busy) return;
+    // A take that is still waiting to be saved comes first: recording again would replace it.
+    if (task.busy || unsaved) return;
     if (!live) return askForMic(true);
     if (mode === 'recording') void finish();
     else void begin('recording');
@@ -189,6 +235,7 @@ export default function Vocals() {
         />
       );
 
+  const canKeep = !task.busy && !unsaved && ((mode === 'listening' && take.held >= 2) || (mode === 'idle' && !!parked));
   const listening = live && (
         <View style={[s.row, s.divided, { minHeight: 56 }]}>
           <View style={{ flex: 1, gap: 2 }}>
@@ -196,10 +243,14 @@ export default function Vocals() {
               Always listening
             </Txt>
             <Txt size={13} color={C.muted}>
-              {mode === 'listening' ? `Holding the last ${clock(take.held)}. Missed the start?` : `Play the ${loop ? 'loop' : 'beat'} and rap. The last 60 s are held.`}
+              {mode === 'listening'
+                ? `Holding the last ${clock(take.held)}. Missed the start?`
+                : parked
+                  ? `The beat finished. Still holding the last ${clock(parked.mono.length / parked.sampleRate)}.`
+                  : `Play the ${loop ? 'loop' : 'beat'} and rap. The last 60 s are held.`}
             </Txt>
           </View>
-          <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: mode === 'listening' && take.held >= 2 ? 1 : 0.35 }} onPress={() => mode === 'listening' && take.held >= 2 && finish(() => router.push('/playback'))} />
+          <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: canKeep ? 1 : 0.35 }} onPress={() => canKeep && finish(() => router.push('/playback'))} />
         </View>
       );
 
@@ -243,14 +294,24 @@ export default function Vocals() {
         )
       );
 
-  const message = (task.error || saved) && (
-        <Txt size={14} w="medium" color={task.error ? C.recText : C.accent} center>
-          {task.error ?? saved}
-        </Txt>
+  // Shown right under the song header, where it cannot end up behind the bottom bar.
+  const message = (task.error || saved || unsaved) && (
+        <View accessibilityRole="alert" style={{ gap: 12, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: task.error || unsaved ? C.rec : C.accent, backgroundColor: C.surface }}>
+          <Txt size={14} w="medium" color={task.error || unsaved ? C.recText : C.accent}>
+            {task.error ?? saved ?? 'A take is waiting to be saved.'}
+          </Txt>
+          {unsaved && (
+            <View style={[s.row, { gap: 8, flexWrap: 'wrap' }]}>
+              <Chip label="Try again" on onPress={() => !task.busy && retry()} style={{ paddingHorizontal: 16 }} />
+              <Chip label="Save as a file" onPress={() => !task.busy && saveAsFile()} style={{ paddingHorizontal: 16, borderColor: C.text }} />
+              <Chip label={dropArmed ? 'Tap again to discard' : 'Discard'} onPress={() => (dropArmed ? (setUnsaved(null), task.setError(null), disarmDrop()) : armDrop())} style={{ paddingHorizontal: 16 }} />
+            </View>
+          )}
+        </View>
       );
 
   // Hearing a take back needs one to exist.
-  const canHear = mode === 'recording' || project.takes.length > 0;
+  const canHear = !unsaved && (mode === 'recording' || project.takes.length > 0);
   const hear = () => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')));
 
   // Wide: the loop and the mic on the left, the bars to rap on the right, and hearing it back in the header. Recording is the mic in the rail.
@@ -285,13 +346,13 @@ export default function Vocals() {
           inner={14}
           left={
             <>
+              {message}
               {empty}
               {loopCard}
               {punchIn}
               {listening}
               {meter}
               {micRow}
-              {message}
             </>
           }
           right={
@@ -325,6 +386,8 @@ export default function Vocals() {
     <Screen gap={14}>
       {header}
 
+      {message}
+
       {empty}
 
       {loopCard}
@@ -335,8 +398,6 @@ export default function Vocals() {
 
       {meter}
       {micRow}
-
-      {message}
 
       {/* Recording starts and stops from the mic in the bottom bar. Hearing a take back needs one to exist. */}
       {canHear && (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
 import { stopTransport, useEngine } from '@/engine/engine';
@@ -57,4 +58,34 @@ export function useTask() {
     }
   };
   return { busy, error, run, setError };
+}
+
+/**
+ * While something is being recorded: keeps the screen from sleeping, and has the browser ask
+ * before the tab is closed or reloaded, since either would lose what is in memory.
+ */
+export function useRecordingGuard(active: boolean) {
+  useEffect(() => {
+    if (!active || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    let lock: WakeLockSentinel | null = null;
+    let over = false;
+    const hold = () => {
+      if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+      navigator.wakeLock.request('screen').then(
+        (l) => (over ? void l.release().catch(() => {}) : (lock = l)),
+        () => {},
+      );
+    };
+    // The browser drops the lock whenever the page is hidden, so it is taken again on return.
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    hold();
+    document.addEventListener('visibilitychange', hold);
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      over = true;
+      document.removeEventListener('visibilitychange', hold);
+      window.removeEventListener('beforeunload', warn);
+      void lock?.release().catch(() => {});
+    };
+  }, [active]);
 }

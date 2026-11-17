@@ -261,7 +261,7 @@ export default function Snippet() {
         <View style={{ flex: 1, flexDirection: 'row', gap: 48, minHeight: 0 }}>
           <View style={{ width: 430 }}>{card}</View>
           <View style={{ flex: 1, minWidth: 0, gap: 16 }}>
-            <TopBar left="Snippet" />
+            <TopBar left="Snippet" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />
             {pick}
             {options}
             <Foot>
@@ -280,7 +280,7 @@ export default function Snippet() {
 
   return (
     <Screen>
-      <TopBar left="Snippet" />
+      <TopBar left="Snippet" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />
 
       {card}
 

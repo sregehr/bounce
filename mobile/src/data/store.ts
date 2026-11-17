@@ -10,6 +10,9 @@ let library: Library = emptyLibrary();
 let ready = false;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let saveError: string | null = null;
+// Set when the saved library could not be read. Nothing is written while it is, so an empty
+// library can never replace the real one.
+let loadError: string | null = null;
 const listeners = new Set<() => void>();
 const changeHooks = new Set<(l: Library) => void>();
 
@@ -24,18 +27,20 @@ export async function loadLibrary() {
   if (ready) return;
   try {
     const saved = await kv.get<Library>('library');
+    loadError = null;
     if (saved && saved.version === 1) library = { ...emptyLibrary(), ...saved, settings: { ...emptyLibrary().settings, ...saved.settings } };
     if (!library.vault) update(carryOver);
     void persist();
+    ready = true;
   } catch (e) {
-    saveError = e instanceof Error ? e.message : 'Storage is not available.';
+    loadError = e instanceof Error && e.message ? e.message : 'Storage is not available.';
   }
-  ready = true;
   notify();
 }
 
 export const getLibrary = () => library;
 export const useReady = () => useSyncExternalStore(subscribe, () => ready, () => ready);
+export const useLoadError = () => useSyncExternalStore(subscribe, () => loadError, () => loadError);
 export const useSaveError = () => useSyncExternalStore(subscribe, () => saveError, () => saveError);
 
 /** Subscribes to part of the library. `pick` must return something stable (a stored value, not a new object). */
@@ -52,6 +57,7 @@ export function onLibraryChange(fn: (l: Library) => void) {
 export function update(change: (l: Library) => Library) {
   library = change(library);
   notify();
+  if (loadError) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;

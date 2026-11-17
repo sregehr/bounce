@@ -128,8 +128,15 @@ export async function saveTake(projectId: string, recorded: RecordedTake, option
     const span = loop.end - loop.start;
     phaseSec = (((phaseSec - options.latencyMs / 1000) % span) + span) % span;
   } else {
-    // What was sung against bar one arrived late by the round trip; take that off the front.
-    mono = mono.subarray(Math.min(late, mono.length));
+    // What was sung against the beat arrived late by the round trip; take that off the front.
+    // Held from listening to the whole beat, only the last minute is here, so silence goes in
+    // front of it to put it back where it was sung.
+    const shift = Math.round(phaseSec * rate) - late;
+    if (shift > 0) {
+      const placed = new Float32Array(shift + mono.length);
+      placed.set(mono, shift);
+      mono = placed;
+    } else mono = mono.subarray(Math.min(-shift, mono.length));
     phaseSec = 0;
   }
   let origin = options.origin;

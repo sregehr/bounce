@@ -12,7 +12,7 @@ import { Btn, MicIcon, Muted, Txt } from './kit';
 import { Logo } from './Logo';
 import { PersonalMenu } from './PersonalMenu';
 import { askForMic, useAskingForMic, useRecordControl } from './recordControl';
-import { TOP_NAV_HEIGHT, tabFor, type Tab } from './tabs';
+import { TOP_NAV_HEIGHT, hidesTabBar, tabFor, type Tab } from './tabs';
 import { RAIL_WIDTH } from './wide';
 import { C } from './theme';
 
@@ -221,7 +221,7 @@ export function TabBar() {
   const nav = useMic();
   const { path, library, tab, record, asking, is } = nav;
   const insets = useSafeAreaInsets();
-  if (!tab && !record) return null;
+  if ((!tab && !record) || hidesTabBar(path)) return null;
 
   const button = (
     <View style={{ width: MIC + 12, height: BAR_HEIGHT, alignItems: 'center' }}>

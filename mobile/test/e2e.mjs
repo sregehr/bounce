@@ -624,7 +624,8 @@ async function library() {
   await tap('Master the beat', { exact: false });
   await expectText(/−\d+\.\d LUFS/, 'an instrumental can be mastered on its own', 30000);
   await expectText('Save to the Vault', 'and saved to the Vault from there');
-  await tap('Song');
+  // Master has no bottom bar on a phone; Back in its top corner returns to where it was opened.
+  await tap('Back');
   await expectText('Not in the Vault yet', 'mastering the beat alone returns to its song');
   if (!(await tap('Delete this beat', { optional: true }))) {
     await tap('Beat details', { exact: false });

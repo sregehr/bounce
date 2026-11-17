@@ -2,6 +2,7 @@
 // (Chrome's built-in test tone) standing in for real audio input.
 // Usage: node test/e2e.mjs [flow]   Screenshots go to $SHOTS (default ./.e2e).
 // VIEW=<width>x<height> sets the window size (default 390x844, a phone).
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
@@ -513,6 +514,23 @@ async function finish() {
   await waitDownloads(3);
   const header = fs.existsSync(path.join(DOWNLOADS, 'Night bus.wav')) ? fs.readFileSync(path.join(DOWNLOADS, 'Night bus.wav')) : null;
   log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
+  // The small format for sending, where the browser can make it. ffprobe reads it as a real M4A.
+  if (await tap('M4A, for sending', { optional: true })) {
+    if (!(await tap('Save to Files', { optional: true }))) await tap('Save 1 file');
+    await expectText('Saved Night bus.m4a to your downloads', 'the song is saved as an M4A', 60000);
+    await waitDownloads(4);
+    const small = path.join(DOWNLOADS, 'Night bus.m4a');
+    const probe = fs.existsSync(small) ? spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name,channels,sample_rate:format=duration', '-of', 'json', small], { encoding: 'utf8' }) : null;
+    if (probe && probe.error) log(true, 'ffprobe is not installed, so the M4A was not inspected');
+    else {
+      const info = probe ? JSON.parse(probe.stdout || '{}') : {};
+      const stream = info.streams?.[0] ?? {};
+      const seconds = Number(info.format?.duration ?? 0);
+      log(stream.codec_name === 'aac' && stream.channels === 2 && seconds > 3, 'the M4A is stereo AAC of the right length', `${stream.codec_name} ${stream.channels}ch ${stream.sample_rate} Hz ${seconds.toFixed(2)} s, ${fs.existsSync(small) ? fs.statSync(small).size : 0} bytes`);
+      log(fs.statSync(small).size < header.length / 3, 'and is much smaller than the WAV', `${fs.statSync(small).size} vs ${header.length} bytes`);
+    }
+    await tap('WAV, 16-bit');
+  }
   await tap('Back');
   await expectText('Prod. Lowkey', 'Back returns to the player');
   // The wide player always shows the lyrics; the phone keeps them behind a button.

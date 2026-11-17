@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect } from 'expo-router';
 
@@ -7,6 +7,7 @@ import { canShareFiles, saveFiles, shareFiles } from '@/data/files';
 import type { ExportChoice } from '@/data/model';
 import { activeTake, patchProject, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
+import { aacSupported } from '@/dsp/aac';
 import { Btn, Card, Eyebrow, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
 import { C, clock, lufs, plural } from '@/ui/theme';
@@ -23,6 +24,14 @@ export default function Export() {
   const [done, setDone] = useState<string | null>(null);
   const wide = useWide();
   useStopOnLeave();
+  // Whether this browser can make the small format, at this beat's sample rate.
+  const [small, setSmall] = useState(false);
+  const rate = project?.beat.sampleRate;
+  useEffect(() => {
+    let live = true;
+    if (rate) void aacSupported(rate).then((ok) => live && setSmall(ok));
+    return () => void (live = false);
+  }, [rate]);
 
   if (!project || !choice) return <Redirect href="/" />;
 
@@ -77,7 +86,9 @@ export default function Export() {
           <Eyebrow>Format</Eyebrow>
         </View>
         <Option radio boxFirst divided label="WAV, 24-bit" hint="Full quality" checked={choice.format === 'wav24'} onChange={() => set({ format: 'wav24' })} />
-        <Option radio boxFirst label="WAV, 16-bit" hint="Smaller · plays anywhere" checked={choice.format === 'wav16'} onChange={() => set({ format: 'wav16' })} />
+        <Option radio boxFirst divided={small} label="WAV, 16-bit" hint="Smaller · plays anywhere" checked={choice.format === 'wav16'} onChange={() => set({ format: 'wav16' })} />
+        {/* Only offered where the browser can make one. */}
+        {small && <Option radio boxFirst label="M4A, for sending" hint="About a tenth the size" checked={choice.format === 'm4a'} onChange={() => set({ format: 'm4a' })} />}
       </View>
   );
 

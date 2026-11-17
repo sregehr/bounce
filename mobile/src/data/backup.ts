@@ -35,21 +35,58 @@ export function useBackup(): BackupState {
 const keysOf = (p: Project) => [p.beat.key, ...p.takes.map((t) => t.key), p.cover.photoKey, p.cover.cutoutKey, p.cover.imageKey].filter((k): k is string => !!k);
 
 type Sent = Record<string, { updatedAt: number; keys: string[] }>;
+/** Which backup, and the proof that it is this device's. */
+type Owner = { deviceId: string; secret: string };
 let running = false;
 let again = false;
 
+/** Deletes a backup from the server, a batch at a time. Throws if the server cannot be reached. */
+async function erase(owner: Owner) {
+  if (!client) return;
+  for (let i = 0; i < 200; i++) if (await client.mutation(api.backup.erase, owner)) return;
+  throw new Error('The backup is taking too long to delete.');
+}
+
+/**
+ * Deletes this device's backup from the server, for "Delete everything on this device". If the
+ * server cannot be reached now, the request is kept and sent again the next time a backup runs.
+ * Returns whether the server copy is gone already.
+ */
+export async function eraseBackup(owner: Owner): Promise<boolean> {
+  if (!client) return true;
+  try {
+    await erase(owner);
+    return true;
+  } catch {
+    const waiting = (await kv.get<Owner[]>('erase').catch(() => undefined)) ?? [];
+    await kv.set('erase', [...waiting, owner]).catch(() => {});
+    return false;
+  }
+}
+
+/** Sends any deletions that could not reach the server earlier. */
+async function eraseWaiting() {
+  const waiting = (await kv.get<Owner[]>('erase')) ?? [];
+  if (waiting.length === 0) return;
+  const left: Owner[] = [];
+  for (const owner of waiting) await erase(owner).catch(() => left.push(owner));
+  await kv.set('erase', left);
+}
+
 async function run() {
   const library: Library = getLibrary();
+  // A deletion that is owed goes out whether or not backup is still switched on.
+  if (client && !running) await eraseWaiting().catch(() => {});
   if (!client || !library.settings.backup) return set({ status: 'off', pending: 0 });
   if (running) {
     again = true;
     return;
   }
   running = true;
-  const deviceId = library.settings.deviceId;
+  const owner: Owner = { deviceId: library.settings.deviceId, secret: library.settings.deviceSecret };
   try {
     const sent = (await kv.get<Sent>('backup')) ?? {};
-    const remote = new Set(await client.query(api.backup.fileKeys, { deviceId }));
+    const remote = new Set(await client.query(api.backup.fileKeys, owner));
     const missing = [...new Set(library.projects.flatMap(keysOf))].filter((k) => !remote.has(k));
     const changed = library.projects.filter((p) => sent[p.id]?.updatedAt !== p.updatedAt);
     const gone = Object.keys(sent).filter((id) => !library.projects.some((p) => p.id === id));
@@ -61,21 +98,21 @@ async function run() {
       for (const key of missing) {
         const blob = await blobs.get(key);
         if (blob) {
-          const target = await client.mutation(api.backup.uploadUrl, {});
+          const target = await client.mutation(api.backup.uploadUrl, owner);
           const response = await fetch(target, { method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob });
           if (!response.ok) throw new Error(`Upload failed (${response.status}).`);
           const { storageId } = (await response.json()) as { storageId: Id<'_storage'> };
-          await client.mutation(api.backup.saveFile, { deviceId, key, storageId, size: blob.size });
+          await client.mutation(api.backup.saveFile, { ...owner, key, storageId, size: blob.size });
         }
         set({ pending: --left });
       }
       const live = new Set(library.projects.flatMap(keysOf));
       for (const p of changed) {
-        await client.mutation(api.backup.saveProject, { deviceId, localId: p.id, name: p.name, updatedAt: p.updatedAt, data: JSON.stringify(p) });
+        await client.mutation(api.backup.saveProject, { ...owner, localId: p.id, name: p.name, updatedAt: p.updatedAt, data: JSON.stringify(p) });
         sent[p.id] = { updatedAt: p.updatedAt, keys: keysOf(p) };
       }
       for (const id of gone) {
-        await client.mutation(api.backup.removeProject, { deviceId, localId: id, fileKeys: sent[id].keys.filter((k) => !live.has(k)) });
+        await client.mutation(api.backup.removeProject, { ...owner, localId: id, fileKeys: sent[id].keys.filter((k) => !live.has(k)) });
         delete sent[id];
       }
       await kv.set('backup', sent);

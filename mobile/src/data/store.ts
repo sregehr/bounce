@@ -30,6 +30,8 @@ export async function loadLibrary() {
     loadError = null;
     if (saved && saved.version === 1) library = { ...emptyLibrary(), ...saved, settings: { ...emptyLibrary().settings, ...saved.settings } };
     if (!library.vault) update(carryOver);
+    // A library from before backups were locked to their device gets its secret now, and keeps it.
+    if (saved && !saved.settings?.deviceSecret) update((l) => ({ ...l }));
     void persist();
     ready = true;
   } catch (e) {

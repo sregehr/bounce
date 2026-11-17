@@ -98,8 +98,10 @@ export type Settings = {
   /** One bar of clicks before a take starts recording. On unless turned off. */
   countIn?: boolean;
   backup: boolean;
-  /** Identifies this browser to the backup until there are accounts. */
+  /** Says which backup on the server is this device's. */
   deviceId: string;
+  /** Proves to the backup server that a request comes from this device. Never shown or shared. */
+  deviceSecret: string;
   /** A vocal chain saved from the Mix page. */
   vocalPreset?: Chain;
 };
@@ -120,6 +122,14 @@ export type Library = {
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
+/** A long random secret, from the system's secure generator where there is one. */
+export function newSecret() {
+  const bytes = new Uint8Array(32);
+  if (typeof globalThis.crypto?.getRandomValues === 'function') globalThis.crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export function emptyLibrary(): Library {
-  return { version: 1, profile: { artist: '', producer: '', onboarded: false }, settings: { inputId: null, beatInputId: null, latencyMs: null, backup: true, deviceId: newId() + newId() }, projects: [], currentId: null, coverPhotoKey: null };
+  return { version: 1, profile: { artist: '', producer: '', onboarded: false }, settings: { inputId: null, beatInputId: null, latencyMs: null, backup: true, deviceId: newId() + newId(), deviceSecret: newSecret() }, projects: [], currentId: null, coverPhotoKey: null };
 }

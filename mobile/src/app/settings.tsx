@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 
-import { backupAvailable, backupNow, useBackup } from '@/data/backup';
+import { backupAvailable, backupNow, eraseBackup, useBackup } from '@/data/backup';
 import { blobs, kv } from '@/data/db';
 import { storageEstimate } from '@/data/files';
 import { emptyLibrary } from '@/data/model';
-import { setProfile, setSettings, update, useLibrary } from '@/data/store';
+import { getLibrary, setProfile, setSettings, update, useLibrary } from '@/data/store';
 import { closeInput, stopTransport } from '@/engine/engine';
 import { Eyebrow, Muted, NavLink, Option, Screen, TopBar, Txt } from '@/ui/kit';
 import { useArmed } from '@/ui/hooks';
@@ -32,6 +32,10 @@ export function SettingsBody() {
     if (!armed) return arm();
     stopTransport();
     closeInput();
+    // The copy on the backup server goes too. If the server cannot be reached now, the request
+    // is kept and sent the next time the app is online.
+    const { deviceId, deviceSecret } = getLibrary().settings;
+    await eraseBackup({ deviceId, secret: deviceSecret });
     for (const key of await blobs.keys()) await blobs.delete(key).catch(() => {});
     await kv.set('backup', {}).catch(() => {});
     update(() => emptyLibrary());
@@ -87,7 +91,7 @@ export function SettingsBody() {
           style={({ pressed }) => ({ marginTop: 16, minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: C.rec, backgroundColor: armed ? C.rec : 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, opacity: pressed ? 0.6 : 1 })}
         >
           <Txt size={15} w="semi" color={armed ? C.text : C.recText} center>
-            {armed ? 'Tap again: this deletes every beat, take and cover here' : 'Delete everything on this device'}
+            {armed ? `Tap again: this deletes every beat, take and cover here${backupAvailable ? ' and in your backup' : ''}` : 'Delete everything on this device'}
           </Txt>
         </Pressable>
       </View>

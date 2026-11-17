@@ -14,10 +14,11 @@ function ClaimBackup() {
   const { isAuthenticated } = useConvexAuth();
   const ready = useReady();
   const deviceId = useLibrary((l) => l.settings.deviceId);
+  const secret = useLibrary((l) => l.settings.deviceSecret);
   const claim = useMutation(api.backup.claim);
   useEffect(() => {
-    if (isAuthenticated && ready) void claim({ deviceId }).catch(() => {});
-  }, [isAuthenticated, ready, deviceId, claim]);
+    if (isAuthenticated && ready) void claim({ deviceId, secret }).catch(() => {});
+  }, [isAuthenticated, ready, deviceId, secret, claim]);
   return null;
 }
 

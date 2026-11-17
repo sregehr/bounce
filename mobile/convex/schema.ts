@@ -47,9 +47,16 @@ export default defineSchema({
     key: v.optional(v.string()),
   }),
 
-  // Backup of the app's local library, kept under a random id made on each device. Signing
-  // in links that id to the account (the devices table); restoring onto another device is
-  // not built yet. Anyone holding the id can still read that device's backup.
+  // What proves a caller is the device a backup belongs to: a hash of the secret that device
+  // made up on first launch, registered the first time it backs up. See convex/backup.ts.
+  deviceSecrets: defineTable({
+    deviceId: v.string(),
+    hash: v.string(),
+  }).index("by_device", ["deviceId"]),
+
+  // Backup of the app's local library, kept under a random id made on each device and readable
+  // only with that device's secret. Signing in links the id to the account (the devices table);
+  // restoring onto another device is not built yet.
   backupProjects: defineTable({
     deviceId: v.string(),
     localId: v.string(),

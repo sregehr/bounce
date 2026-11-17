@@ -39,6 +39,8 @@ async function run<T>(store: 'kv' | 'blobs', mode: IDBTransactionMode, work: (s:
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, mode);
     const request = work(tx.objectStore(store));
+    // A write is committed at once instead of when the browser gets round to it, so one started as the page goes away still lands.
+    if (mode === 'readwrite') tx.commit?.();
     tx.oncomplete = () => resolve(request.result);
     tx.onerror = () => reject(tx.error ?? new Error('Could not save.'));
     tx.onabort = () => reject(tx.error ?? new Error('Storage is full or unavailable.'));

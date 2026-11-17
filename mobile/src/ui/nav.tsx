@@ -6,6 +6,7 @@ import { router, useIsFocused, useLocalSearchParams, type Href } from 'expo-rout
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
+import { isGuarded } from './guard';
 import { NATIVE, useReduceMotion } from './motion';
 import { C } from './theme';
 import { Narrow } from './wide';
@@ -97,6 +98,8 @@ function WebSheet({ children, close, swipe }: { children: React.ReactNode; close
   }, []);
 
   const dismiss = useCallback(() => {
+    // While the screen in view holds a recording, nothing closes it: the same rule as the back swipe.
+    if (isGuarded()) return Animated.spring(drag, { toValue: 0, useNativeDriver: NATIVE, bounciness: 0, speed: 20 }).start();
     if (leaving.current) return;
     leaving.current = true;
     Animated.timing(shown, { toValue: 0, duration: still ? 100 : 220, easing: Easing.in(Easing.cubic), useNativeDriver: NATIVE }).start(() => {
@@ -104,7 +107,7 @@ function WebSheet({ children, close, swipe }: { children: React.ReactNode; close
       // If something kept the screen open, it can be closed again.
       leaving.current = false;
     });
-  }, [close, shown, still]);
+  }, [close, drag, shown, still]);
   const latest = useRef(dismiss);
   latest.current = dismiss;
 
@@ -199,6 +202,7 @@ export function BackButton({ to = '/', onPress, onBack, label, disc, style }: { 
       accessibilityLabel={label ?? (close ? 'Close' : 'Back')}
       hitSlop={6}
       onPress={() => {
+        if (isGuarded()) return;
         onPress?.();
         if (onBack) onBack();
         else if (sheet) sheet.close();

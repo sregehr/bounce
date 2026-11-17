@@ -285,7 +285,11 @@ async function song() {
   await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass after the count-in', 12000);
   await sleep(2500);
   await shot('08-vocals-recording');
-  await sleep(4000);
+  // Going back mid-take would drop it, so the browser's Back button is held while one runs.
+  await page.goBack().catch(() => {});
+  await sleep(600);
+  log(new URL(page.url()).pathname === '/vocals' && /Bar \d+ · pass \d/.test(await text()), 'Back does not leave the mic screen while a take is running', page.url());
+  await sleep(3400);
   await tap('Done, hear it back');
   await expectText('Take 1', 'playback opens on the new take', 10000);
   await expectText(/Polished\s/, 'polish finishes', 30000);
@@ -796,6 +800,10 @@ async function library() {
   await expectText('Recording', 'recording starts at the first sound', 8000);
   await sleep(4500);
   await shot('25-record');
+  // The same goes for a beat being captured.
+  await page.goBack().catch(() => {});
+  await sleep(600);
+  log(new URL(page.url()).pathname === '/record' && /Recording/i.test(await text()), 'Back does not leave a capture that is running', page.url());
   await tap('Stop recording');
   await expectText('Not in the Vault yet', 'a captured beat opens on the Song tab', 20000);
   // Its details, where it is named and mastered alone, open in place.

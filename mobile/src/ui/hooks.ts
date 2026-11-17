@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useIsFocused, usePreventRemove } from 'expo-router';
 
 import { stopTransport, useEngine } from '@/engine/engine';
 
+import { leavesOnPurpose, setGuard } from './guard';
 import { fail, warn } from './haptics';
 
 /** Playback state for one named thing; reads as stopped when something else is loaded. */
@@ -65,10 +66,24 @@ export function useTask() {
 }
 
 /**
- * While something is being recorded: keeps the screen from sleeping, and has the browser ask
- * before the tab is closed or reloaded, since either would lose what is in memory.
+ * While something is being recorded, saved, or held because it could not be saved: nothing that
+ * leaves the screen by going back is let through (the swipe from the edge, the system's or the
+ * browser's back button, closing a sheet), the screen is kept from sleeping, and the browser asks
+ * before the tab is closed or reloaded. Any of those would lose what is in memory.
  */
 export function useRecordingGuard(active: boolean) {
+  // Only the screen in view holds the guard: one left open underneath a sheet is not being left.
+  const id = useId();
+  const focused = useIsFocused();
+  const guarding = active && focused;
+  useEffect(() => {
+    setGuard(id, guarding);
+    return () => setGuard(id, false);
+  }, [id, guarding]);
+  // The screen's own moves, once the recording is saved or called off, carry on.
+  usePreventRemove(guarding, ({ data, repeat }) => {
+    if (leavesOnPurpose(data.action.type)) repeat();
+  });
   useEffect(() => {
     if (!active || Platform.OS !== 'web' || typeof document === 'undefined') return;
     let lock: WakeLockSentinel | null = null;

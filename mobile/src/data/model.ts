@@ -95,6 +95,8 @@ export type Settings = {
   latencyMs: number | null;
   /** Delay measured for each setup, keyed by the microphone and what the beat plays out of. See data/timing. */
   timing?: Record<string, number>;
+  /** One bar of clicks before a take starts recording. On unless turned off. */
+  countIn?: boolean;
   backup: boolean;
   /** Identifies this browser to the backup until there are accounts. */
   deviceId: string;

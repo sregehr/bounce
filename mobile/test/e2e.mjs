@@ -66,6 +66,12 @@ async function expectText(needle, name, ms) {
 const openSong = (name) => tap(WIDE ? `Play ${name}` : `Open ${name}`);
 
 /** Clicks the last visible control whose label or text matches. */
+/** Waits out the count-in, so a take has really started before the test carries on. */
+async function counted() {
+  await sleep(500);
+  for (let i = 0; i < 60 && /Count-in/.test(await text()); i++) await sleep(250);
+}
+
 async function tap(label, { exact = true, optional = false } = {}) {
   const hit = await page.evaluate(
     (label, exact) => {
@@ -254,7 +260,7 @@ async function song() {
   await expectText('Whole beat · once through', 'a new beat starts as the whole beat');
   await tap('8 bars');
   await tap('Start recording');
-  await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass', 5000);
+  await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass after the count-in', 12000);
   await sleep(2500);
   await shot('08-vocals-recording');
   await sleep(4000);
@@ -289,6 +295,7 @@ async function song() {
   await expectText('Always listening');
   await tap('Punch in at bar 5', { exact: false });
   await tap('Start recording');
+  await counted();
   await sleep(4500);
   await tap('Stop recording');
   await expectText('Take 2 saved', 'second take is saved in place', 10000);
@@ -558,6 +565,7 @@ async function library() {
   await expectText('Always listening', 'a finished song leads back to its beat', 10000);
   await sleep(800);
   await tap('Start recording');
+  await counted();
   await sleep(3000);
   await tap('Stop recording');
   await expectText('Take 4 saved', 'another take is recorded over it', 10000);
@@ -670,7 +678,7 @@ async function library() {
   await expectText(/Fake .* ms (estimated|measured)/, 'the microphone reconnects for the new beat', 10000);
   await tap('8 bars');
   await tap('Start recording');
-  await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 8000);
+  await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 12000);
   await sleep(3500);
   await tap('Done, hear it back');
   await expectText('Take 1', 'the take opens in playback', 10000);
@@ -683,13 +691,16 @@ async function library() {
   await expectText('1 take', 'Song shows the new take');
   await swipeLeft('Take 1');
   await tap('Delete take 1');
+  await expectText('1 take', 'the first tap on Delete only asks');
+  await tap('Tap again to delete take 1');
   await expectText('No takes yet', 'swiping and tapping Delete removes a take', 10000);
   await tap('Home');
   await expectText('Add a beat', 'Home opens');
   await sleep(600); // let the screen change settle before dragging on it
   await swipeLeft('Open Basement tape');
   await shot('29-swipe-beat');
-  await tap('Delete Basement tape');
+  await tap('Delete Basement tape', { exact: false });
+  await tap('Tap again to delete Basement tape', { exact: false });
   await sleep(600);
   log(!/Basement tape/.test(await text()), 'swiping and tapping Delete removes a beat');
   await expectText('Night bus', 'and leaves the others');
@@ -700,6 +711,7 @@ async function library() {
     if (!left.length) break;
     await swipeLeft(`Open ${left[0]}`);
     await tap(`Delete ${left[0]}`, { exact: false });
+    await tap(`Tap again to delete ${left[0]}`, { exact: false });
     await sleep(600);
   }
   await expectText('Bring a beat', 'home is empty once every beat is deleted');

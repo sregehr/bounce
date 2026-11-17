@@ -3,7 +3,7 @@ import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 
 import type { LoopChoice } from '@/data/model';
-import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
+import { activeTake, patchProject, setSettings, useLibrary, useProject } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
 import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studio';
@@ -71,6 +71,11 @@ export default function Vocals() {
   const punchBar = loop ? Math.floor(loop.bars / 2) : 0;
   const timing = useTiming();
   const latencyMs = timing.ms;
+  // One bar of clicks before recording, at the beat's tempo when it is known.
+  const countIn = settings.countIn !== false;
+  const beatSec = bar ? bar / 4 : 0.5;
+  const counting = mode === 'recording' && take.lead > 0;
+  const count = counting ? Math.max(1, Math.ceil(take.lead / beatSec - 0.05)) : 0;
 
   useRecordingGuard(mode === 'recording' || !!unsaved);
 
@@ -93,6 +98,8 @@ export default function Vocals() {
 
   const finish = async (then?: () => void) => {
     if (!project || finishing.current) return;
+    // Stopped during the count-in: nothing has been recorded yet, so it is simply called off.
+    if (counting) return void stopTake(false);
     finishing.current = true;
     const wasListening = mode !== 'recording';
     const recorded = mode === 'idle' ? parked : stopTake(true);
@@ -133,8 +140,8 @@ export default function Vocals() {
   const press = useRef(() => {});
   const control = !live ? 'off' : mode === 'recording' ? 'recording' : 'ready';
   useEffect(() => {
-    if (onScreen && project) setRecordControl({ state: control, busy: task.busy, press: () => press.current() });
-  }, [onScreen, !!project, control, task.busy]);
+    if (onScreen && project) setRecordControl({ state: control, busy: task.busy || !!unsaved, holding: !!unsaved, press: () => press.current() });
+  }, [onScreen, !!project, control, task.busy, !!unsaved]);
 
   if (!project || project.saved) return <NoSong title="Nothing to record over yet" about="Add a beat, then come back here and rap over it." />;
 
@@ -145,7 +152,7 @@ export default function Vocals() {
       setParked(null);
       if (mode !== 'idle') stopTake(false);
       const beat = await loadPcm(project.beat.key);
-      await startTake(next, beat, loop ? { start: loop.start, end: loop.end } : null);
+      await startTake(next, beat, loop ? { start: loop.start, end: loop.end } : null, next === 'recording' && countIn ? { beats: 4, beatSec } : undefined);
     });
 
   press.current = () => {
@@ -158,13 +165,13 @@ export default function Vocals() {
 
   const active = mode !== 'idle';
   const within = active ? take.elapsed % span : 0;
-  const cell = active ? Math.min(cells - 1, Math.floor((within / span) * cells)) : -1;
+  const cell = active && !counting ? Math.min(cells - 1, Math.floor((within / span) * cells)) : -1;
   const pass = Math.floor(take.elapsed / span) + 1;
   const setLoop = (patch: Partial<LoopChoice>) => !active && patchProject(project.id, { loop: { ...project.loop, ...patch } }, false);
   const length = toLength(project.loop.bars);
   const first = (loop?.startBar ?? 0) + 1;
 
-  const header = <SongHeader project={project} locked={active} />;
+  const header = <SongHeader project={project} locked={active || !!unsaved} />;
 
   // The same empty state as Mix: what is missing, and one button that starts it.
   const empty = !active && project.takes.length === 0 && (
@@ -186,7 +193,7 @@ export default function Vocals() {
             <Eyebrow>{loop ? `Loop · bars ${first}–${first + loop.bars - 1}` : 'Whole beat · once through'}</Eyebrow>
             {active ? (
               <Txt size={13} w="semi" color={mode === 'recording' ? C.recText : C.accent}>
-                {loop ? `Bar ${first + cell} · pass ${pass}` : clock(take.elapsed)}
+                {counting ? `Count-in · ${count}` : loop ? `Bar ${first + cell} · pass ${pass}` : clock(take.elapsed)}
               </Txt>
             ) : (
               <NavLink size={13} w="semi" style={{ minHeight: 24 }} onPress={() => live && begin('listening')}>
@@ -233,6 +240,28 @@ export default function Vocals() {
           divided
           minHeight={56}
         />
+      );
+
+  const countInOption = live && (
+        <Option label="Count-in" sub={bar ? 'One bar of clicks before recording starts' : 'Four clicks before recording starts'} checked={countIn} onChange={(v) => !active && setSettings({ countIn: v })} divided minHeight={56} />
+      );
+
+  // On a phone the bars sit right under the loop, so they can be read while rapping.
+  const lyrics = project.lyrics.trim() ? (
+        <Card style={{ padding: 16, gap: 8 }}>
+          <Eyebrow>Your bars</Eyebrow>
+          <ScrollView nestedScrollEnabled style={{ maxHeight: Math.max(160, Math.min(300, height * 0.3)) }} showsVerticalScrollIndicator={false}>
+            <Txt size={18} lh={1.5}>
+              {project.lyrics}
+            </Txt>
+          </ScrollView>
+        </Card>
+      ) : (
+        !active && !unsaved && (
+          <NavLink size={13} to="/song" style={{ minHeight: 28 }}>
+            Write your bars on Song to read them here
+          </NavLink>
+        )
       );
 
   const canKeep = !task.busy && !unsaved && ((mode === 'listening' && take.held >= 2) || (mode === 'idle' && !!parked));
@@ -325,7 +354,7 @@ export default function Vocals() {
               <View style={[s.row, { gap: 12 }]}>
                 <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: C.rec }} />
                 <Txt size={44} w="display" lh={1} style={{ fontVariant: ['tabular-nums'] }}>
-                  {clock(take.elapsed)}
+                  {counting ? count : clock(take.elapsed)}
                 </Txt>
               </View>
             )}
@@ -333,7 +362,7 @@ export default function Vocals() {
               <Btn
                 kind={mode === 'recording' ? 'primary' : 'outline'}
                 size={18}
-                label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
+                label={counting ? 'Cancel' : mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
                 disabled={task.busy}
                 onPress={hear}
                 style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minHeight: 56, paddingHorizontal: 28, borderRadius: 18 }}
@@ -350,6 +379,7 @@ export default function Vocals() {
               {empty}
               {loopCard}
               {punchIn}
+              {countInOption}
               {listening}
               {meter}
               {micRow}
@@ -360,7 +390,7 @@ export default function Vocals() {
               <View style={[s.row, s.between, { minHeight: 44 }]}>
                 <Eyebrow>Your bars</Eyebrow>
                 {/* Leaving for Song mid-take would drop the take, so the way there waits. */}
-                {!active && (
+                {!active && !unsaved && (
                   <NavLink size={14} to="/song">
                     Edit on Song
                   </NavLink>
@@ -392,7 +422,11 @@ export default function Vocals() {
 
       {loopCard}
 
+      {lyrics}
+
       {punchIn}
+
+      {countInOption}
 
       {listening}
 
@@ -402,7 +436,7 @@ export default function Vocals() {
       {/* Recording starts and stops from the mic in the bottom bar. Hearing a take back needs one to exist. */}
       {canHear && (
         <Foot center gap={14}>
-          <Btn label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'} disabled={task.busy} onPress={hear} style={{ alignSelf: 'stretch' }} />
+          <Btn label={counting ? 'Cancel' : mode === 'recording' ? 'Done, hear it back' : 'Hear it back'} disabled={task.busy} onPress={hear} style={{ alignSelf: 'stretch' }} />
         </Foot>
       )}
     </Screen>

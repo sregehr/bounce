@@ -6,6 +6,8 @@ export type RecordControl = {
   /** `off`: no microphone yet, a press connects one. `ready`: a press records. `recording`: a press stops. */
   state: 'off' | 'ready' | 'recording';
   busy: boolean;
+  /** A take is waiting to be saved: the tabs stay away until it is saved, exported or dropped. */
+  holding?: boolean;
   press: () => void;
 };
 

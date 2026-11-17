@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 
 import { backupAvailable, backupNow, useBackup } from '@/data/backup';
@@ -8,9 +8,9 @@ import { storageEstimate } from '@/data/files';
 import { emptyLibrary } from '@/data/model';
 import { setProfile, setSettings, update, useLibrary } from '@/data/store';
 import { closeInput, stopTransport } from '@/engine/engine';
-import { Eyebrow, Muted, NavLink, Option, Screen, TopBar } from '@/ui/kit';
+import { Eyebrow, Muted, NavLink, Option, Screen, TopBar, Txt } from '@/ui/kit';
 import { useArmed } from '@/ui/hooks';
-import { plural } from '@/ui/theme';
+import { C, plural } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
 
@@ -79,9 +79,17 @@ export function SettingsBody() {
         <NavLink size={14} to="/privacy">
           Privacy
         </NavLink>
-        <NavLink size={14} onPress={() => void wipe()}>
-          {armed ? 'Tap again: this deletes every beat, take and cover here' : 'Delete everything on this device'}
-        </NavLink>
+        {/* Destructive, so it looks it: red and set apart from the links above, with a second tap to confirm. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={armed ? 'Tap again to delete every beat, take and cover on this device' : 'Delete everything on this device'}
+          onPress={() => void wipe()}
+          style={({ pressed }) => ({ marginTop: 16, minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: C.rec, backgroundColor: armed ? C.rec : 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, opacity: pressed ? 0.6 : 1 })}
+        >
+          <Txt size={15} w="semi" color={armed ? C.text : C.recText} center>
+            {armed ? 'Tap again: this deletes every beat, take and cover here' : 'Delete everything on this device'}
+          </Txt>
+        </Pressable>
       </View>
     </>
   );

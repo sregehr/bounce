@@ -8,7 +8,7 @@ const state: EngineState = {
   input: { status: 'error', error: 'Recording on the phone app is not connected yet.', inputs: [], deviceId: null, label: '', output: '', sampleRate: 0, channels: 0, pair: 0, levelL: 0, levelR: 0 },
   capture: { status: 'idle', elapsed: 0, peak: 0, clipped: false, wave: [] },
   transport: { id: null, playing: false, position: 0, duration: 0, side: 'a' },
-  take: { mode: 'idle', elapsed: 0, held: 0, level: 0, clipped: false, ended: false },
+  take: { mode: 'idle', elapsed: 0, lead: 0, held: 0, level: 0, clipped: false, ended: false },
 };
 const missing = () => Promise.reject(new Error('Audio on the phone app is not connected yet.'));
 
@@ -32,7 +32,7 @@ export const seek = (_seconds: number) => {};
 export const setSide = (_side: 'a' | 'b') => {};
 export const stopTransport = () => {};
 export const spectrum = (bars: number): number[] => new Array(bars).fill(0);
-export const startTake = (_mode: 'listening' | 'recording', _beat: { channels: Float32Array[]; sampleRate: number }, _loop: { start: number; end: number } | null): Promise<void> => missing();
+export const startTake = (_mode: 'listening' | 'recording', _beat: { channels: Float32Array[]; sampleRate: number }, _loop: { start: number; end: number } | null, _countIn?: { beats: number; beatSec: number }): Promise<void> => missing();
 export const stopTake = (_keep?: boolean): RecordedTake | null => null;
 export const reportedLatencyMs = () => 30;
 export const measureLatency = (): Promise<LatencyResult> => missing();

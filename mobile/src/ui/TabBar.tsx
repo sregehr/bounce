@@ -124,8 +124,10 @@ function useNav() {
   const path = usePathname();
   const library = useLibrary((l) => l);
   const recording = useEngine((e) => e.take.mode !== 'idle' || e.capture.status !== 'idle');
+  // Leaving the mic screen would drop a take that has not been saved yet, so the tabs wait for that too.
+  const holding = !!useRecordControl()?.holding;
   const tab = tabFor(path, !!library.projects.find((p) => p.id === library.currentId)?.saved);
-  return { path, library, tab: recording ? null : tab };
+  return { path, library, tab: recording || holding ? null : tab };
 }
 
 /** The logo and the personal menu, above every screen after the welcome. */

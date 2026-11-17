@@ -40,6 +40,8 @@ export type TakeState = {
   mode: 'idle' | 'listening' | 'recording';
   /** Seconds since the beat started. */
   elapsed: number;
+  /** Seconds of count-in still to go before the beat starts; 0 once it has. */
+  lead: number;
   /** Seconds of input held so far (capped at 60 while listening). */
   held: number;
   level: number;

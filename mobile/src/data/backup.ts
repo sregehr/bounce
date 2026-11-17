@@ -9,12 +9,12 @@ import { blobs, kv } from './db';
 import type { Library, Project } from './model';
 import { flushLibrary, getLibrary, onLibraryChange, update } from './store';
 
-export type BackupState = { status: 'off' | 'idle' | 'working' | 'unreachable' | 'done'; pending: number; lastAt: number | null };
+export type BackupState = { status: 'off' | 'idle' | 'working' | 'unreachable' | 'done' | 'full'; pending: number; lastAt: number | null; /** Files left out because each is bigger than the server takes. */ skipped: number };
 
 const url = process.env.EXPO_PUBLIC_CONVEX_URL;
 const client = url ? new ConvexHttpClient(url) : null;
 
-let state: BackupState = { status: client ? 'idle' : 'off', pending: 0, lastAt: null };
+let state: BackupState = { status: client ? 'idle' : 'off', pending: 0, lastAt: null, skipped: 0 };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<BackupState>) => {
   state = { ...state, ...patch };
@@ -95,14 +95,28 @@ async function run() {
     } else {
       set({ status: 'working', pending: missing.length });
       let left = missing.length;
+      // The server says how much room is left, so a file it would refuse is never sent.
+      const room = await client.query(api.backup.room, owner);
+      let used = room.bytes;
+      let count = room.files;
+      let skipped = 0;
+      let full = false;
       for (const key of missing) {
         const blob = await blobs.get(key);
-        if (blob) {
+        if (blob && blob.size > room.maxFile) skipped++;
+        else if (blob && (full || used + blob.size > room.maxBytes || count >= room.maxFiles)) full = true;
+        else if (blob) {
           const target = await client.mutation(api.backup.uploadUrl, owner);
           const response = await fetch(target, { method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob });
           if (!response.ok) throw new Error(`Upload failed (${response.status}).`);
           const { storageId } = (await response.json()) as { storageId: Id<'_storage'> };
-          await client.mutation(api.backup.saveFile, { ...owner, key, storageId, size: blob.size });
+          const answer = await client.mutation(api.backup.saveFile, { ...owner, key, storageId, size: blob.size });
+          if (answer === 'too_big') skipped++;
+          else if (answer === 'full') full = true;
+          else {
+            used += blob.size;
+            count++;
+          }
         }
         set({ pending: --left });
       }
@@ -116,7 +130,7 @@ async function run() {
         delete sent[id];
       }
       await kv.set('backup', sent);
-      set({ status: 'done', pending: 0, lastAt: Date.now() });
+      set({ status: full ? 'full' : 'done', pending: 0, lastAt: Date.now(), skipped });
     }
   } catch {
     set({ status: 'unreachable', pending: 0 });

@@ -52,6 +52,9 @@ export default defineSchema({
   deviceSecrets: defineTable({
     deviceId: v.string(),
     hash: v.string(),
+    // How much this device's backup holds, kept up to date so a limit can be checked cheaply.
+    bytes: v.optional(v.number()),
+    files: v.optional(v.number()),
   }).index("by_device", ["deviceId"]),
 
   // Backup of the app's local library, kept under a random id made on each device and readable

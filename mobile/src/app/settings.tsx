@@ -70,9 +70,13 @@ export function SettingsBody() {
                     ? `Backing up${backup.pending ? `: ${plural(backup.pending, 'file')} to go` : ''}…`
                     : backup.status === 'unreachable'
                       ? 'The backup server cannot be reached. It will keep trying.'
-                      : backup.status === 'done'
-                        ? 'Everything is backed up.'
-                        : 'Waiting for changes.'
+                      : backup.status === 'full'
+                        ? 'The backup is full, so newer work is only on this device. Delete songs you no longer need to make room.'
+                        : backup.status === 'done' && backup.skipped
+                          ? `Backed up, except ${plural(backup.skipped, 'file')} too big to back up.`
+                          : backup.status === 'done'
+                            ? 'Everything is backed up.'
+                            : 'Waiting for changes.'
               }
               checked={settings.backup}
               onChange={(on) => (setSettings({ backup: on }), setTimeout(backupNow, 400))}

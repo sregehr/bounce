@@ -50,6 +50,7 @@ export async function makeLink(project: Project, onStage?: (stage: string) => vo
     durationSec: mix.durationSec,
     peaks: wavePeaks(mix.channels, 96),
   });
+  if (!token) throw new Error('That song is too long for a listening link, or this device already has as many links as it can. Take an old link down and try again.');
   return linkFor(token);
 }
 

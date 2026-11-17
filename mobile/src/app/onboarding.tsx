@@ -15,6 +15,7 @@ import { Logo } from '@/ui/Logo';
 import { estimateMs } from '@/data/timing';
 import { useTiming } from '@/ui/timing';
 import { useTask } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
 import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -76,7 +77,7 @@ function Brand() {
   );
 }
 
-export default function Onboarding() {
+function Onboarding() {
   const wide = useWide();
   const insets = useSafeAreaInsets();
   const profile = useLibrary((l) => l.profile);
@@ -335,3 +336,6 @@ export default function Onboarding() {
     </Screen>
   );
 }
+
+// The first time it is the whole screen. Opened again from the mic screen for the two setup steps, it is a sheet over that screen.
+export default asSheet(Onboarding, { when: (params) => !!params.setup, fallback: '/vocals' });

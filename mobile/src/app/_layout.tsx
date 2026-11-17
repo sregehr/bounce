@@ -16,6 +16,11 @@ import { Btn, Muted, Txt } from '@/ui/kit';
 import { C } from '@/ui/theme';
 import { WIDE_MAX, useRoomy, useWide } from '@/ui/wide';
 
+// How a sheet is presented. The phone has its own: it rises from the bottom, the screen behind
+// steps back, and a swipe down closes it. A browser has none, so there the screen is laid over
+// the one before with nothing behind it, and `asSheet` (see `nav.tsx`) draws the sheet itself.
+const SHEET = Platform.OS === 'web' ? ({ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } } as const) : ({ presentation: 'modal' } as const);
+
 // Screens anyone can open before the welcome is done.
 const OPEN = ['/onboarding', '/privacy'];
 const LISTENING = ['/onboarding', '/capture', '/record', '/vocals'];
@@ -71,14 +76,20 @@ export default function Layout() {
           ) : (
             <>
               <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }}>
-                {/* Steps into a task slide in from the side, as drilling in does everywhere on the phone; tabs cross-fade. */}
-                {['capture', 'demos', 'master', 'cover', 'export', 'snippet', 'privacy'].map((name) => (
+                {/* Drilling in pushes from the right, as it does everywhere on the phone: Home to Capture to Record, a song to its mastering, Settings to Privacy. Tabs cross-fade. */}
+                {['capture', 'master', 'privacy'].map((name) => (
                   <Stack.Screen key={name} name={name} options={{ animation: 'slide_from_right' }} />
                 ))}
                 <Stack.Screen name="record" options={{ animation: 'slide_from_right', gestureEnabled: !live }} />
                 <Stack.Screen name="vocals" options={{ gestureEnabled: !live }} />
-                {/* The player rises over the Vault and can be swiped back down. */}
-                <Stack.Screen name="player" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+                {/* Tasks you step out to and come back from are sheets over the screen that opened them. */}
+                {['cover', 'export', 'snippet', 'demos'].map((name) => (
+                  <Stack.Screen key={name} name={name} options={SHEET} />
+                ))}
+                {/* The welcome is a full screen the first time; opened again from the mic screen it is a sheet. */}
+                <Stack.Screen name="onboarding" options={({ route }) => ((route.params as { setup?: string } | undefined)?.setup ? SHEET : {})} />
+                {/* The player rises over the Vault and is swiped back down. On the phone it covers the whole screen, as a music player does. */}
+                <Stack.Screen name="player" options={Platform.OS === 'web' ? SHEET : { animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
               </Stack>
               <TopNav />
               <TabBar />

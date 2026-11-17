@@ -9,6 +9,7 @@ import { DEMO, makeDemoBeat } from '@/dsp/demoBeat';
 import { decode, play, stopTransport, toggle } from '@/engine/engine';
 import { Chip, Eyebrow, Muted, NavLink, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
 import { C, clock } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
@@ -81,7 +82,7 @@ const builtIn = () =>
 
 const FILTERS = [...DEMO_GROUPS, 'Built in'] as const;
 
-export default function Demos() {
+function Demos() {
   const task = useTask();
   const [picked, setPicked] = useState<string | null>(null);
   const wide = useWide();
@@ -174,3 +175,6 @@ export default function Demos() {
     </Screen>
   );
 }
+
+// A sheet over Home.
+export default asSheet(Demos);

@@ -12,12 +12,13 @@ import { useSong } from '@/data/song';
 import { aacSupported } from '@/dsp/aac';
 import { Btn, Card, Chip, Eyebrow, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
 import { C, clock, lufs, plural } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
 const ROLES = ['Writer', 'Producer', 'Performer'] as const;
 
-export default function Export() {
+function Export() {
   const project = useProject();
   const take = activeTake(project);
   const profile = useLibrary((l) => l.profile);
@@ -297,3 +298,6 @@ export default function Export() {
     </Screen>
   );
 }
+
+// A sheet over the player or the mix.
+export default asSheet(Export, { fallback: '/vault' });

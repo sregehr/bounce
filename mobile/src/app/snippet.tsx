@@ -16,6 +16,7 @@ import { pause, play, seek, toggle } from '@/engine/engine';
 import { SCRIM, makeSnippetVideo, videoSupported } from '@/snippet/video';
 import { Btn, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
 import { WindowTrack } from '@/ui/WindowTrack';
 import { C, F, clock } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -28,7 +29,7 @@ const SHAPES = ['Tall 9:16', 'Square 1:1', 'Wide 16:9'] as const;
 const SHAPE_OF = { 'Tall 9:16': 'tall', 'Square 1:1': 'square', 'Wide 16:9': 'wide' } as const;
 const SHAPE_LABEL = { tall: 'Tall 9:16', square: 'Square 1:1', wide: 'Wide 16:9' } as const;
 
-export default function Snippet() {
+function Snippet() {
   const project = useProject();
   const profile = useLibrary((l) => l.profile);
   const take = activeTake(project);
@@ -257,6 +258,8 @@ export default function Snippet() {
           center
           onPress={() => {
             set({ made: true });
+            // The sheet, and the player under it, are closed first: the Vault is not pushed on top of them.
+            if (router.canDismiss()) router.dismissAll();
             router.push('/vault');
           }}
         >
@@ -309,3 +312,6 @@ export default function Snippet() {
     </Screen>
   );
 }
+
+// A sheet over the player or the mix.
+export default asSheet(Snippet, { fallback: '/vault' });

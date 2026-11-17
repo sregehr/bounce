@@ -11,17 +11,19 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { router, usePathname, type Href } from 'expo-router';
+import { router, useIsFocused, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { getLibrary } from '@/data/store';
 import { tick } from './haptics';
+import { BackButton, SHEET_TOP, useSheet } from './nav';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { useBar, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
@@ -119,23 +121,33 @@ export function Screen({
 }) {
   const insets = useSafeAreaInsets();
   // On tabbed screens the content runs under the floating bar, so it ends clear of it.
-  const pathname = usePathname();
+  // The path is this screen's own: while a sheet is open over it, the screen underneath is still
+  // on show behind the sheet and must not lay itself out again for the sheet's path.
+  const at = usePathname();
+  const held = useRef(at);
+  if (useIsFocused()) held.current = at;
+  const pathname = held.current;
   const tabbed = tabFor(pathname) !== null;
-  const top = Math.max(60, insets.top + 16);
+  // A sheet has no status bar above it, only its grabber.
+  const sheet = useSheet();
+  const top = sheet ? SHEET_TOP + 4 : Math.max(60, insets.top + 16);
+  const { width } = useWindowDimensions();
   // The wide layout has the same bars above and below, with wider margins either side of its two panes.
   const wide = useWide();
   const bar = useBar();
   const padTop = tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top;
   const padEnd = tabbed && !hidesTabBar(pathname) ? bar.room + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12));
   // With room to spare the column is centred rather than stretched.
-  const gutter = useGutter(padX);
+  const column = useGutter(padX);
+  // A sheet floating on a bigger screen is its own column, with margins to suit its width, not the window's.
+  const gutter = sheet ? (Platform.OS === 'web' && width >= 600 ? 40 : padX) : column;
   const content: ViewStyle = wide
     ? {
         flexGrow: 1,
         gap,
-        paddingLeft: insets.left + 40,
-        paddingRight: insets.right + 40,
-        paddingTop: tabbed ? padTop + 8 : Math.max(36, insets.top + 16),
+        paddingLeft: sheet ? 36 : insets.left + 40,
+        paddingRight: sheet ? 36 : insets.right + 40,
+        paddingTop: tabbed ? padTop + 8 : sheet ? SHEET_TOP + 10 : Math.max(36, insets.top + 16),
         paddingBottom: tabbed && !hidesTabBar(pathname) ? padEnd : Math.max(28, insets.bottom + 12),
       }
     : {
@@ -186,11 +198,16 @@ export function Screen({
   );
 }
 
-export function TopBar({ left, right }: { left: ReactNode; right?: ReactNode }) {
+/**
+ * The title row at the top of a screen. `back` puts the one way out in the top-left corner
+ * before the title: a chevron on a pushed screen, a cross on a sheet. Tabs have none.
+ */
+export function TopBar({ left, right, back }: { left: ReactNode; right?: ReactNode; back?: true | Parameters<typeof BackButton>[0] }) {
   return (
-    <View style={s.topbar}>
+    <View style={[s.topbar, back ? { justifyContent: 'flex-start', gap: 2 } : null]}>
+      {back ? <BackButton {...(back === true ? {} : back)} /> : null}
       {typeof left === 'string' ? (
-        <Txt size={26} w="display" style={{ flexShrink: 1 }}>
+        <Txt size={26} w="display" style={{ flexShrink: 1, flexGrow: back ? 1 : 0 }}>
           {left}
         </Txt>
       ) : (

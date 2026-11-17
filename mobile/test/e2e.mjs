@@ -737,7 +737,11 @@ async function library() {
   await expectText('Add a beat', 'home offers the ways to add a beat');
   await tap('Add a demo song');
   await expectText('Ready-made beats', 'and leads into the demo songs');
-  await tap('Home');
+  // The demo songs are a sheet over Home, with no tabs around it; closing it shows Home again.
+  log(await state(() => !!document.querySelector('[role=dialog]') && ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0)), 'as a sheet, with the tab bar out of the way');
+  await tap('Close');
+  await sleep(500);
+  log(await state(() => !document.querySelector('[role=dialog]')), 'closing the sheet puts it away');
   await expectText('Add a beat');
   await tap('Open Night bus');
   await expectText('Beat details', 'a beat opens its song', 10000);

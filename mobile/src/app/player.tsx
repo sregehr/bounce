@@ -8,11 +8,18 @@ import { useProject } from '@/data/store';
 import { spectrum, setNowPlaying } from '@/engine/engine';
 import { Btn, Eyebrow, NavLink, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
 const BARS = 34;
+
+/** The player rises over the Vault, and closing it returns there, however it was opened. */
+const close = () => {
+  if (router.canDismiss()) router.dismissAll();
+  router.push('/vault');
+};
 
 /** Bars that follow the sound of whatever is playing. `tall` is the wide layout's, spread along the bottom of the cover. */
 function Visualiser({ playing, tall }: { playing: boolean; tall?: boolean }) {
@@ -39,7 +46,7 @@ function Visualiser({ playing, tall }: { playing: boolean; tall?: boolean }) {
   );
 }
 
-export default function Player() {
+function Player() {
   const project = useProject();
   const now = useNowPlaying(project);
   const [lyrics, setLyrics] = useState(false);
@@ -60,11 +67,6 @@ export default function Player() {
   const { song, credit, hasLyrics, beat } = now;
   const t = song.t;
   const pill = { backgroundColor: C.bg } as const;
-  /** The player is full screen, opened from the Vault; closing it returns there. */
-  const close = () => {
-    if (router.canDismiss()) router.dismissAll();
-    router.push('/vault');
-  };
 
   const mastering = (
         <Pressable accessibilityRole="link" accessibilityLabel="Mastering settings" onPress={() => router.push('/master')} style={[pill, { borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12 }, wide && { minHeight: 44, borderRadius: 22, paddingHorizontal: 14, justifyContent: 'center' }]}>
@@ -193,3 +195,6 @@ export default function Player() {
     </View>
   );
 }
+
+// Swiped down to close: by the system on the phone, where it covers the screen, and by the sheet the browser build draws.
+export default asSheet(Player, { swipe: 'anywhere', cover: true, onClose: close });

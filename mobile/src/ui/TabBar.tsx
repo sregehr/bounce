@@ -13,34 +13,34 @@ import { Logo } from './Logo';
 import { PersonalMenu } from './PersonalMenu';
 import { askForMic, useAskingForMic, useRecordControl } from './recordControl';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor, type Tab } from './tabs';
-import { BAR_MAX, RAIL_WIDTH, useGutter } from './wide';
+import { useBar, useGutter, useWide } from './wide';
 import { C } from './theme';
 
-type IconProps = { on: boolean; color: string };
+type IconProps = { on: boolean; color: string; size: number };
 
 const stroke = { strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 
-function Glyph({ children }: { children: ReactNode }) {
+function Glyph({ size, children }: { size: number; children: ReactNode }) {
   return (
-    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       {children}
     </Svg>
   );
 }
 
 /** Each glyph is an outline at rest and solid when its tab is selected, as iOS tab bars do. */
-function HomeGlyph({ on, color }: IconProps) {
+function HomeGlyph({ on, color, size }: IconProps) {
   return (
-    <Glyph>
+    <Glyph size={size}>
       <Path d="M4 10.6 12 4l8 6.6V18.5A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5z" stroke={color} fill={on ? color : 'none'} {...stroke} />
       <Path d="M10 20v-5h4v5" stroke={on ? C.bg : color} {...stroke} />
     </Glyph>
   );
 }
 
-function VaultGlyph({ on, color }: IconProps) {
+function VaultGlyph({ on, color, size }: IconProps) {
   return (
-    <Glyph>
+    <Glyph size={size}>
       <Rect x={3} y={4.5} width={18} height={4.5} rx={1.5} stroke={color} fill={on ? color : 'none'} {...stroke} />
       <Path d="M5 9v9a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V9z" stroke={color} fill={on ? color : 'none'} {...stroke} />
       <Path d="M10 13.2h4" stroke={on ? C.bg : color} {...stroke} />
@@ -48,9 +48,9 @@ function VaultGlyph({ on, color }: IconProps) {
   );
 }
 
-function SongGlyph({ on, color }: IconProps) {
+function SongGlyph({ on, color, size }: IconProps) {
   return (
-    <Glyph>
+    <Glyph size={size}>
       <Path d="M9.5 17.5V6.2l9-2v11.3" stroke={color} {...stroke} />
       <Circle cx={7} cy={17.5} r={2.5} stroke={color} fill={on ? color : 'none'} {...stroke} />
       <Circle cx={16} cy={15.5} r={2.5} stroke={color} fill={on ? color : 'none'} {...stroke} />
@@ -58,10 +58,10 @@ function SongGlyph({ on, color }: IconProps) {
   );
 }
 
-function MixGlyph({ on, color }: IconProps) {
+function MixGlyph({ on, color, size }: IconProps) {
   const knob = { r: 2.2, stroke: color, fill: on ? color : C.bg, strokeWidth: 1.8 };
   return (
-    <Glyph>
+    <Glyph size={size}>
       <Path d="M4 7h16M4 12h16M4 17h16" stroke={color} {...stroke} />
       <Circle cx={15.5} cy={7} {...knob} />
       <Circle cx={8.5} cy={12} {...knob} />
@@ -83,8 +83,9 @@ function follow(lead: Lead | { to: '/' | '/vault' | '/settings' | '/profile'; id
   else router.push(href);
 }
 
-function Item({ label, on, onPress, Icon, rail }: { label: string; on: boolean; onPress: () => void; Icon: (p: IconProps) => ReactNode; rail?: boolean }) {
+function Item({ label, on, onPress, Icon }: { label: string; on: boolean; onPress: () => void; Icon: (p: IconProps) => ReactNode }) {
   const color = on ? C.text : 'rgba(255,255,255,0.74)';
+  const bar = useBar();
   return (
     <Pressable
       accessibilityRole="tab"
@@ -92,10 +93,10 @@ function Item({ label, on, onPress, Icon, rail }: { label: string; on: boolean; 
       accessibilityState={{ selected: on }}
       onPress={onPress}
       // The tab in view sits in a darker well inside the capsule.
-      style={({ pressed }) => ({ ...(rail ? { width: 60, height: 58 } : { flex: 1, height: BAR_HEIGHT - 12 }), borderRadius: (BAR_HEIGHT - 12) / 2, alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: on ? 'rgba(0,0,0,0.42)' : 'transparent', opacity: pressed ? 0.55 : 1 })}
+      style={({ pressed }) => ({ flex: 1, height: bar.height - 12, borderRadius: (bar.height - 12) / 2, alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: on ? 'rgba(0,0,0,0.42)' : 'transparent', opacity: pressed ? 0.55 : 1 })}
     >
-      <Icon on={on} color={color} />
-      <Txt size={10.5} w={on ? 'semi' : 'medium'} ls={0.01} color={color}>
+      <Icon on={on} color={color} size={bar.glyph} />
+      <Txt size={bar.label} w={on ? 'semi' : 'medium'} ls={0.01} color={color}>
         {label}
       </Txt>
     </Pressable>
@@ -108,8 +109,6 @@ const glass = (Platform.OS === 'web'
   : { backgroundColor: 'rgba(18,18,18,0.96)' }) as ViewStyle;
 
 // The floating bar: a lighter, more translucent glass with a bright rim, lifted off the page by a shadow.
-const BAR_HEIGHT = 64;
-const MIC = 64;
 const floating = {
   ...(Platform.OS === 'web'
     ? { backgroundColor: 'rgba(58,58,62,0.62)', backdropFilter: 'saturate(180%) blur(28px)', WebkitBackdropFilter: 'saturate(180%) blur(28px)' }
@@ -134,12 +133,15 @@ function useNav() {
 export function TopNav() {
   const { path, tab } = useNav();
   const insets = useSafeAreaInsets();
-  // The logo and the menu line up with the column of content below them.
-  const gutter = useGutter();
+  // The logo and the menu line up with the content below them: its column, or the margins of the two panes.
+  const column = useGutter();
+  const wide = useWide();
+  const gutter = wide ? 40 : column;
+  const edge = wide ? { left: insets.left, right: insets.right } : { left: 0, right: 0 };
   if (!tab) return null;
   return (
     <View style={[{ position: 'absolute', left: 0, right: 0, top: 0, paddingTop: insets.top, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.14)' }, glass]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: gutter, paddingRight: gutter - 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: gutter + edge.left, paddingRight: gutter - 12 + edge.right }}>
         <Pressable accessibilityRole="link" accessibilityLabel="Bounce: home" onPress={() => follow({ to: '/', id: null }, path)} hitSlop={8}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
             <Logo size={20} />
@@ -170,8 +172,12 @@ function useMic() {
   return { path, library, tab, record, input, asking, mic, beat, recording, is, lit };
 }
 
+// The mic at rest: a dark disc, so the yellow is kept for when it is selected.
+const REST = 'rgb(30,30,32)';
+
 function MicButton({ nav, style }: { nav: ReturnType<typeof useMic>; style?: ViewStyle }) {
   const { path, record, mic, beat, recording, is, lit } = nav;
+  const { mic: MIC } = useBar();
   return (
     <Pressable
       accessibilityRole="button"
@@ -183,18 +189,20 @@ function MicButton({ nav, style }: { nav: ReturnType<typeof useMic>; style?: Vie
         width: MIC,
         height: MIC,
         borderRadius: MIC / 2,
-        backgroundColor: recording ? C.rec : C.accent,
+        // Like the glyphs beside it, the mic is an outline at rest and solid once it is the tab in view.
+        // Solid yellow also means it is live: there, a tap records rather than leading to the mic screen.
+        backgroundColor: recording ? C.rec : lit ? C.accent : REST,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: lit ? 2 : 0.5,
-        borderColor: lit ? C.text : 'rgba(255,255,255,0.4)',
-        boxShadow: `0 10px 28px rgba(0,0,0,0.5), 0 6px 18px ${recording ? 'rgba(255,75,62,0.35)' : 'rgba(255,176,32,0.25)'}, inset 0 1px 0 rgba(255,255,255,0.35)`,
+        borderWidth: lit ? 0.5 : 2,
+        borderColor: lit ? 'rgba(255,255,255,0.4)' : C.accent,
+        boxShadow: lit ? `0 10px 28px rgba(0,0,0,0.5), 0 6px 22px ${recording ? 'rgba(255,75,62,0.4)' : 'rgba(255,176,32,0.4)'}, inset 0 1px 0 rgba(255,255,255,0.35)` : '0 10px 28px rgba(0,0,0,0.5)',
         opacity: record?.busy ? 0.6 : 1,
         transform: [{ scale: pressed ? 0.93 : 1 }],
         ...style,
       })}
     >
-      {recording ? <View style={{ width: 22, height: 22, borderRadius: 5, backgroundColor: C.text }} /> : <MicIcon size={28} color={C.bg} />}
+      {recording ? <View style={{ width: MIC * 0.34, height: MIC * 0.34, borderRadius: 5, backgroundColor: C.text }} /> : <MicIcon size={Math.round(MIC * 0.44)} color={lit ? C.bg : C.accent} />}
     </Pressable>
   );
 }
@@ -226,65 +234,30 @@ export function TabBar() {
   const { path, library, tab, record, asking, is } = nav;
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const bar = useBar();
   // On a wider screen the capsule stays a comfortable size in the middle instead of stretching edge to edge.
-  const side = Math.max(14, Math.round((width - BAR_MAX) / 2));
+  const side = Math.max(14, Math.round((width - bar.max) / 2));
+  const bottom = Math.max(bar.lift, insets.bottom);
   if ((!tab && !record) || hidesTabBar(path)) return null;
 
   const button = (
-    <View style={{ width: MIC + 12, height: BAR_HEIGHT, alignItems: 'center' }}>
+    <View style={{ width: bar.mic + 12, height: bar.height, alignItems: 'center' }}>
       <MicButton nav={nav} style={{ position: 'absolute', top: -14 }} />
     </View>
   );
 
   // While a take runs the tabs step aside, so a stray tap cannot end it; only the button stays.
-  if (!tab) return <View style={{ position: 'absolute', left: side, right: side, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, alignItems: 'center' }}>{button}</View>;
+  if (!tab) return <View style={{ position: 'absolute', left: side, right: side, bottom, height: bar.height, alignItems: 'center' }}>{button}</View>;
 
   return (
-    <View accessibilityRole="tablist" style={[{ position: 'absolute', left: side, right: side, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
-      {asking && <MicPrompt nav={nav} cover={{ left: -side, right: -side, bottom: -40, height: 2000 }} style={{ left: 0, right: 0, bottom: BAR_HEIGHT + 24 }} />}
+    <View accessibilityRole="tablist" style={[{ position: 'absolute', left: side, right: side, bottom, height: bar.height, borderRadius: bar.height / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
+      {asking && <MicPrompt nav={nav} cover={{ left: -side, right: -side, bottom: -40, height: 2000 }} style={{ left: 0, right: 0, bottom: bar.height + 24 }} />}
       <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
       <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
       {/* The mic sits in the middle, raised out of the capsule. */}
       {button}
       <Item label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
       <Item label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
-    </View>
-  );
-}
-
-/**
- * The same navigation for the wide layout: a rail down the left edge, with the logo above the
- * capsule and the personal menu below it. It stands in for both the top bar and the bottom bar.
- */
-export function Rail() {
-  const nav = useMic();
-  const { path, library, tab, record, asking, is } = nav;
-  const insets = useSafeAreaInsets();
-  if (!tab && !record) return null;
-  const edge = { position: 'absolute', left: insets.left, top: 0, bottom: 0, width: RAIL_WIDTH, paddingTop: Math.max(28, insets.top + 12), paddingBottom: Math.max(24, insets.bottom + 12), alignItems: 'center', justifyContent: 'space-between' } as const;
-
-  // While a take runs only the button stays, where it was.
-  if (!tab)
-    return (
-      <View style={[edge, { justifyContent: 'center' }]}>
-        <MicButton nav={nav} />
-      </View>
-    );
-
-  return (
-    <View style={edge}>
-      <Pressable accessibilityRole="link" accessibilityLabel="Bounce: home" onPress={() => follow({ to: '/', id: null }, path)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-        <Logo size={28} />
-      </Pressable>
-      <View accessibilityRole="tablist" style={[{ width: 72, borderRadius: 36, padding: 6, gap: 4, alignItems: 'center' }, floating]}>
-        <Item rail label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
-        <Item rail label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
-        <MicButton nav={nav} style={{ marginVertical: 6 }} />
-        <Item rail label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
-        <Item rail label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
-        {asking && <MicPrompt nav={nav} cover={{ left: -40, top: -1000, width: 4000, height: 3000 }} style={{ left: 84, top: 96, width: 320 }} />}
-      </View>
-      <PersonalMenu rail onNavigate={(to) => follow({ to }, path)} />
     </View>
   );
 }

@@ -14,7 +14,8 @@ import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Tx
 import { useStopOnLeave, useTransport } from '@/ui/hooks';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
 import { C, clock, dayLabel, lufs } from '@/ui/theme';
-import { useWide } from '@/ui/wide';
+import { TOP_NAV_HEIGHT } from '@/ui/tabs';
+import { useBar, useWide } from '@/ui/wide';
 
 const meta = (p: Project) => [p.artist?.trim() || null, dayLabel(p.saved?.at ?? p.createdAt), clock(p.stats?.durationSec ?? p.beat.durationSec), p.takes.length ? null : 'instrumental'].filter(Boolean).join(' · ');
 const tag = (p: Project) => [p.overrides.master ? 'Mastered by hand' : `Mastered · ${p.master.style}`, p.stats ? lufs(p.stats.lufs, 0) : null, p.snippet.made ? 'Snippet made' : null, p.lyrics.trim() ? 'Has lyrics' : null].filter(Boolean).join(' · ');
@@ -107,7 +108,11 @@ export default function Vault() {
   const [query, setQuery] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
   const wide = useWide();
+  // Both panes of the wide layout scroll under the bars above and below, and end clear of them.
+  const bar = useBar();
   const insets = useSafeAreaInsets();
+  const under = insets.top + TOP_NAV_HEIGHT;
+  const above = bar.room + insets.bottom + 16;
   // Wide: the song a tap in the list asked to hear, which starts by itself once it is ready; the one found open when arriving waits for play.
   const [asked, setAsked] = useState<string | null>(null);
   const toggleRef = useRef<(() => void) | null>(null);
@@ -177,7 +182,7 @@ export default function Vault() {
       <Screen scroll={false} gap={0} style={{ flexDirection: 'row', paddingTop: 0, paddingRight: 0, paddingBottom: 0 }}>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ flexGrow: 1, gap: 22, paddingTop: Math.max(36, insets.top + 16), paddingRight: all.length ? 32 : insets.right + 40, paddingBottom: Math.max(28, insets.bottom + 12) }}
+          contentContainerStyle={{ flexGrow: 1, gap: 22, paddingTop: under + 24, paddingRight: all.length ? 32 : insets.right + 40, paddingBottom: above }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -226,7 +231,7 @@ export default function Vault() {
           <ScrollView
             accessibilityLabel="Now playing"
             style={{ flexGrow: 0, width: DOCK + insets.right, backgroundColor: C.surface, borderLeftWidth: 1, borderLeftColor: C.border }}
-            contentContainerStyle={{ flexGrow: 1, gap: 16, paddingLeft: DOCK_PAD, paddingRight: DOCK_PAD + insets.right, paddingTop: Math.max(DOCK_PAD, insets.top + 12), paddingBottom: Math.max(DOCK_PAD, insets.bottom + 12) }}
+            contentContainerStyle={{ flexGrow: 1, gap: 16, paddingLeft: DOCK_PAD, paddingRight: DOCK_PAD + insets.right, paddingTop: under + DOCK_PAD, paddingBottom: above }}
             showsVerticalScrollIndicator={false}
           >
             {docked ? (

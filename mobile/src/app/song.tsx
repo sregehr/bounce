@@ -13,10 +13,9 @@ import { Btn, Chip, Eyebrow, Muted, Screen, Segmented, SliderRow, Txt, s } from 
 import { useStopOnLeave } from '@/ui/hooks';
 import { Status, SwipeRow } from '@/ui/parts';
 import { SongHeader } from '@/ui/SongHeader';
-import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
-import { Columns, useGutter, useWide } from '@/ui/wide';
+import { Columns, useBar, useGutter, useWide } from '@/ui/wide';
 
 const ROLES = ['Double', 'Ad-lib', 'Hook'] as const;
 const ROLE_OF = { Double: 'double', 'Ad-lib': 'adlib', Hook: 'hook' } as const;
@@ -36,6 +35,7 @@ export default function Song() {
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const insets = useSafeAreaInsets();
   const gutter = useGutter();
+  const tabBar = useBar();
   const [details, setDetails] = useState(false);
   const wide = useWide();
   useStopOnLeave();
@@ -87,7 +87,7 @@ export default function Song() {
             })}
           </View>
         ) : (
-          <Muted>Nothing recorded over this beat yet. Tap the mic {wide ? 'in the rail' : 'below'} to record a take, and it shows up here.</Muted>
+          <Muted>Nothing recorded over this beat yet. Tap the mic below to record a take, and it shows up here.</Muted>
         );
 
   // More takes stacked on the picked one, and bars of it swapped for bars of another take.
@@ -222,7 +222,7 @@ export default function Song() {
 
       {/* The next step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
       {take && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: tabBar.room + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
           <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, minHeight: 52 }} />
         </View>
       )}

@@ -24,13 +24,11 @@ const TABS: Record<string, Tab> = {
 const EITHER = ['/master', '/cover', '/export', '/snippet'];
 
 /**
- * True on the finishing steps. Each has its own way back in the top corner, so on a phone the
- * bottom bar steps aside rather than float over their buttons. The wide rail always stays.
+ * True on the finishing steps. Each has its own way back in the top corner, so the bottom bar
+ * steps aside rather than float over their buttons.
  */
 export const hidesTabBar = (pathname: string) => EITHER.includes(pathname);
 
-/** Room the floating bottom bar takes up, with the gap around it, not counting the home-indicator inset below it. */
-export const TAB_BAR_HEIGHT = 84;
 /** Height of the top bar with the logo, not counting the status-bar inset above it. */
 export const TOP_NAV_HEIGHT = 48;
 

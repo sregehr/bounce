@@ -22,8 +22,8 @@ import Svg, { Path, Rect } from 'react-native-svg';
 
 import { getLibrary } from '@/data/store';
 import { tick } from './haptics';
-import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
-import { RAIL_WIDTH, useWide, useGutter } from './wide';
+import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
+import { useBar, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
 
 // ---------- Text ----------
@@ -122,25 +122,28 @@ export function Screen({
   const pathname = usePathname();
   const tabbed = tabFor(pathname) !== null;
   const top = Math.max(60, insets.top + 16);
-  // In the wide layout the navigation is a rail down the left, so the content starts beside it and runs to the bottom.
+  // The wide layout has the same bars above and below, with wider margins either side of its two panes.
   const wide = useWide();
+  const bar = useBar();
+  const padTop = tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top;
+  const padEnd = tabbed && !hidesTabBar(pathname) ? bar.room + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12));
   // With room to spare the column is centred rather than stretched.
   const gutter = useGutter(padX);
   const content: ViewStyle = wide
     ? {
         flexGrow: 1,
         gap,
-        paddingLeft: insets.left + (tabbed ? RAIL_WIDTH + 16 : 40),
+        paddingLeft: insets.left + 40,
         paddingRight: insets.right + 40,
-        paddingTop: Math.max(36, insets.top + 16),
-        paddingBottom: Math.max(28, insets.bottom + 12),
+        paddingTop: tabbed ? padTop + 8 : Math.max(36, insets.top + 16),
+        paddingBottom: tabbed && !hidesTabBar(pathname) ? padEnd : Math.max(28, insets.bottom + 12),
       }
     : {
         flexGrow: 1,
         gap,
         paddingHorizontal: gutter,
-        paddingTop: tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top,
-        paddingBottom: tabbed && !hidesTabBar(pathname) ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
+        paddingTop: padTop,
+        paddingBottom: padEnd,
       };
   // A tab comes back where it was left: switching away and back should not lose your place.
   const place = TAB_ROOTS.includes(pathname) ? `${pathname}:${getLibrary().currentId ?? ''}` : null;

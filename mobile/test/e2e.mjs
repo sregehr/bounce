@@ -152,6 +152,38 @@ async function scrollOver(label) {
   await finger.end();
   await sleep(300);
 }
+/**
+ * Holds a finger on a slider (found by its label) and drags it sideways to a fraction of its width, or
+ * up the page when `scroll` is set. Reports the value bubble as it is with the finger still down, then lifts.
+ */
+async function holdSlider(label, fraction, scroll = false) {
+  const box = await page.evaluate((label) => {
+    const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    if (!n) return null;
+    n.scrollIntoView({ block: 'center' });
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, label);
+  if (!box) return log(false, `hold "${label}"`, 'no such slider'), null;
+  const x = box.x + box.w * 0.5, y = box.y + box.h / 2;
+  const to = box.x + 9 + (box.w - 18) * fraction;
+  const finger = await page.touchscreen.touchStart(x, y);
+  for (let i = 1; i <= 8; i++) {
+    await (scroll ? finger.move(x + (i % 2), y - i * 14) : finger.move(x + ((to - x) * i) / 8, y));
+    await sleep(16);
+  }
+  await sleep(150);
+  const seen = await page.evaluate((label) => {
+    const n = document.querySelector('[data-testid=slider-bubble]');
+    const slider = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    const r = n?.getBoundingClientRect();
+    const track = slider?.getBoundingClientRect();
+    return { text: n?.innerText ?? null, left: r?.left, right: r?.right, bottom: r?.bottom, thumbTop: track ? track.top + track.height / 2 - 9 : 0, width: innerWidth, now: Number(slider?.getAttribute('aria-valuenow')) };
+  }, label);
+  await finger.end();
+  await sleep(250);
+  return { ...seen, gone: await page.evaluate(() => !document.querySelector('[data-testid=slider-bubble]')) };
+}
 /** Drags a row (found by its label) to the left, as a finger would, to show its Delete button. */
 async function swipeLeft(label) {
   const box = await page.evaluate((label) => {
@@ -439,6 +471,13 @@ async function song() {
   const intensityBefore = await trackAt('Intensity');
   await scrollOver('Intensity');
   log((await trackAt('Intensity')) === intensityBefore, 'scrolling the page over a slider leaves it where it was', `${intensityBefore} -> ${await trackAt('Intensity')}`);
+  // While a slider is dragged, its value shows in a bubble above the thumb, where the finger does not hide it.
+  const scrolled = await holdSlider('Intensity', 0, true);
+  log(scrolled?.text === null, 'scrolling over a slider shows no value bubble');
+  const bubble = await holdSlider('Intensity', 1);
+  log(bubble?.text === `${bubble?.now}%` && bubble.now === 100, 'dragging a slider shows its value in a bubble, in the words the row uses', `${bubble?.text}`);
+  log(bubble?.left >= 0 && bubble.right <= bubble.width && bubble.bottom <= bubble.thumbTop, 'the bubble sits above the thumb and inside the screen', `${Math.round(bubble?.left)}–${Math.round(bubble?.right)} of ${bubble?.width}`);
+  log(bubble?.gone === true, 'and goes when the finger lifts');
   await slide('Intensity', 1);
   await expectText('100%');
   await expectText(/Polished\s/, 'the mix renders with the master', 30000);

@@ -61,6 +61,7 @@ export function Scrubber({ now, height = 28 }: { now: NowPlaying; height?: numbe
     <View style={{ gap: 2 }}>
       <Slider
         label="Position in track"
+        display={clock(drag ?? t.position)}
         value={Math.min(drag ?? t.position, t.duration)}
         min={0}
         max={Math.max(1, t.duration)}

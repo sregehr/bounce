@@ -115,6 +115,7 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
       <View style={{ flex: 1 }}>
         <SliderLazy
           label="Position in track"
+          display={mm(shown)}
           value={Math.min(shown, duration)}
           min={0}
           max={Math.max(1, duration)}

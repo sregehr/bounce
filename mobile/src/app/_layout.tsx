@@ -10,7 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Backend } from '@/auth/Provider';
 import { startBackup } from '@/data/backup';
 import { loadLibrary, useLibrary, useLoadError, useReady } from '@/data/store';
-import { closeInput } from '@/engine/engine';
+import { closeInput, useEngine } from '@/engine/engine';
 import { Rail, TabBar, TopNav } from '@/ui/TabBar';
 import { Btn, Muted, Txt } from '@/ui/kit';
 import { C } from '@/ui/theme';
@@ -24,6 +24,8 @@ export default function Layout() {
   const [fontsLoaded, fontError] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, SpaceGrotesk_500Medium, SpaceGrotesk_700Bold });
   const ready = useReady();
   const loadError = useLoadError();
+  // While a take or a capture is running, the swipe back from the screen edge is off: it would drop the recording.
+  const live = useEngine((e) => e.take.mode !== 'idle' || e.capture.status === 'recording');
   const onboarded = useLibrary((l) => l.profile.onboarded);
   const pathname = usePathname();
   const { width, height } = useWindowDimensions();
@@ -68,7 +70,16 @@ export default function Layout() {
             <Redirect href="/onboarding" />
           ) : (
             <>
-              <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }} />
+              <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }}>
+                {/* Steps into a task slide in from the side, as drilling in does everywhere on the phone; tabs cross-fade. */}
+                {['capture', 'demos', 'master', 'cover', 'export', 'snippet', 'privacy'].map((name) => (
+                  <Stack.Screen key={name} name={name} options={{ animation: 'slide_from_right' }} />
+                ))}
+                <Stack.Screen name="record" options={{ animation: 'slide_from_right', gestureEnabled: !live }} />
+                <Stack.Screen name="vocals" options={{ gestureEnabled: !live }} />
+                {/* The player rises over the Vault and can be swiped back down. */}
+                <Stack.Screen name="player" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+              </Stack>
               {wide ? (
                 <Rail />
               ) : (

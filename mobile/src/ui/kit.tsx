@@ -20,6 +20,7 @@ import { router, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
+import { getLibrary } from '@/data/store';
 import { tick } from './haptics';
 import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { RAIL_WIDTH, useWide, useGutter } from './wide';
@@ -97,6 +98,10 @@ export function Muted({ children, size = 14, center, lh = 1.45, style }: { child
 // ---------- Layout ----------
 
 /** Full-height phone screen. `gap` and `padBottom` vary per screen in the design. */
+/** How far down each tab was scrolled when it was last left, by screen and song. */
+const places = new Map<string, number>();
+const TAB_ROOTS = ['/', '/song', '/vocals', '/playback', '/vault'];
+
 export function Screen({
   gap = 12,
   padBottom,
@@ -137,9 +142,33 @@ export function Screen({
         paddingTop: tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top,
         paddingBottom: tabbed && !hidesTabBar(pathname) ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
       };
+  // A tab comes back where it was left: switching away and back should not lose your place.
+  const place = TAB_ROOTS.includes(pathname) ? `${pathname}:${getLibrary().currentId ?? ''}` : null;
+  const view = useRef<ComponentRef<typeof ScrollView>>(null);
+  const restored = useRef(false);
+  // A screen that is still loading is too short to reach the old place at first, so it is put
+  // back a few times as the page fills in, and left alone as soon as the user scrolls.
+  useEffect(() => {
+    const y = place ? (places.get(place) ?? 0) : 0;
+    if (y <= 0) return void (restored.current = true);
+    const timers = [0, 80, 250, 600, 1200].map((ms, i, all) =>
+      setTimeout(() => {
+        if (restored.current) return;
+        view.current?.scrollTo({ y, animated: false });
+        if (i === all.length - 1) restored.current = true;
+      }, ms),
+    );
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   if (!scroll) return <View style={[{ flex: 1, backgroundColor: C.bg }, content, style]}>{children}</View>;
   return (
     <ScrollView
+      ref={view}
+      scrollEventThrottle={64}
+      // Nothing is noted down until the old place has been put back, or the page would record where it was stopped short.
+      onScroll={place ? (e) => void (restored.current && places.set(place, e.nativeEvent.contentOffset.y)) : undefined}
+      onScrollBeginDrag={() => void (restored.current = true)}
       style={{ flex: 1, backgroundColor: C.bg }}
       contentContainerStyle={[content, style]}
       keyboardShouldPersistTaps="handled"

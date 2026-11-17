@@ -402,6 +402,20 @@ async function song() {
   await expectText('100%');
   await expectText(/Polished\s/, 'the mix renders with the master', 30000);
   await sleep(800);
+  // A tab comes back where it was left. (The wide layout fits on one screen, so there is nothing to scroll.)
+  if (!WIDE) {
+    const scroller = () => [...document.querySelectorAll('div')].filter((n) => n.scrollHeight > n.clientHeight + 200 && getComputedStyle(n).overflowY !== 'visible' && n.getBoundingClientRect().width > 0 && n.innerText.includes('Vocal level')).pop();
+    await page.evaluate(`(${scroller})().scrollTop = 320`);
+    await sleep(400);
+    const before = await page.evaluate(`(() => { const n = (${scroller})(); return [n.scrollTop, n.scrollHeight, n.clientHeight].join('/'); })()`);
+    await tap('Song');
+    await expectText('Lyrics', 'Song opens from Mix');
+    await tap('Mix');
+    await expectText('Vocal level', 'and Mix opens again');
+    await sleep(1600);
+    const top = await page.evaluate(`(${scroller})()?.scrollTop ?? -1`);
+    log(Math.abs(top - 320) < 40, 'Mix is still scrolled to where it was left', `scrollTop ${top}, before ${before}, after ${await page.evaluate(`(() => { const n = (${scroller})(); return n ? [n.scrollTop, n.scrollHeight, n.clientHeight].join('/') : 'none'; })()`)}`);
+  }
   await shot('13-mix-master');
 }
 

@@ -164,7 +164,7 @@ export default function Vault() {
       <Foot gap={12}>
         <Muted size={13}>
           {all.length > 0 ? 'Removing a song here leaves its beat and takes where they are. ' : ''}
-          {backup.status === 'done' ? 'Everything is backed up.' : backup.status === 'working' ? `Backing up${backup.pending ? ` (${backup.pending} left)` : ''}…` : backup.status === 'unreachable' ? 'Backup server not reachable; your work is safe on this device.' : backup.status === 'off' ? 'Backup is off.' : ''}
+          {backup.status === 'full' ? 'The backup is full; newer work is only on this device.' : backup.status === 'done' && backup.skipped ? 'Backed up, except files too big to back up.' : backup.status === 'done' ? 'Everything is backed up.' : backup.status === 'working' ? `Backing up${backup.pending ? ` (${backup.pending} left)` : ''}…` : backup.status === 'unreachable' ? 'Backup server not reachable; your work is safe on this device.' : backup.status === 'off' ? 'Backup is off.' : ''}
         </Muted>
       </Foot>
   );

@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 
 // A backup belongs to whoever holds the secret its device made up on first launch. The id says
@@ -32,6 +33,52 @@ export async function requireOwner(ctx: MutationCtx, deviceId: string, secret: s
   else if (row.hash !== hash) throw new Error("Not allowed.");
 }
 
+// How much one device may keep here. Set BACKUP_MAX_MB, BACKUP_MAX_FILE_MB or SHARE_MAX_FILE_MB on the server to change them.
+const MB = 1024 * 1024;
+const megabytes = (name: string, fallback: number) => (Number(process.env[name]) > 0 ? Number(process.env[name]) : fallback) * MB;
+export const LIMITS = {
+  /** The whole backup of one device. */
+  bytes: () => megabytes("BACKUP_MAX_MB", 4096),
+  /** One file in a backup: a long beat as a 24-bit WAV fits. */
+  file: () => megabytes("BACKUP_MAX_FILE_MB", 300),
+  /** The audio behind one listening link. */
+  share: () => megabytes("SHARE_MAX_FILE_MB", 150),
+  files: 2000,
+  projects: 1000,
+  shares: 100,
+};
+
+/** The true size of an uploaded file, as the server stored it; what the app says it sent is not trusted. */
+export async function storedFile(ctx: QueryCtx, storageId: Id<"_storage">) {
+  return await ctx.db.system.get(storageId);
+}
+
+/** What a device's backup holds. Devices from before the count was kept are added up once. */
+async function usage(ctx: QueryCtx, deviceId: string) {
+  const row = await secretRow(ctx, deviceId);
+  if (row && row.bytes !== undefined && row.files !== undefined) return { bytes: row.bytes, files: row.files };
+  const files = await ctx.db
+    .query("backupFiles")
+    .withIndex("by_device_key", (q) => q.eq("deviceId", deviceId))
+    .take(LIMITS.files);
+  return { bytes: files.reduce((n, f) => n + f.size, 0), files: files.length };
+}
+
+async function setUsage(ctx: MutationCtx, deviceId: string, next: { bytes: number; files: number }) {
+  const row = await secretRow(ctx, deviceId);
+  if (row) await ctx.db.patch(row._id, { bytes: Math.max(0, next.bytes), files: Math.max(0, next.files) });
+}
+
+/** How full this device's backup is and what it may hold, so the app can stop before sending a file that would be refused. */
+export const room = query({
+  args: owner,
+  returns: v.object({ bytes: v.number(), maxBytes: v.number(), maxFile: v.number(), files: v.number(), maxFiles: v.number() }),
+  handler: async (ctx, { deviceId, secret }) => {
+    const used = (await owns(ctx, deviceId, secret)) ? await usage(ctx, deviceId) : { bytes: 0, files: 0 };
+    return { ...used, maxBytes: LIMITS.bytes(), maxFile: LIMITS.file(), maxFiles: LIMITS.files };
+  },
+});
+
 /** A short-lived address the app uploads one file to. */
 export const uploadUrl = mutation({
   args: owner,
@@ -56,22 +103,36 @@ export const fileKeys = query({
   },
 });
 
+/**
+ * Records an uploaded file in the backup. A file that is too big, or that the backup has no room
+ * for, is thrown away and the answer says which, so the app can tell the user instead of trying again.
+ */
 export const saveFile = mutation({
   args: { ...owner, key: v.string(), storageId: v.id("_storage"), size: v.number() },
-  returns: v.null(),
-  handler: async (ctx, { secret, ...args }) => {
-    await requireOwner(ctx, args.deviceId, secret);
+  returns: v.union(v.literal("saved"), v.literal("too_big"), v.literal("full")),
+  handler: async (ctx, { secret, deviceId, key, storageId }) => {
+    await requireOwner(ctx, deviceId, secret);
+    const stored = await storedFile(ctx, storageId);
+    if (!stored) throw new Error("That upload was not found.");
+    const refuse = async (why: "too_big" | "full") => {
+      await ctx.storage.delete(storageId);
+      return why;
+    };
+    if (key.length > 200 || stored.size > LIMITS.file()) return await refuse("too_big");
     const existing = await ctx.db
       .query("backupFiles")
-      .withIndex("by_device_key", (q) => q.eq("deviceId", args.deviceId).eq("key", args.key))
+      .withIndex("by_device_key", (q) => q.eq("deviceId", deviceId).eq("key", key))
       .unique();
     if (existing) {
       // The same key always holds the same file, so the second copy is not needed.
-      await ctx.storage.delete(args.storageId);
-      return null;
+      await ctx.storage.delete(storageId);
+      return "saved" as const;
     }
-    await ctx.db.insert("backupFiles", args);
-    return null;
+    const used = await usage(ctx, deviceId);
+    if (used.bytes + stored.size > LIMITS.bytes() || used.files >= LIMITS.files) return await refuse("full");
+    await ctx.db.insert("backupFiles", { deviceId, key, storageId, size: stored.size });
+    await setUsage(ctx, deviceId, { bytes: used.bytes + stored.size, files: used.files + 1 });
+    return "saved" as const;
   },
 });
 
@@ -85,7 +146,14 @@ export const saveProject = mutation({
       .withIndex("by_device_local", (q) => q.eq("deviceId", args.deviceId).eq("localId", args.localId))
       .unique();
     if (existing) await ctx.db.replace(existing._id, args);
-    else await ctx.db.insert("backupProjects", args);
+    else {
+      const all = await ctx.db
+        .query("backupProjects")
+        .withIndex("by_device_local", (q) => q.eq("deviceId", args.deviceId))
+        .take(LIMITS.projects);
+      if (all.length >= LIMITS.projects) throw new Error("This backup holds as many songs as it can.");
+      await ctx.db.insert("backupProjects", args);
+    }
     return null;
   },
 });
@@ -101,6 +169,7 @@ export const removeProject = mutation({
       .withIndex("by_device_local", (q) => q.eq("deviceId", deviceId).eq("localId", localId))
       .unique();
     if (project) await ctx.db.delete(project._id);
+    const used = await usage(ctx, deviceId);
     for (const key of fileKeys.slice(0, 200)) {
       const file = await ctx.db
         .query("backupFiles")
@@ -109,7 +178,10 @@ export const removeProject = mutation({
       if (!file) continue;
       await ctx.storage.delete(file.storageId);
       await ctx.db.delete(file._id);
+      used.bytes -= file.size;
+      used.files -= 1;
     }
+    await setUsage(ctx, deviceId, used);
     return null;
   },
 });
@@ -166,10 +238,14 @@ export const erase = mutation({
       .query("backupFiles")
       .withIndex("by_device_key", (q) => q.eq("deviceId", deviceId))
       .take(100);
+    const used = await usage(ctx, deviceId);
     for (const file of files) {
       await ctx.storage.delete(file.storageId);
       await ctx.db.delete(file._id);
+      used.bytes -= file.size;
+      used.files -= 1;
     }
+    await setUsage(ctx, deviceId, used);
     const projects = await ctx.db
       .query("backupProjects")
       .withIndex("by_device_local", (q) => q.eq("deviceId", deviceId))

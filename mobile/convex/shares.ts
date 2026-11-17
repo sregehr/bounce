@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { owner, owns, requireOwner } from "./backup";
+import { LIMITS, owner, owns, requireOwner, storedFile } from "./backup";
 
 const MAX_NOTES = 300;
 
@@ -12,13 +12,21 @@ function newToken() {
 
 /**
  * Puts a song up behind a listening link, or replaces the audio behind the link it already has,
- * so a link that was sent keeps working after a new mix. Returns the link's token.
+ * so a link that was sent keeps working after a new mix. Returns the link's token, or an empty
+ * string when the audio is too big or the device already has as many links as it may.
  */
 export const create = mutation({
   args: { ...owner, localId: v.string(), title: v.string(), artist: v.string(), audio: v.id("_storage"), durationSec: v.number(), peaks: v.array(v.number()) },
   returns: v.string(),
   handler: async (ctx, { secret, ...args }) => {
     await requireOwner(ctx, args.deviceId, secret);
+    // Only audio of a sensible size goes behind a link; anything else is thrown away.
+    const stored = await storedFile(ctx, args.audio);
+    if (!stored) throw new Error("That upload was not found.");
+    if (stored.size > LIMITS.share() || !(stored.contentType ?? "").startsWith("audio/")) {
+      await ctx.storage.delete(args.audio);
+      return "";
+    }
     const song = { ...args, title: args.title.slice(0, 80), artist: args.artist.slice(0, 80), peaks: args.peaks.slice(0, 160).map((p) => Math.max(0, Math.min(1, p))) };
     const existing = await ctx.db
       .query("shares")
@@ -28,6 +36,14 @@ export const create = mutation({
       if (existing.audio !== song.audio) await ctx.storage.delete(existing.audio);
       await ctx.db.patch(existing._id, song);
       return existing.token;
+    }
+    const mine = await ctx.db
+      .query("shares")
+      .withIndex("by_device_local", (q) => q.eq("deviceId", args.deviceId))
+      .take(LIMITS.shares);
+    if (mine.length >= LIMITS.shares) {
+      await ctx.storage.delete(args.audio);
+      return "";
     }
     const token = newToken();
     await ctx.db.insert("shares", { ...song, token });

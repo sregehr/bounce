@@ -10,8 +10,8 @@ import { decode } from '@/engine/engine';
 import type { RecordedTake } from '@/engine/types';
 
 import { blobBytes, blobs, makeBlob } from './db';
-import { newId, type Beat, type LoopChoice, type Project, type Take } from './model';
-import { activeTake, addTake, createProject, getProject, patchProject } from './store';
+import { type Layer, newId, type Beat, type LoopChoice, type Project, type Take } from './model';
+import { activeTake, addTake, createProject, getProject, patchProject, stacks } from './store';
 
 // ---------- Sound in and out of storage ----------
 
@@ -115,7 +115,7 @@ function resample(x: Float32Array, from: number, to: number): Float32Array {
  * Lines a recording up with the beat and stores it as a take. `punchAtSec` keeps everything
  * before that point from the previous take.
  */
-export async function saveTake(projectId: string, recorded: RecordedTake, options: { latencyMs: number; origin: Take['origin']; punchAtSec?: number }): Promise<Take | null> {
+export async function saveTake(projectId: string, recorded: RecordedTake, options: { latencyMs: number; origin: Take['origin']; punchAtSec?: number; layer?: Layer['role'] }): Promise<Take | null> {
   const project = getProject(projectId);
   if (!project) return null;
   const rate = project.beat.sampleRate;
@@ -128,8 +128,15 @@ export async function saveTake(projectId: string, recorded: RecordedTake, option
     const span = loop.end - loop.start;
     phaseSec = (((phaseSec - options.latencyMs / 1000) % span) + span) % span;
   } else {
-    // What was sung against bar one arrived late by the round trip; take that off the front.
-    mono = mono.subarray(Math.min(late, mono.length));
+    // What was sung against the beat arrived late by the round trip; take that off the front.
+    // Held from listening to the whole beat, only the last minute is here, so silence goes in
+    // front of it to put it back where it was sung.
+    const shift = Math.round(phaseSec * rate) - late;
+    if (shift > 0) {
+      const placed = new Float32Array(shift + mono.length);
+      placed.set(mono, shift);
+      mono = placed;
+    } else mono = mono.subarray(Math.min(-shift, mono.length));
     phaseSec = 0;
   }
   let origin = options.origin;
@@ -165,8 +172,50 @@ export async function saveTake(projectId: string, recorded: RecordedTake, option
     voice: null,
   };
   await savePcm(take.key, [mono], rate);
-  addTake(projectId, take);
+  addTake(projectId, take, options.layer);
   return take;
+}
+
+// ---------- Layers and comping ----------
+
+/** The layers that can really be stacked on a take: ones whose take still exists and lines up with it. */
+export function layersOf(project: Project, lead: Take) {
+  return (project.layers ?? []).flatMap((l) => {
+    const take = project.takes.find((t) => t.id === l.takeId);
+    return take && stacks(lead, take) ? [{ ...l, take }] : [];
+  });
+}
+
+/** Which take each bar of the lead plays from, for the bars that have been swapped. */
+export function compOf(project: Project, lead: Take) {
+  return Object.entries(project.comp ?? {}).flatMap(([bar, id]) => {
+    const take = project.takes.find((t) => t.id === id);
+    return take && stacks(lead, take) && Number(bar) >= 0 ? [{ bar: Number(bar), take }] : [];
+  });
+}
+
+/** Changes whenever the stack on a take does. */
+const stackKey = (project: Project, lead: Take) => JSON.stringify([layersOf(project, lead).map((l) => [l.takeId, l.level, l.pan]), compOf(project, lead).map((c) => [c.bar, c.take.id])]);
+
+/** The lead vocal: the picked take, with any swapped bars taken from the takes they were swapped to. */
+async function leadOf(project: Project, lead: Take, barFrames: number): Promise<Float32Array> {
+  const base = (await loadPcm(lead.key)).channels[0];
+  const swaps = barFrames > 0 ? compOf(project, lead) : [];
+  if (swaps.length === 0) return base;
+  const length = Math.max(base.length, ...swaps.map((c) => Math.min(c.take.durationSec * lead.sampleRate, (c.bar + 1) * barFrames)));
+  const out = new Float32Array(Math.round(length));
+  out.set(base);
+  const fade = Math.round(lead.sampleRate * 0.008);
+  for (const { bar, take } of swaps) {
+    const from = (await loadPcm(take.key)).channels[0];
+    const start = bar * barFrames, end = Math.min(out.length, start + barFrames);
+    for (let i = Math.max(0, start - fade); i < Math.min(out.length, end + fade); i++) {
+      // A short crossfade either side of the bar line, so the join does not click.
+      const k = i < start + fade ? (i - (start - fade)) / (fade * 2) : i > end - fade ? (end + fade - i) / (fade * 2) : 1;
+      out[i] = out[i] * (1 - k) + (from[i] ?? 0) * k;
+    }
+  }
+  return out;
 }
 
 // ---------- Rendering ----------
@@ -184,7 +233,8 @@ export async function renderInput(project: Project, options: MixOptions = {}): P
     sampleRate: rate,
     beat: beat.channels,
     loop: loop ? { start: Math.round(loop.start * rate), end: Math.round(loop.end * rate) } : null,
-    take: take ? { mono: (await loadPcm(take.key)).channels[0], phase: Math.round(take.phaseSec * rate) } : null,
+    take: take ? { mono: await leadOf(project, take, bar ? Math.round(bar * rate) : 0), phase: Math.round(take.phaseSec * rate) } : null,
+    layers: take ? await Promise.all(layersOf(project, take).map(async (l) => ({ mono: (await loadPcm(l.take.key)).channels[0], level: l.level, pan: l.pan }))) : undefined,
     polish: project.polish,
     master: project.master,
     overrides: project.overrides,
@@ -194,7 +244,7 @@ export async function renderInput(project: Project, options: MixOptions = {}): P
     targetLufs: options.targetLufs,
     voice: take?.voice ?? undefined,
     stageKeys: {
-      vocal: JSON.stringify([take?.id, take?.loop, project.beat.bpm, project.polish.style, project.polish.double, project.overrides.vocal ?? null, project.space?.vocal ?? null, project.space?.roomCut ?? null]),
+      vocal: JSON.stringify([take?.id, take ? stackKey(project, take) : null, take?.loop, project.beat.bpm, project.polish.style, project.polish.double, project.overrides.vocal ?? null, project.space?.vocal ?? null, project.space?.roomCut ?? null]),
       beat: JSON.stringify([project.beat.key, take?.id ?? null, take?.loop ?? null, project.beat.bpm, project.overrides.beat ?? null, project.space?.beat ?? null]),
     },
   };
@@ -203,7 +253,7 @@ export async function renderInput(project: Project, options: MixOptions = {}): P
 /** Changes whenever something that affects the sound changes. */
 export function mixSignature(project: Project, options: MixOptions = {}) {
   const take = options.withTake === false ? null : activeTake(project);
-  return JSON.stringify([project.id, project.beat.key, project.beat.bpm, take?.id ?? null, take?.loop ?? null, project.polish, project.master, project.overrides, project.space ?? null, options.include ?? 'mix', options.targetLufs === undefined ? 'style' : options.targetLufs]);
+  return JSON.stringify([project.id, project.beat.key, project.beat.bpm, take?.id ?? null, take ? stackKey(project, take) : null, take?.loop ?? null, project.polish, project.master, project.overrides, project.space ?? null, options.include ?? 'mix', options.targetLufs === undefined ? 'style' : options.targetLufs]);
 }
 
 const mixes = new Map<string, Promise<RenderOutput>>();

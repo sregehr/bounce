@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CoverImage } from '@/cover/CoverImage';
 import { useProject } from '@/data/store';
-import { spectrum } from '@/engine/engine';
+import { spectrum, setNowPlaying } from '@/engine/engine';
 import { Btn, Eyebrow, NavLink, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
@@ -46,6 +46,14 @@ export default function Player() {
   const insets = useSafeAreaInsets();
   const wide = useWide();
   useStopOnLeave();
+  // The lock screen and headphone buttons show this song and can play, pause and scrub it.
+  const sessionTitle = project?.name;
+  const sessionCredit = now.credit;
+  useEffect(() => {
+    if (!sessionTitle) return;
+    setNowPlaying({ title: sessionTitle, artist: sessionCredit });
+    return () => setNowPlaying(null);
+  }, [sessionTitle, sessionCredit]);
 
   if (!project) return <Redirect href="/vault" />;
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Platform, Pressable, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -12,8 +12,8 @@ import { Btn, MicIcon, Muted, Txt } from './kit';
 import { Logo } from './Logo';
 import { PersonalMenu } from './PersonalMenu';
 import { askForMic, useAskingForMic, useRecordControl } from './recordControl';
-import { TOP_NAV_HEIGHT, tabFor, type Tab } from './tabs';
-import { RAIL_WIDTH } from './wide';
+import { TOP_NAV_HEIGHT, hidesTabBar, tabFor, type Tab } from './tabs';
+import { BAR_MAX, RAIL_WIDTH, useGutter } from './wide';
 import { C } from './theme';
 
 type IconProps = { on: boolean; color: string };
@@ -124,18 +124,22 @@ function useNav() {
   const path = usePathname();
   const library = useLibrary((l) => l);
   const recording = useEngine((e) => e.take.mode !== 'idle' || e.capture.status !== 'idle');
+  // Leaving the mic screen would drop a take that has not been saved yet, so the tabs wait for that too.
+  const holding = !!useRecordControl()?.holding;
   const tab = tabFor(path, !!library.projects.find((p) => p.id === library.currentId)?.saved);
-  return { path, library, tab: recording ? null : tab };
+  return { path, library, tab: recording || holding ? null : tab };
 }
 
 /** The logo and the personal menu, above every screen after the welcome. */
 export function TopNav() {
   const { path, tab } = useNav();
   const insets = useSafeAreaInsets();
+  // The logo and the menu line up with the column of content below them.
+  const gutter = useGutter();
   if (!tab) return null;
   return (
     <View style={[{ position: 'absolute', left: 0, right: 0, top: 0, paddingTop: insets.top, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.14)' }, glass]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: 24, paddingRight: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: gutter, paddingRight: gutter - 12 }}>
         <Pressable accessibilityRole="link" accessibilityLabel="Bounce: home" onPress={() => follow({ to: '/', id: null }, path)} hitSlop={8}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
             <Logo size={20} />
@@ -221,7 +225,10 @@ export function TabBar() {
   const nav = useMic();
   const { path, library, tab, record, asking, is } = nav;
   const insets = useSafeAreaInsets();
-  if (!tab && !record) return null;
+  const { width } = useWindowDimensions();
+  // On a wider screen the capsule stays a comfortable size in the middle instead of stretching edge to edge.
+  const side = Math.max(14, Math.round((width - BAR_MAX) / 2));
+  if ((!tab && !record) || hidesTabBar(path)) return null;
 
   const button = (
     <View style={{ width: MIC + 12, height: BAR_HEIGHT, alignItems: 'center' }}>
@@ -230,11 +237,11 @@ export function TabBar() {
   );
 
   // While a take runs the tabs step aside, so a stray tap cannot end it; only the button stays.
-  if (!tab) return <View style={{ position: 'absolute', left: 14, right: 14, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, alignItems: 'center' }}>{button}</View>;
+  if (!tab) return <View style={{ position: 'absolute', left: side, right: side, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, alignItems: 'center' }}>{button}</View>;
 
   return (
-    <View accessibilityRole="tablist" style={[{ position: 'absolute', left: 14, right: 14, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
-      {asking && <MicPrompt nav={nav} cover={{ left: -14, right: -14, bottom: -40, height: 2000 }} style={{ left: 0, right: 0, bottom: BAR_HEIGHT + 24 }} />}
+    <View accessibilityRole="tablist" style={[{ position: 'absolute', left: side, right: side, bottom: Math.max(12, insets.bottom), height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
+      {asking && <MicPrompt nav={nav} cover={{ left: -side, right: -side, bottom: -40, height: 2000 }} style={{ left: 0, right: 0, bottom: BAR_HEIGHT + 24 }} />}
       <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
       <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
       {/* The mic sits in the middle, raised out of the capsule. */}

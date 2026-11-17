@@ -2,19 +2,27 @@ import { useEffect, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { Take } from '@/data/model';
-import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
+import type { Layer, Take } from '@/data/model';
+import { LAYER_START } from '@/data/model';
+import { activeTake, deleteTake, patchProject, setCompBar, setLayers, stacks, useLibrary, useProject } from '@/data/store';
+import { barSeconds, compOf, layersOf } from '@/data/studio';
 import { useSong } from '@/data/song';
 import { NoSong } from '@/ui/AddBeat';
 import { BeatCard } from '@/ui/BeatDetails';
-import { Btn, Eyebrow, Muted, Screen, Txt, s } from '@/ui/kit';
+import { Btn, Chip, Eyebrow, Muted, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
 import { Status, SwipeRow } from '@/ui/parts';
 import { SongHeader } from '@/ui/SongHeader';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
-import { Columns, useWide } from '@/ui/wide';
+import { Columns, useGutter, useWide } from '@/ui/wide';
+
+const ROLES = ['Double', 'Ad-lib', 'Hook'] as const;
+const ROLE_OF = { Double: 'double', 'Ad-lib': 'adlib', Hook: 'hook' } as const;
+const ROLE_LABEL = { double: 'Double', adlib: 'Ad-lib', hook: 'Hook' } as const;
+// One colour per take, so a bar borrowed from another take reads at a glance.
+const TINTS = ['#ffb020', '#7cc4ff', '#9be28a', '#ff8fb1', '#c9a6ff', '#ffd66b'];
 
 // Height of the pinned next step, above the floating bar.
 const NEXT_HEIGHT = 62;
@@ -27,6 +35,7 @@ export default function Song() {
   const song = useSong(take ? project : null, { autoplay: false, repeat });
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const insets = useSafeAreaInsets();
+  const gutter = useGutter();
   const [details, setDetails] = useState(false);
   const wide = useWide();
   useStopOnLeave();
@@ -81,6 +90,76 @@ export default function Song() {
           <Muted>Nothing recorded over this beat yet. Tap the mic {wide ? 'in the rail' : 'below'} to record a take, and it shows up here.</Muted>
         );
 
+  // More takes stacked on the picked one, and bars of it swapped for bars of another take.
+  const others = take ? project.takes.filter((k) => stacks(take, k)) : [];
+  const layered = take ? layersOf(project, take) : [];
+  const free = others.filter((k) => !layered.some((l) => l.takeId === k.id));
+  const swaps = take ? compOf(project, take) : [];
+  const bar = barSeconds(project.beat.bpm);
+  const bars = take && bar ? Math.min(32, Math.max(1, Math.ceil(Math.max(take.durationSec, ...others.map((k) => k.durationSec)) / bar))) : 0;
+  const tint = (k: Take) => TINTS[project.takes.indexOf(k) % TINTS.length];
+  const editLayer = (id: string, patch: Partial<Layer>) => setLayers(project.id, (all) => all.map((l) => (l.takeId === id ? { ...l, ...patch } : l)));
+  const stack = take && others.length > 0 && (
+          <View style={{ gap: 14 }}>
+            <View style={{ gap: 4 }}>
+              <Eyebrow>Layers</Eyebrow>
+              <Muted size={13}>Stack other takes on take {take.number}: a double under the lead, ad-libs off to one side, a hook on top.</Muted>
+            </View>
+            {layered.map((l) => (
+              <View key={l.takeId} style={{ gap: 2, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: C.border }}>
+                <View style={[s.row, s.between, { gap: 8, minHeight: 40 }]}>
+                  <Txt size={15} w="semi">
+                    Take {l.take.number}
+                  </Txt>
+                  <Chip label="Remove" onPress={() => setLayers(project.id, (all) => all.filter((x) => x.takeId !== l.takeId))} style={{ paddingHorizontal: 12 }} />
+                </View>
+                <Segmented options={ROLES} value={ROLE_LABEL[l.role]} onChange={(v) => editLayer(l.takeId, { role: ROLE_OF[v], ...LAYER_START[ROLE_OF[v]] })} variant="compact" />
+                <SliderRow label={`Take ${l.take.number} level`} value={l.level} display={`${l.level}`} onChange={(level) => editLayer(l.takeId, { level })} labelWidth={110} valueWidth={40} />
+                <SliderRow label={`Take ${l.take.number} pan`} value={l.pan} min={-100} max={100} step={5} reset={0} display={l.pan === 0 ? 'Centre' : l.pan < 0 ? `L ${-l.pan}` : `R ${l.pan}`} onChange={(pan) => editLayer(l.takeId, { pan })} labelWidth={110} valueWidth={56} />
+              </View>
+            ))}
+            {free.length > 0 && (
+              <View style={[s.row, { gap: 8, flexWrap: 'wrap' }]}>
+                {free.map((k) => (
+                  <Chip key={k.id} label={`Layer take ${k.number}`} onPress={() => setLayers(project.id, (all) => [...all, { takeId: k.id, role: 'double', ...LAYER_START.double }])} style={{ paddingHorizontal: 14 }} />
+                ))}
+              </View>
+            )}
+            {bars > 1 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ gap: 4 }}>
+                  <Eyebrow>Best bars</Eyebrow>
+                  <Muted size={13}>Tap a bar to have it play from another take.</Muted>
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {Array.from({ length: bars }, (_, i) => {
+                    const from = swaps.find((c) => c.bar === i)?.take ?? take;
+                    // Each tap moves the bar on to the next take that has it, and round to the picked take again.
+                    const order = [take, ...others.filter((k) => k.durationSec > i * (bar ?? 1))];
+                    const next = order[(order.indexOf(from) + 1) % order.length];
+                    return (
+                      <Pressable
+                        key={i}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Bar ${i + 1}, from take ${from.number}`}
+                        onPress={() => setCompBar(project.id, i, next.id === take.id ? null : next.id)}
+                        style={{ width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: from.id === take.id ? C.dim : tint(from) }}
+                      >
+                        <Txt size={11} color={from.id === take.id ? C.muted : C.bg}>
+                          {i + 1}
+                        </Txt>
+                        <Txt size={13} w="semi" color={from.id === take.id ? C.text : C.bg}>
+                          T{from.number}
+                        </Txt>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+          </View>
+        );
+
   const beat = <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />;
 
   const lyrics = (
@@ -113,6 +192,7 @@ export default function Song() {
           left={
             <>
               {takes}
+              {stack}
               {beat}
             </>
           }
@@ -128,6 +208,8 @@ export default function Song() {
 
         {takes}
 
+        {stack}
+
         {/* Until there is a take, the beat is the thing to play, so its card comes first. After that the lyrics do. */}
         {!take && beat}
 
@@ -140,7 +222,7 @@ export default function Song() {
 
       {/* The next step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
       {take && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
           <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, minHeight: 52 }} />
         </View>
       )}

@@ -3,14 +3,19 @@ import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 
 import type { LoopChoice } from '@/data/model';
-import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
-import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studio';
+import { activeTake, patchProject, setSettings, useLibrary, useProject } from '@/data/store';
+import { fileBase } from '@/data/exporting';
+import { saveFiles } from '@/data/files';
+import { barSeconds, barsIn, getMix, loadPcm, loopSeconds, saveTake } from '@/data/studio';
+import { encodeWav } from '@/dsp/wav';
 import { engineState, inputAllowed, openInput, startTake, stopTake, useEngine, wake } from '@/engine/engine';
+import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
-import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Pulse, Screen, Segmented, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
 import { useTiming } from '@/ui/timing';
-import { useOnScreen, useTask } from '@/ui/hooks';
+import { success, thump } from '@/ui/haptics';
+import { useArmed, useOnScreen, useRecordingGuard, useTask } from '@/ui/hooks';
 import { askForMic, setRecordControl } from '@/ui/recordControl';
 import { SongHeader } from '@/ui/SongHeader';
 import { C, clock, meterPct, plural } from '@/ui/theme';
@@ -20,6 +25,8 @@ const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
 type Length = (typeof LENGTHS)[number];
 const toBars = (l: Length): LoopChoice['bars'] => (l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0);
 const toLength = (b: LoopChoice['bars']): Length => (b === 8 ? '8 bars' : b === 16 ? '16 bars' : 'Whole beat');
+/** A recording on its way into the song, with what is needed to store it. */
+type Pending = { recorded: RecordedTake; origin: 'kept' | 'recorded'; punchAtSec?: number; layer?: boolean };
 
 export default function Vocals() {
   const project = useProject();
@@ -28,9 +35,16 @@ export default function Vocals() {
   const take = useEngine((e) => e.take);
   const task = useTask();
   const [punch, setPunch] = useState(false);
+  // Recording on top of the picked take: it plays along with the beat, and the new take joins it as a layer.
+  const [layering, setLayering] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  // What was being held when a beat played through to its end while listening: still there to keep.
+  const [parked, setParked] = useState<RecordedTake | null>(null);
+  // A take that could not be written to storage. It stays here until it is saved, exported or dropped.
+  const [unsaved, setUnsaved] = useState<Pending | null>(null);
   const [setup, setSetup] = useState(false);
   const finishing = useRef(false);
+  const [dropArmed, armDrop, disarmDrop] = useArmed();
   const [onScreen, setOnScreen] = useState(false);
   const live = input.status === 'ready';
   const mode = take.mode;
@@ -58,29 +72,75 @@ export default function Vocals() {
   const cells = loop ? loop.bars : 16;
   const canPunch = !!loop && !!bar && !!previous && previous.phaseSec < 0.001 && previous.loop.bars === project?.loop.bars && previous.loop.startBar === project?.loop.startBar;
   const punchBar = loop ? Math.floor(loop.bars / 2) : 0;
+  // A layer has to line up with the picked take bar for bar, so it is recorded over the same stretch.
+  const canLayer = !!previous && previous.phaseSec < 0.001 && previous.loop.bars === project?.loop.bars && previous.loop.startBar === project?.loop.startBar;
   const timing = useTiming();
   const latencyMs = timing.ms;
+  // One bar of clicks before recording, at the beat's tempo when it is known.
+  const countIn = settings.countIn !== false;
+  const beatSec = bar ? bar / 4 : 0.5;
+  const counting = mode === 'recording' && take.lead > 0;
+  const count = counting ? Math.max(1, Math.ceil(take.lead / beatSec - 0.05)) : 0;
+
+  useRecordingGuard(mode === 'recording' || !!unsaved);
+
+  /** Writes a recording into the song. If storage refuses it, the recording is kept in hand. */
+  const store = async (pending: Pending, then?: () => void) => {
+    if (!project) return;
+    let made;
+    try {
+      made = await saveTake(project.id, pending.recorded, { latencyMs, origin: pending.origin, punchAtSec: pending.punchAtSec, layer: pending.layer ? 'adlib' : undefined });
+    } catch {
+      setUnsaved(pending);
+      throw new Error('That take could not be saved. Storage on this device may be full. It is still here.');
+    }
+    setUnsaved(null);
+    if (!made) throw new Error('That take was too short to keep.');
+    success();
+    setSaved(`Take ${made.number} saved${pending.layer ? ' as a layer' : ''} · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
+    setPunch(false);
+    then?.();
+  };
 
   const finish = async (then?: () => void) => {
     if (!project || finishing.current) return;
+    // Stopped during the count-in: nothing has been recorded yet, so it is simply called off.
+    if (counting) return void stopTake(false);
     finishing.current = true;
-    const wasListening = mode === 'listening';
-    const recorded = stopTake(true);
+    if (mode === 'recording') thump();
+    const wasListening = mode !== 'recording';
+    const recorded = mode === 'idle' ? parked : stopTake(true);
+    setParked(null);
     await task.run(async () => {
       if (!recorded) throw new Error('Nothing was recorded. Check the microphone level and try again.');
       if (recorded.peak < 0.003) throw new Error('That take was silent. Check that the right microphone is picked under Microphone and timing, then try again.');
-      const made = await saveTake(project.id, recorded, { latencyMs, origin: wasListening ? 'kept' : 'recorded', punchAtSec: !wasListening && punch && canPunch && bar ? punchBar * bar : undefined });
-      if (!made) throw new Error('That take was too short to keep.');
-      setSaved(`Take ${made.number} saved · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
-      setPunch(false);
-      then?.();
+      const layer = !wasListening && layering && canLayer;
+      await store({ recorded, origin: wasListening ? 'kept' : 'recorded', punchAtSec: !wasListening && !layer && punch && canPunch && bar ? punchBar * bar : undefined, layer }, layer ? () => router.push('/song') : then);
+      setLayering(false);
     });
     finishing.current = false;
   };
 
-  // A beat that plays through once ends the take by itself.
+  const retry = () => unsaved && task.run(() => store(unsaved, () => router.push('/playback')));
+  const saveAsFile = () =>
+    unsaved &&
+    project &&
+    task.run(async () => {
+      const name = await saveFiles([{ name: `${fileBase(project.name)} take.wav`, data: encodeWav([unsaved.recorded.mono], unsaved.recorded.sampleRate, 24), type: 'audio/wav' }]);
+      if (!name) throw new Error('This device could not save the file either. Free some space, then try again.');
+      setUnsaved(null);
+      setSaved(`Saved to your downloads as ${name}. It is not in this song.`);
+    });
+
+  // A beat that plays through once ends by itself. A recording is saved; a listen-through is
+  // not, but what was held stays in hand so "Keep that" still works.
   useEffect(() => {
-    if (take.ended && mode !== 'idle') void finish(mode === 'recording' ? () => router.push('/playback') : undefined);
+    if (!take.ended || mode === 'idle') return;
+    if (mode === 'recording') void finish(() => router.push('/playback'));
+    else {
+      const held = stopTake(true);
+      setParked(held && held.peak >= 0.003 ? held : null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [take.ended]);
 
@@ -89,22 +149,27 @@ export default function Vocals() {
   const press = useRef(() => {});
   const control = !live ? 'off' : mode === 'recording' ? 'recording' : 'ready';
   useEffect(() => {
-    if (onScreen && project) setRecordControl({ state: control, busy: task.busy, press: () => press.current() });
-  }, [onScreen, !!project, control, task.busy]);
+    if (onScreen && project) setRecordControl({ state: control, busy: task.busy || !!unsaved, holding: !!unsaved, press: () => press.current() });
+  }, [onScreen, !!project, control, task.busy, !!unsaved]);
 
   if (!project || project.saved) return <NoSong title="Nothing to record over yet" about="Add a beat, then come back here and rap over it." />;
 
   const begin = (next: 'listening' | 'recording') =>
     task.run(async () => {
       wake();
+      if (next === 'recording') thump();
       setSaved(null);
+      setParked(null);
       if (mode !== 'idle') stopTake(false);
-      const beat = await loadPcm(project.beat.key);
-      await startTake(next, beat, loop ? { start: loop.start, end: loop.end } : null);
+      const stacking = next === 'recording' && layering && canLayer;
+      // For a layer the picked take plays too, mixed as it is now, once through from its start.
+      const beat = stacking ? await getMix(project) : await loadPcm(project.beat.key);
+      await startTake(next, beat, loop && !stacking ? { start: loop.start, end: loop.end } : null, next === 'recording' && countIn ? { beats: 4, beatSec } : undefined);
     });
 
   press.current = () => {
-    if (task.busy) return;
+    // A take that is still waiting to be saved comes first: recording again would replace it.
+    if (task.busy || unsaved) return;
     if (!live) return askForMic(true);
     if (mode === 'recording') void finish();
     else void begin('recording');
@@ -112,13 +177,13 @@ export default function Vocals() {
 
   const active = mode !== 'idle';
   const within = active ? take.elapsed % span : 0;
-  const cell = active ? Math.min(cells - 1, Math.floor((within / span) * cells)) : -1;
+  const cell = active && !counting ? Math.min(cells - 1, Math.floor((within / span) * cells)) : -1;
   const pass = Math.floor(take.elapsed / span) + 1;
   const setLoop = (patch: Partial<LoopChoice>) => !active && patchProject(project.id, { loop: { ...project.loop, ...patch } }, false);
   const length = toLength(project.loop.bars);
   const first = (loop?.startBar ?? 0) + 1;
 
-  const header = <SongHeader project={project} locked={active} />;
+  const header = <SongHeader project={project} locked={active || !!unsaved} />;
 
   // The same empty state as Mix: what is missing, and one button that starts it.
   const empty = !active && project.takes.length === 0 && (
@@ -140,7 +205,7 @@ export default function Vocals() {
             <Eyebrow>{loop ? `Loop · bars ${first}–${first + loop.bars - 1}` : 'Whole beat · once through'}</Eyebrow>
             {active ? (
               <Txt size={13} w="semi" color={mode === 'recording' ? C.recText : C.accent}>
-                {loop ? `Bar ${first + cell} · pass ${pass}` : clock(take.elapsed)}
+                {counting ? `Count-in · ${count}` : loop ? `Bar ${first + cell} · pass ${pass}` : clock(take.elapsed)}
               </Txt>
             ) : (
               <NavLink size={13} w="semi" style={{ minHeight: 24 }} onPress={() => live && begin('listening')}>
@@ -183,12 +248,46 @@ export default function Vocals() {
           label={`Punch in at bar ${first + punchBar}`}
           sub={`Keeps bars ${first}–${first + punchBar - 1} from take ${previous?.number}`}
           checked={punch}
-          onChange={(v) => !active && setPunch(v)}
+          onChange={(v) => !active && (setPunch(v), v && setLayering(false))}
           divided
           minHeight={56}
         />
       );
 
+  const layerOption = live && canLayer && (
+        <Option
+          label={`Record as a layer on take ${previous?.number}`}
+          sub="That take plays along. The new one is stacked on it, for doubles and ad-libs."
+          checked={layering}
+          onChange={(v) => !active && (setLayering(v), v && setPunch(false))}
+          divided
+          minHeight={56}
+        />
+      );
+
+  const countInOption = live && (
+        <Option label="Count-in" sub={bar ? 'One bar of clicks before recording starts' : 'Four clicks before recording starts'} checked={countIn} onChange={(v) => !active && setSettings({ countIn: v })} divided minHeight={56} />
+      );
+
+  // On a phone the bars sit right under the loop, so they can be read while rapping.
+  const lyrics = project.lyrics.trim() ? (
+        <Card style={{ padding: 16, gap: 8 }}>
+          <Eyebrow>Your bars</Eyebrow>
+          <ScrollView nestedScrollEnabled style={{ maxHeight: Math.max(160, Math.min(300, height * 0.3)) }} showsVerticalScrollIndicator={false}>
+            <Txt size={18} lh={1.5}>
+              {project.lyrics}
+            </Txt>
+          </ScrollView>
+        </Card>
+      ) : (
+        !active && !unsaved && (
+          <NavLink size={13} to="/song" style={{ minHeight: 28 }}>
+            Write your bars on Song to read them here
+          </NavLink>
+        )
+      );
+
+  const canKeep = !task.busy && !unsaved && ((mode === 'listening' && take.held >= 2) || (mode === 'idle' && !!parked));
   const listening = live && (
         <View style={[s.row, s.divided, { minHeight: 56 }]}>
           <View style={{ flex: 1, gap: 2 }}>
@@ -196,10 +295,14 @@ export default function Vocals() {
               Always listening
             </Txt>
             <Txt size={13} color={C.muted}>
-              {mode === 'listening' ? `Holding the last ${clock(take.held)}. Missed the start?` : `Play the ${loop ? 'loop' : 'beat'} and rap. The last 60 s are held.`}
+              {mode === 'listening'
+                ? `Holding the last ${clock(take.held)}. Missed the start?`
+                : parked
+                  ? `The beat finished. Still holding the last ${clock(parked.mono.length / parked.sampleRate)}.`
+                  : `Play the ${loop ? 'loop' : 'beat'} and rap. The last 60 s are held.`}
             </Txt>
           </View>
-          <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: mode === 'listening' && take.held >= 2 ? 1 : 0.35 }} onPress={() => mode === 'listening' && take.held >= 2 && finish(() => router.push('/playback'))} />
+          <Chip label="Keep that" style={{ paddingHorizontal: 16, borderColor: C.text, opacity: canKeep ? 1 : 0.35 }} onPress={() => canKeep && finish(() => router.push('/playback'))} />
         </View>
       );
 
@@ -243,14 +346,24 @@ export default function Vocals() {
         )
       );
 
-  const message = (task.error || saved) && (
-        <Txt size={14} w="medium" color={task.error ? C.recText : C.accent} center>
-          {task.error ?? saved}
-        </Txt>
+  // Shown right under the song header, where it cannot end up behind the bottom bar.
+  const message = (task.error || saved || unsaved) && (
+        <View accessibilityRole="alert" style={{ gap: 12, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: task.error || unsaved ? C.rec : C.accent, backgroundColor: C.surface }}>
+          <Txt size={14} w="medium" color={task.error || unsaved ? C.recText : C.accent}>
+            {task.error ?? saved ?? 'A take is waiting to be saved.'}
+          </Txt>
+          {unsaved && (
+            <View style={[s.row, { gap: 8, flexWrap: 'wrap' }]}>
+              <Chip label="Try again" on onPress={() => !task.busy && retry()} style={{ paddingHorizontal: 16 }} />
+              <Chip label="Save as a file" onPress={() => !task.busy && saveAsFile()} style={{ paddingHorizontal: 16, borderColor: C.text }} />
+              <Chip label={dropArmed ? 'Tap again to discard' : 'Discard'} onPress={() => (dropArmed ? (setUnsaved(null), task.setError(null), disarmDrop()) : armDrop())} style={{ paddingHorizontal: 16 }} />
+            </View>
+          )}
+        </View>
       );
 
   // Hearing a take back needs one to exist.
-  const canHear = mode === 'recording' || project.takes.length > 0;
+  const canHear = !unsaved && (mode === 'recording' || project.takes.length > 0);
   const hear = () => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')));
 
   // Wide: the loop and the mic on the left, the bars to rap on the right, and hearing it back in the header. Recording is the mic in the rail.
@@ -262,9 +375,9 @@ export default function Vocals() {
           <View style={[s.row, { gap: 24 }]}>
             {mode === 'recording' && (
               <View style={[s.row, { gap: 12 }]}>
-                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: C.rec }} />
+                <Pulse size={12} color={C.rec} on={!counting} />
                 <Txt size={44} w="display" lh={1} style={{ fontVariant: ['tabular-nums'] }}>
-                  {clock(take.elapsed)}
+                  {counting ? count : clock(take.elapsed)}
                 </Txt>
               </View>
             )}
@@ -272,7 +385,7 @@ export default function Vocals() {
               <Btn
                 kind={mode === 'recording' ? 'primary' : 'outline'}
                 size={18}
-                label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
+                label={counting ? 'Cancel' : mode === 'recording' ? 'Done, hear it back' : 'Hear it back'}
                 disabled={task.busy}
                 onPress={hear}
                 style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minHeight: 56, paddingHorizontal: 28, borderRadius: 18 }}
@@ -285,13 +398,15 @@ export default function Vocals() {
           inner={14}
           left={
             <>
+              {message}
               {empty}
               {loopCard}
               {punchIn}
+              {layerOption}
+              {countInOption}
               {listening}
               {meter}
               {micRow}
-              {message}
             </>
           }
           right={
@@ -299,7 +414,7 @@ export default function Vocals() {
               <View style={[s.row, s.between, { minHeight: 44 }]}>
                 <Eyebrow>Your bars</Eyebrow>
                 {/* Leaving for Song mid-take would drop the take, so the way there waits. */}
-                {!active && (
+                {!active && !unsaved && (
                   <NavLink size={14} to="/song">
                     Edit on Song
                   </NavLink>
@@ -325,23 +440,29 @@ export default function Vocals() {
     <Screen gap={14}>
       {header}
 
+      {message}
+
       {empty}
 
       {loopCard}
 
+      {lyrics}
+
       {punchIn}
+
+      {layerOption}
+
+      {countInOption}
 
       {listening}
 
       {meter}
       {micRow}
 
-      {message}
-
       {/* Recording starts and stops from the mic in the bottom bar. Hearing a take back needs one to exist. */}
       {canHear && (
         <Foot center gap={14}>
-          <Btn label={mode === 'recording' ? 'Done, hear it back' : 'Hear it back'} disabled={task.busy} onPress={hear} style={{ alignSelf: 'stretch' }} />
+          <Btn label={counting ? 'Cancel' : mode === 'recording' ? 'Done, hear it back' : 'Hear it back'} disabled={task.busy} onPress={hear} style={{ alignSelf: 'stretch' }} />
         </Foot>
       )}
     </Screen>

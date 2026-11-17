@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { activeTake, deleteTake, patchProject, useLibrary, useProject } from '@/data/store';
+import { activeTake, deleteTake, patchProject, useLibrary, useProject, redoMix, switchMix, undoMix, useMixHistory } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
 import { useSong } from '@/data/song';
@@ -10,7 +10,7 @@ import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
 import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
 import { NoSong } from '@/ui/AddBeat';
-import { Btn, Chips, Muted, NavLink, Option, Screen, SliderRow, Txt, s } from '@/ui/kit';
+import { Btn, Chip, Chips, Muted, NavLink, Option, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
 import { Status } from '@/ui/parts';
@@ -18,12 +18,14 @@ import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { C, clock } from '@/ui/theme';
-import { useWide } from '@/ui/wide';
+import { useGutter, useWide } from '@/ui/wide';
 
 // Height of the pinned last step, above the floating bar.
 const FINISH_HEIGHT = 62;
 // Width of the left pane in the wide layout: the transport and the broad strokes.
 const LISTEN_WIDTH = 400;
+
+const MIX_SIDES = ['Mix A', 'Mix B'] as const;
 
 export default function Playback() {
   const project = useProject();
@@ -32,12 +34,27 @@ export default function Playback() {
   const repeat = useRepeat();
   const song = useSong(take ? project : null, { compare: true, repeat });
   const insets = useSafeAreaInsets();
+  const gutter = useGutter();
   const [level, setLevel] = useState<number | null>(null);
   const [armed, arm] = useArmed();
   const stems = useTask();
   // How many finished songs in the Vault were made from this beat.
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const [sent, setSent] = useState<string | null>(null);
+  const history = useMixHistory(project?.id ?? null);
+  const projectId = project?.id;
+  // On a keyboard, the usual keys undo and redo a change to the mix.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !projectId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z' || (e.target as HTMLElement | null)?.closest?.('input,textarea')) return;
+      e.preventDefault();
+      if (e.shiftKey) redoMix(projectId);
+      else undoMix(projectId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [projectId]);
   const wide = useWide();
   useStopOnLeave();
 
@@ -128,6 +145,20 @@ export default function Playback() {
     </>
   );
 
+  // Stepping back through changes, and two mixes to flip between while it plays.
+  const side = project.mixSide ?? 'A';
+  const compare = (
+    <View style={[s.row, s.between, { gap: 12, minHeight: 44 }]}>
+      <View style={[s.row, { gap: 8 }]}>
+        <Chip label="Undo" onPress={() => history.canUndo && undoMix(project.id)} style={{ paddingHorizontal: 14, opacity: history.canUndo ? 1 : 0.35 }} />
+        <Chip label="Redo" onPress={() => history.canRedo && redoMix(project.id)} style={{ paddingHorizontal: 14, opacity: history.canRedo ? 1 : 0.35 }} />
+      </View>
+      <View style={{ width: 168 }}>
+        <Segmented options={MIX_SIDES} value={side === 'A' ? 'Mix A' : 'Mix B'} onChange={(v) => switchMix(project.id, v === 'Mix A' ? 'A' : 'B')} variant="compact" />
+      </View>
+    </View>
+  );
+
   // Wide: listening and the broad strokes on the left, the chains open on the right, and the last step in the header.
   if (wide)
     return (
@@ -141,6 +172,7 @@ export default function Playback() {
           <View style={{ width: LISTEN_WIDTH, gap: 12 }}>
             {listen}
             <View>
+              {compare}
               {double}
               {vocalLevel}
             </View>
@@ -162,6 +194,7 @@ export default function Playback() {
         {/* The mix controls are always on show; the deeper chain editing is one tap further. */}
         <View>
           <View>
+            {compare}
             {double}
             {vocalLevel}
             <View style={{ paddingTop: 10, paddingBottom: 6 }}>{chains}</View>
@@ -174,7 +207,7 @@ export default function Playback() {
       </Screen>
 
       {/* The last step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
         <Btn label="Finish song" to="/cover?finish=1" style={{ flex: 0, minHeight: 52 }} />
       </View>
     </View>

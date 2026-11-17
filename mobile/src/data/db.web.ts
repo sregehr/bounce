@@ -11,8 +11,24 @@ function open(): Promise<IDBDatabase> {
         request.result.createObjectStore('kv');
         request.result.createObjectStore('blobs');
       };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error('Storage is not available in this browser.'));
+      request.onsuccess = () => {
+        const db = request.result;
+        // A connection the browser closed (or another tab upgraded) is opened again on the next use.
+        db.onclose = () => void (opened = null);
+        db.onversionchange = () => {
+          db.close();
+          opened = null;
+        };
+        resolve(db);
+      };
+      request.onerror = () => {
+        opened = null;
+        reject(request.error ?? new Error('Storage is not available in this browser.'));
+      };
+      request.onblocked = () => {
+        opened = null;
+        reject(new Error('Storage is busy in another tab. Close other Bounce tabs and try again.'));
+      };
     });
   }
   return opened;

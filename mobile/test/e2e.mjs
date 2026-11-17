@@ -2,6 +2,7 @@
 // (Chrome's built-in test tone) standing in for real audio input.
 // Usage: node test/e2e.mjs [flow]   Screenshots go to $SHOTS (default ./.e2e).
 // VIEW=<width>x<height> sets the window size (default 390x844, a phone).
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
@@ -66,6 +67,13 @@ async function expectText(needle, name, ms) {
 const openSong = (name) => tap(WIDE ? `Play ${name}` : `Open ${name}`);
 
 /** Clicks the last visible control whose label or text matches. */
+/** Waits out the count-in, so a take has really started before the test carries on. */
+async function counted() {
+  await sleep(500);
+  for (let i = 0; i < 60 && /Count-in/.test(await text()); i++) await sleep(250);
+}
+
+let restoreCode = '';
 async function tap(label, { exact = true, optional = false } = {}) {
   const hit = await page.evaluate(
     (label, exact) => {
@@ -124,6 +132,26 @@ async function slide(label, fraction) {
   await sleep(200);
 }
 const state = (expr) => page.evaluate(expr);
+/** Puts a finger down on a slider (found by its label), away from its thumb, and drags up the page, as scrolling does. */
+async function scrollOver(label) {
+  const box = await page.evaluate((label) => {
+    const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    if (!n) return null;
+    n.scrollIntoView({ block: 'center' });
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, label);
+  if (!box) return log(false, `scroll over "${label}"`, 'no such slider');
+  const x = box.x + box.w * 0.15;
+  const y = box.y + box.h / 2;
+  const finger = await page.touchscreen.touchStart(x, y);
+  for (let i = 1; i <= 8; i++) {
+    await finger.move(x + (i % 2), y - i * 14);
+    await sleep(16);
+  }
+  await finger.end();
+  await sleep(300);
+}
 /** Drags a row (found by its label) to the left, as a finger would, to show its Delete button. */
 async function swipeLeft(label) {
   const box = await page.evaluate((label) => {
@@ -254,7 +282,7 @@ async function song() {
   await expectText('Whole beat · once through', 'a new beat starts as the whole beat');
   await tap('8 bars');
   await tap('Start recording');
-  await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass', 5000);
+  await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass after the count-in', 12000);
   await sleep(2500);
   await shot('08-vocals-recording');
   await sleep(4000);
@@ -281,6 +309,26 @@ async function song() {
   await expectText('Double track, nudged and panned');
   await slide('Vocal level', 0.9);
   await expectText(/Polished\s/, 'vocal level change renders', 30000);
+  // Undo steps back through changes to the mix, and Redo forward again.
+  const levelSet = await trackAt('Vocal level');
+  await tap('Undo');
+  await sleep(300);
+  const levelUndone = await trackAt('Vocal level');
+  log(levelUndone !== levelSet, 'Undo puts the vocal level back', `${levelSet} -> ${levelUndone}`);
+  await tap('Redo');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet, 'and Redo sets it again', `${await trackAt('Vocal level')}`);
+  // Mix B starts as a copy of A; each then keeps its own settings.
+  await tap('Mix B');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet, 'Mix B starts as a copy of Mix A');
+  await slide('Vocal level', 0.3);
+  await sleep(300);
+  const levelB = await trackAt('Vocal level');
+  await tap('Mix A');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet && levelB !== levelSet, 'Mix A still has its own level', `A ${await trackAt('Vocal level')}, B ${levelB}`);
+  await expectText(/Polished\s/, 'and renders again', 30000);
   await shot('10-playback-tweak');
 
   // A second take, then punch in over it.
@@ -289,6 +337,7 @@ async function song() {
   await expectText('Always listening');
   await tap('Punch in at bar 5', { exact: false });
   await tap('Start recording');
+  await counted();
   await sleep(4500);
   await tap('Stop recording');
   await expectText('Take 2 saved', 'second take is saved in place', 10000);
@@ -321,6 +370,26 @@ async function song() {
   for (const until = Date.now() + 30000; Date.now() < until && !(started = await transportPlaying()); ) await sleep(200);
   log(started, 'and plays it once it is ready');
   await shot('10b-song');
+  // Layers: another take stacked on the picked one, with its own level and pan.
+  await tap('Pause', { optional: true });
+  await tap('Layer take 2');
+  await expectText('Take 2 level', 'a take can be stacked on the picked one as a layer');
+  await expectText(/Polishing take 1…/, 'adding a layer renders the song again', 8000);
+  await expectText('Take 1, polished over the beat', 'and it finishes with the layer in', 30000);
+  await tap('Ad-lib');
+  log((await trackAt('Take 2 pan')) === 40, 'an ad-lib starts off to the right', `pan ${await trackAt('Take 2 pan')}`);
+  // Best bars: one bar of the picked take played from another take.
+  await tap('Bar 2, from take 1');
+  log(await enabled('Bar 2, from take 2'), 'tapping a bar has it play from the next take');
+  await expectText('Take 1, polished over the beat', 'and the song renders with that bar swapped', 30000);
+  await shot('10c-layers');
+  // Each tap moves the bar on to the next take that has it, and round to the picked take again.
+  for (let i = 0; i < 4 && !(await enabled('Bar 2, from take 1')); i++) await tap(/^Bar 2, from take \d$/.test('') ? '' : (await page.evaluate(() => [...document.querySelectorAll('[role=button]')].map((n) => n.getAttribute('aria-label') ?? '').find((l) => l.startsWith('Bar 2, from take')) ?? 'Bar 2')));
+  log(await enabled('Bar 2, from take 1'), 'tapping round again puts the bar back');
+  await tap('Remove');
+  await sleep(300);
+  log(!/Take 2 level/.test(await text()), 'a layer can be removed again');
+  await expectText('Take 1, polished over the beat', 'and the song is as it was', 30000);
   await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
   await tap('Pause', { optional: true });
   await tap('Mix take 1');
@@ -366,10 +435,28 @@ async function song() {
   await tap('Punchy');
   await expectText('Slower compressor attack', 'choosing a master style explains itself', 20000);
   await expectText('Starting from the Punchy master');
+  // A finger that lands on a slider while scrolling the page must not move it.
+  const intensityBefore = await trackAt('Intensity');
+  await scrollOver('Intensity');
+  log((await trackAt('Intensity')) === intensityBefore, 'scrolling the page over a slider leaves it where it was', `${intensityBefore} -> ${await trackAt('Intensity')}`);
   await slide('Intensity', 1);
   await expectText('100%');
   await expectText(/Polished\s/, 'the mix renders with the master', 30000);
   await sleep(800);
+  // A tab comes back where it was left. (The wide layout fits on one screen, so there is nothing to scroll.)
+  if (!WIDE) {
+    const scroller = () => [...document.querySelectorAll('div')].filter((n) => n.scrollHeight > n.clientHeight + 200 && getComputedStyle(n).overflowY !== 'visible' && n.getBoundingClientRect().width > 0 && n.innerText.includes('Vocal level')).pop();
+    await page.evaluate(`(${scroller})().scrollTop = 320`);
+    await sleep(400);
+    const before = await page.evaluate(`(() => { const n = (${scroller})(); return [n.scrollTop, n.scrollHeight, n.clientHeight].join('/'); })()`);
+    await tap('Song');
+    await expectText('Lyrics', 'Song opens from Mix');
+    await tap('Mix');
+    await expectText('Vocal level', 'and Mix opens again');
+    await sleep(1600);
+    const top = await page.evaluate(`(${scroller})()?.scrollTop ?? -1`);
+    log(Math.abs(top - 320) < 40, 'Mix is still scrolled to where it was left', `scrollTop ${top}, before ${before}, after ${await page.evaluate(`(() => { const n = (${scroller})(); return n ? [n.scrollTop, n.scrollHeight, n.clientHeight].join('/') : 'none'; })()`)}`);
+  }
   await shot('13-mix-master');
 }
 
@@ -482,6 +569,73 @@ async function finish() {
   await waitDownloads(3);
   const header = fs.existsSync(path.join(DOWNLOADS, 'Night bus.wav')) ? fs.readFileSync(path.join(DOWNLOADS, 'Night bus.wav')) : null;
   log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
+  // A listening link: the song goes up behind a private link, and a note left on its page comes back here.
+  if (await tap('Make a listening link', { optional: true })) {
+    await expectText('Update the link', 'a listening link is made for the song', 90000);
+    const link = await state(() => [...document.querySelectorAll('input,textarea')].find((n) => n.getAttribute('aria-label') === 'Listening link')?.value ?? '');
+    log(/\/s\/[a-z0-9]{20,}$/.test(link), 'the link ends in a long random token', link.replace(/[a-z0-9]{20,}$/, '<token>'));
+    const listener = await browser.newPage();
+    const response = await listener.goto(link, { waitUntil: 'domcontentloaded' });
+    const pageText = await listener.evaluate(() => document.body.innerText);
+    log(response.status() === 200 && /Night bus/.test(pageText) && /Leave a note/i.test(pageText), 'the link opens a player page with the song on it', `status ${response.status()}`);
+    const playable = await listener.evaluate(() => new Promise((resolve) => { const a = document.getElementById('audio'); if (a.readyState >= 1) return resolve(a.duration); a.addEventListener('loadedmetadata', () => resolve(a.duration)); a.addEventListener('error', () => resolve(-1)); setTimeout(() => resolve(-2), 15000); }));
+    log(playable > 3, 'the page can play the audio', `duration ${Number(playable).toFixed(2)} s`);
+    await listener.evaluate(() => { document.getElementById('audio').currentTime = 3; });
+    await sleep(400);
+    await listener.type('input[name=name]', 'Sam <b>');
+    await listener.type('textarea[name=text]', 'This bar <script>alert(1)</script> hits');
+    await Promise.all([listener.waitForNavigation({ waitUntil: 'domcontentloaded' }), listener.click('button[type=submit]')]);
+    const after = await listener.evaluate(() => ({ text: document.body.innerText, scripts: document.querySelectorAll('li script, li b:not([data-at])').length }));
+    log(/0:03/.test(after.text) && /This bar <script>alert\(1\)<\/script> hits/.test(after.text) && after.scripts === 0, 'a note is pinned to its moment and shown as plain text', after.text.split('NOTES')[1]?.trim().slice(0, 80) ?? '');
+    const gone = await listener.goto(link.replace(/[a-z0-9]{20,}$/, 'a'.repeat(36)), { waitUntil: 'domcontentloaded' });
+    log(gone.status() === 404, 'a wrong token finds nothing', `status ${gone.status()}`);
+    await listener.close();
+    await page.bringToFront();
+    await tap('Check for notes');
+    await expectText('hits', 'the note comes back into the app on the song', 15000);
+    await tap('Take it down');
+    await expectText('Make a listening link', 'the link can be taken down', 15000);
+    const again = await browser.newPage();
+    const down = await again.goto(link, { waitUntil: 'domcontentloaded' });
+    log(down.status() === 404, 'and then no longer opens', `status ${down.status()}`);
+    await again.close();
+    await page.bringToFront();
+  }
+  // Credits and splits: naming people adds a split sheet to what goes out.
+  await tap('Add credits');
+  await expectText('Splits add up to 100%', 'credits start from the artist and producer, split evenly');
+  await tap('Add a person');
+  await type('Name 3', 'Jo Park');
+  await type('Share 3, percent', '10');
+  await expectText('Splits add up to 110%, not 100%', 'a split that does not add up is pointed out');
+  await type('Share 2, percent', '40');
+  await expectText('Splits add up to 100%', 'and fixed by changing a share');
+  if (!(await tap('Save to Files', { optional: true }))) await tap('Save 2 files');
+  await expectText('2 files saved to your downloads as Night bus.zip', 'the split sheet is saved with the song', 60000);
+  await sleep(800);
+  // Chrome numbers a second download of the same name, so the newest ZIP is the one to read.
+  const newestZip = fs.readdirSync(DOWNLOADS).filter((f) => /^Night bus.*\.zip$/.test(f) && !/stems/.test(f)).map((f) => path.join(DOWNLOADS, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  const sheetNames = newestZip ? unzipNames(newestZip) : [];
+  log(sheetNames.includes('Night bus split sheet.txt'), 'the ZIP holds the split sheet', sheetNames.join(', '));
+  for (let i = 0; i < 3; i++) await tap('Remove');
+  await expectText('Add credits', 'credits can be taken off again');
+  // The small format for sending, where the browser can make it. ffprobe reads it as a real M4A.
+  if (await tap('M4A, for sending', { optional: true })) {
+    if (!(await tap('Save to Files', { optional: true }))) await tap('Save 1 file');
+    await expectText('Saved Night bus.m4a to your downloads', 'the song is saved as an M4A', 60000);
+    await waitDownloads(4);
+    const small = path.join(DOWNLOADS, 'Night bus.m4a');
+    const probe = fs.existsSync(small) ? spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name,channels,sample_rate:format=duration', '-of', 'json', small], { encoding: 'utf8' }) : null;
+    if (probe && probe.error) log(true, 'ffprobe is not installed, so the M4A was not inspected');
+    else {
+      const info = probe ? JSON.parse(probe.stdout || '{}') : {};
+      const stream = info.streams?.[0] ?? {};
+      const seconds = Number(info.format?.duration ?? 0);
+      log(stream.codec_name === 'aac' && stream.channels === 2 && seconds > 3, 'the M4A is stereo AAC of the right length', `${stream.codec_name} ${stream.channels}ch ${stream.sample_rate} Hz ${seconds.toFixed(2)} s, ${fs.existsSync(small) ? fs.statSync(small).size : 0} bytes`);
+      log(fs.statSync(small).size < header.length / 3, 'and is much smaller than the WAV', `${fs.statSync(small).size} vs ${header.length} bytes`);
+    }
+    await tap('WAV, 16-bit');
+  }
   await tap('Back');
   await expectText('Prod. Lowkey', 'Back returns to the player');
   // The wide player always shows the lyrics; the phone keeps them behind a button.
@@ -510,6 +664,19 @@ async function finish() {
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');
+  // The same snippet in the square shape for feeds: picking a shape asks for it to be made again.
+  if (await tap('Square 1:1', { optional: true })) {
+    await tap('Make snippet');
+    await expectText('Snippet ready', 'the square snippet is made', 60000);
+    await sleep(500);
+    await tap('Save snippet');
+    await expectText(/Saved Night bus snippet \(square\)\.(mp4|webm) to your downloads/i, 'and saved under its own name', 60000);
+    await sleep(1500);
+    const square = fs.readdirSync(DOWNLOADS).find((f) => /snippet \(square\)\.(mp4|webm)$/.test(f));
+    const probe = square ? spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path.join(DOWNLOADS, square)], { encoding: 'utf8' }) : null;
+    if (probe && !probe.error) log(probe.stdout.trim() === '1080,1080', 'the square snippet is 1080 by 1080', probe.stdout.trim() || 'unreadable');
+    await tap('Tall 9:16');
+  }
   await tap('Done, back to the Vault');
   await expectText(IN_VAULT, 'vault opens');
   await expectText('Snippet made');
@@ -558,6 +725,7 @@ async function library() {
   await expectText('Always listening', 'a finished song leads back to its beat', 10000);
   await sleep(800);
   await tap('Start recording');
+  await counted();
   await sleep(3000);
   await tap('Stop recording');
   await expectText('Take 4 saved', 'another take is recorded over it', 10000);
@@ -583,6 +751,13 @@ async function library() {
   await expectText('Storage');
   await expectText('Everything is backed up', 'the library is backed up to the server', 30000);
   await shot('24-settings');
+  // The restore code for this device is shown on request. Backup is then switched off, so the beats
+  // deleted later in this run stay on the server to be restored at the end.
+  await tap("Show this device's restore code");
+  restoreCode = await state(() => [...document.querySelectorAll('input,textarea')].find((n) => n.getAttribute('aria-label') === 'Restore code')?.value ?? '');
+  log(/^[a-z0-9]{16,}\.[0-9a-f]{64}$/.test(restoreCode), 'Settings shows a restore code for this device');
+  await tap('Hide the code');
+  await tap('Back up my beats and takes');
 
   // The microphone and its timing are set where recording happens, with the guided setup one tap away.
   await tap('Freestyle over Night bus');
@@ -624,7 +799,8 @@ async function library() {
   await tap('Master the beat', { exact: false });
   await expectText(/−\d+\.\d LUFS/, 'an instrumental can be mastered on its own', 30000);
   await expectText('Save to the Vault', 'and saved to the Vault from there');
-  await tap('Song');
+  // Master has no bottom bar on a phone; Back in its top corner returns to where it was opened.
+  await tap('Back');
   await expectText('Not in the Vault yet', 'mastering the beat alone returns to its song');
   if (!(await tap('Delete this beat', { optional: true }))) {
     await tap('Beat details', { exact: false });
@@ -669,7 +845,7 @@ async function library() {
   await expectText(/Fake .* ms (estimated|measured)/, 'the microphone reconnects for the new beat', 10000);
   await tap('8 bars');
   await tap('Start recording');
-  await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 8000);
+  await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 12000);
   await sleep(3500);
   await tap('Done, hear it back');
   await expectText('Take 1', 'the take opens in playback', 10000);
@@ -682,13 +858,16 @@ async function library() {
   await expectText('1 take', 'Song shows the new take');
   await swipeLeft('Take 1');
   await tap('Delete take 1');
+  await expectText('1 take', 'the first tap on Delete only asks');
+  await tap('Tap again to delete take 1');
   await expectText('No takes yet', 'swiping and tapping Delete removes a take', 10000);
   await tap('Home');
   await expectText('Add a beat', 'Home opens');
   await sleep(600); // let the screen change settle before dragging on it
   await swipeLeft('Open Basement tape');
   await shot('29-swipe-beat');
-  await tap('Delete Basement tape');
+  await tap('Delete Basement tape', { exact: false });
+  await tap('Tap again to delete Basement tape', { exact: false });
   await sleep(600);
   log(!/Basement tape/.test(await text()), 'swiping and tapping Delete removes a beat');
   await expectText('Night bus', 'and leaves the others');
@@ -699,6 +878,7 @@ async function library() {
     if (!left.length) break;
     await swipeLeft(`Open ${left[0]}`);
     await tap(`Delete ${left[0]}`, { exact: false });
+    await tap(`Tap again to delete ${left[0]}`, { exact: false });
     await sleep(600);
   }
   await expectText('Bring a beat', 'home is empty once every beat is deleted');
@@ -712,6 +892,20 @@ async function library() {
   await expectText('Nothing to record over yet', 'and so does the mic');
   await tap('Try a demo song');
   await expectText('Ready-made beats', 'its tiles lead on, here to the demo songs');
+
+  // Restore: the beats deleted above come back from the backup, with their audio, from the code alone.
+  if (restoreCode) {
+    await page.goto(BASE + '/settings', { waitUntil: 'networkidle2' });
+    await expectText('Move to another device', 'Settings opens', 20000);
+    await type('Restore code from another device', restoreCode);
+    await tap('Restore from this code');
+    await expectText(/\d+ songs? restored/, 'a backup is restored from its code', 60000);
+    await page.goto(BASE + '/', { waitUntil: 'networkidle2' });
+    await expectText('Night bus', 'the restored beat is back on Home', 20000);
+    await tap('Open Night bus');
+    await expectText('4 takes', 'with its takes', 20000);
+    await expectText(/Take \d, polished over the beat/, 'and its audio, which renders and plays', 40000);
+  }
 }
 
 const flows = { onboarding, song, finish, library };

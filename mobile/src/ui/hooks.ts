@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
 import { stopTransport, useEngine } from '@/engine/engine';
+
+import { fail, warn } from './haptics';
 
 /** Playback state for one named thing; reads as stopped when something else is loaded. */
 export function useTransport(id: string) {
@@ -32,6 +35,7 @@ export function useArmed(ms = 3000): [boolean, () => void, () => void] {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
   const arm = () => {
+    warn();
     setArmed(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setArmed(false), ms);
@@ -51,10 +55,41 @@ export function useTask() {
     try {
       await work();
     } catch (e) {
+      fail();
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (alive.current) setBusy(false);
     }
   };
   return { busy, error, run, setError };
+}
+
+/**
+ * While something is being recorded: keeps the screen from sleeping, and has the browser ask
+ * before the tab is closed or reloaded, since either would lose what is in memory.
+ */
+export function useRecordingGuard(active: boolean) {
+  useEffect(() => {
+    if (!active || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    let lock: WakeLockSentinel | null = null;
+    let over = false;
+    const hold = () => {
+      if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+      navigator.wakeLock.request('screen').then(
+        (l) => (over ? void l.release().catch(() => {}) : (lock = l)),
+        () => {},
+      );
+    };
+    // The browser drops the lock whenever the page is hidden, so it is taken again on return.
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    hold();
+    document.addEventListener('visibilitychange', hold);
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      over = true;
+      document.removeEventListener('visibilitychange', hold);
+      window.removeEventListener('beforeunload', warn);
+      void lock?.release().catch(() => {});
+    };
+  }, [active]);
 }

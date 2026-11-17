@@ -3,13 +3,16 @@ import { useSyncExternalStore } from 'react';
 import { DEFAULT_MASTER, DEFAULT_POLISH } from '@/dsp/presets';
 
 import { blobs, kv, persist } from './db';
-import { emptyLibrary, newId, type Beat, type Library, type Profile, type Project, type Settings, type Take } from './model';
+import { LAYER_START, emptyLibrary, newId, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
 import { carryOver, makeSong } from './songs';
 
 let library: Library = emptyLibrary();
 let ready = false;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let saveError: string | null = null;
+// Set when the saved library could not be read. Nothing is written while it is, so an empty
+// library can never replace the real one.
+let loadError: string | null = null;
 const listeners = new Set<() => void>();
 const changeHooks = new Set<(l: Library) => void>();
 
@@ -24,18 +27,22 @@ export async function loadLibrary() {
   if (ready) return;
   try {
     const saved = await kv.get<Library>('library');
+    loadError = null;
     if (saved && saved.version === 1) library = { ...emptyLibrary(), ...saved, settings: { ...emptyLibrary().settings, ...saved.settings } };
     if (!library.vault) update(carryOver);
+    // A library from before backups were locked to their device gets its secret now, and keeps it.
+    if (saved && !saved.settings?.deviceSecret) update((l) => ({ ...l }));
     void persist();
+    ready = true;
   } catch (e) {
-    saveError = e instanceof Error ? e.message : 'Storage is not available.';
+    loadError = e instanceof Error && e.message ? e.message : 'Storage is not available.';
   }
-  ready = true;
   notify();
 }
 
 export const getLibrary = () => library;
 export const useReady = () => useSyncExternalStore(subscribe, () => ready, () => ready);
+export const useLoadError = () => useSyncExternalStore(subscribe, () => loadError, () => loadError);
 export const useSaveError = () => useSyncExternalStore(subscribe, () => saveError, () => saveError);
 
 /** Subscribes to part of the library. `pick` must return something stable (a stored value, not a new object). */
@@ -52,6 +59,7 @@ export function onLibraryChange(fn: (l: Library) => void) {
 export function update(change: (l: Library) => Library) {
   library = change(library);
   notify();
+  if (loadError) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
@@ -71,6 +79,24 @@ export function update(change: (l: Library) => Library) {
   }, 250);
 }
 
+/** Writes any change still waiting to be saved, now. For moments that cannot wait: the page going away, or a restore finishing. */
+export async function flushLibrary() {
+  if (!saveTimer || loadError) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await kv.set('library', library).catch((e) => {
+    saveError = e instanceof Error ? e.message : 'Could not save.';
+    notify();
+  });
+  changeHooks.forEach((fn) => fn(library));
+}
+
+// A change made in the last moment before the tab is closed, reloaded or put away is still saved.
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => void flushLibrary());
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void flushLibrary());
+}
+
 export const setProfile = (patch: Partial<Profile>) => update((l) => ({ ...l, profile: { ...l.profile, ...patch } }));
 export const setSettings = (patch: Partial<Settings>) => update((l) => ({ ...l, settings: { ...l.settings, ...patch } }));
 export const setCurrent = (id: string | null) => update((l) => (l.currentId === id ? l : { ...l, currentId: id }));
@@ -83,7 +109,64 @@ export function useProject(): Project | null {
 
 export const getProject = (id: string | null) => library.projects.find((p) => p.id === id) ?? null;
 
+// ---------- Undo for the mix ----------
+
+const mixOf = (p: Project): MixSettings => ({ polish: p.polish, master: p.master, overrides: p.overrides, space: p.space });
+const MIX_KEYS = ['polish', 'master', 'overrides', 'space'] as const;
+type History = { past: MixSettings[]; future: MixSettings[]; at: number };
+// Kept for this session only: undo is for the last few moves, not a record of the song.
+const histories = new Map<string, History>();
+const historyOf = (id: string) => histories.get(id) ?? (histories.set(id, { past: [], future: [], at: 0 }), histories.get(id)!);
+let replaying = false;
+
+/** Notes the mix as it is before a change to it, so the change can be undone. */
+function remember(project: Project, patch: Partial<Project>) {
+  if (replaying || !MIX_KEYS.some((k) => k in patch)) return;
+  const h = historyOf(project.id);
+  const now = Date.now();
+  // Changes in quick succession, such as nudging one control, undo as one step.
+  if (now - h.at > 700 || h.past.length === 0) h.past.push(mixOf(project));
+  if (h.past.length > 50) h.past.shift();
+  h.at = now;
+  h.future = [];
+}
+
+function step(id: string, from: 'past' | 'future') {
+  const project = getProject(id);
+  const h = histories.get(id);
+  const to = h?.[from].pop();
+  if (!project || !h || !to) return false;
+  h[from === 'past' ? 'future' : 'past'].push(mixOf(project));
+  h.at = 0;
+  replaying = true;
+  patchProject(id, { ...to });
+  replaying = false;
+  return true;
+}
+
+export const undoMix = (id: string) => step(id, 'past');
+export const redoMix = (id: string) => step(id, 'future');
+
+/** Whether there is a mix change to undo or redo for a project. */
+export function useMixHistory(id: string | null) {
+  const key = useSyncExternalStore(subscribe, () => `${histories.get(id ?? '')?.past.length ?? 0}/${histories.get(id ?? '')?.future.length ?? 0}`, () => '0/0');
+  const [past, future] = key.split('/').map(Number);
+  return { canUndo: past > 0, canRedo: future > 0 };
+}
+
+/**
+ * Switches between two mixes of the same song. The first switch to B starts it as a copy of A,
+ * so the two can then be taken in different directions and compared.
+ */
+export function switchMix(id: string, side: 'A' | 'B') {
+  const project = getProject(id);
+  if (!project || (project.mixSide ?? 'A') === side) return;
+  patchProject(id, { ...(project.mixAlt ?? mixOf(project)), mixAlt: mixOf(project), mixSide: side });
+}
+
 export function patchProject(id: string, patch: Partial<Project> | ((p: Project) => Partial<Project>), touch = true) {
+  const before = getProject(id);
+  if (before) remember(before, typeof patch === 'function' ? patch(before) : patch);
   update((l) => ({
     ...l,
     projects: l.projects.map((p) => (p.id === id ? { ...p, ...(typeof patch === 'function' ? patch(p) : patch), ...(touch ? { updatedAt: Date.now() } : null) } : p)),
@@ -148,8 +231,27 @@ export function finishSong(projectId: string, title: string): Project | null {
   return song;
 }
 
-export function addTake(projectId: string, take: Take) {
-  patchProject(projectId, (p) => ({ takes: [...p.takes, take], takeId: take.id }));
+export function addTake(projectId: string, take: Take, layer?: Layer['role']) {
+  // A take recorded as a layer joins the stack on the picked take instead of replacing it.
+  if (layer) patchProject(projectId, (p) => ({ takes: [...p.takes, take], layers: [...(p.layers ?? []), { takeId: take.id, role: layer, ...LAYER_START[layer] }] }));
+  else patchProject(projectId, (p) => ({ takes: [...p.takes, take], takeId: take.id }));
+}
+
+/** Whether a take lines up with the picked one bar for bar, so it can be layered on it or stand in for some of its bars. */
+export const stacks = (lead: Take | null, other: Take) => !!lead && other.id !== lead.id && lead.phaseSec < 0.001 && other.phaseSec < 0.001 && other.loop.bars === lead.loop.bars && other.loop.startBar === lead.loop.startBar;
+
+export function setLayers(projectId: string, change: (layers: Layer[]) => Layer[]) {
+  patchProject(projectId, (p) => ({ layers: change(p.layers ?? []) }));
+}
+
+/** Has one bar of the picked take play from another take, or from the picked take again when `takeId` is null. */
+export function setCompBar(projectId: string, bar: number, takeId: string | null) {
+  patchProject(projectId, (p) => {
+    const comp = { ...(p.comp ?? {}) };
+    if (takeId) comp[String(bar)] = takeId;
+    else delete comp[String(bar)];
+    return { comp };
+  });
 }
 
 export async function deleteTake(projectId: string, takeId: string) {
@@ -157,7 +259,10 @@ export async function deleteTake(projectId: string, takeId: string) {
   if (!take) return;
   patchProject(projectId, (p) => {
     const takes = p.takes.filter((t) => t.id !== takeId);
-    return { takes, takeId: p.takeId === takeId ? (takes[takes.length - 1]?.id ?? null) : p.takeId };
+    // Nothing keeps pointing at a take that is gone.
+    const layers = (p.layers ?? []).filter((l) => l.takeId !== takeId);
+    const comp = Object.fromEntries(Object.entries(p.comp ?? {}).filter(([, id]) => id !== takeId));
+    return { takes, layers, comp, takeId: p.takeId === takeId ? (takes[takes.length - 1]?.id ?? null) : p.takeId };
   });
   await dropBlob(take.key);
 }

@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 
-import { backupAvailable, backupNow, useBackup } from '@/data/backup';
+import { backupAvailable, backupNow, eraseBackup, restoreBackup, restoreCode, useBackup } from '@/data/backup';
 import { blobs, kv } from '@/data/db';
 import { storageEstimate } from '@/data/files';
 import { emptyLibrary } from '@/data/model';
-import { setProfile, setSettings, update, useLibrary } from '@/data/store';
+import { getLibrary, setProfile, setSettings, update, useLibrary } from '@/data/store';
 import { closeInput, stopTransport } from '@/engine/engine';
-import { Eyebrow, Muted, NavLink, Option, Screen, TopBar } from '@/ui/kit';
-import { useArmed } from '@/ui/hooks';
-import { plural } from '@/ui/theme';
+import { Btn, Eyebrow, Field, Muted, NavLink, Option, Screen, TopBar, Txt } from '@/ui/kit';
+import { useArmed, useTask } from '@/ui/hooks';
+import { C, plural } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
 
@@ -28,10 +28,27 @@ export function SettingsBody() {
     void storageEstimate().then(setSpace);
   }, [count]);
 
+  // Moving to another device: this one shows a code, the other one types it in.
+  const [code, setCode] = useState<string | null>(null);
+  const [entered, setEntered] = useState('');
+  const [restored, setRestored] = useState<string | null>(null);
+  const restoring = useTask();
+  const restore = () =>
+    restoring.run(async () => {
+      setRestored(null);
+      const added = await restoreBackup(entered, (left) => setRestored(left ? `Downloading: ${plural(left, 'file')} to go…` : 'Finishing…'));
+      setRestored(added ? `${plural(added, 'song')} restored. They are on Home and in the Vault.` : 'Everything in that backup is already on this device.');
+      setEntered('');
+    });
+
   const wipe = async () => {
     if (!armed) return arm();
     stopTransport();
     closeInput();
+    // The copy on the backup server goes too. If the server cannot be reached now, the request
+    // is kept and sent the next time the app is online.
+    const { deviceId, deviceSecret } = getLibrary().settings;
+    await eraseBackup({ deviceId, secret: deviceSecret });
     for (const key of await blobs.keys()) await blobs.delete(key).catch(() => {});
     await kv.set('backup', {}).catch(() => {});
     update(() => emptyLibrary());
@@ -68,6 +85,32 @@ export function SettingsBody() {
         )}
       </View>
 
+      {backupAvailable && (
+        <View style={{ gap: 10 }}>
+          <Eyebrow>Move to another device</Eyebrow>
+          <Muted size={13}>Show a restore code here, then enter it on the other device to bring your songs across. Anyone with the code can read your backup, so keep it to yourself.</Muted>
+          {code ? (
+            <View style={{ gap: 8 }}>
+              <Field label="Restore code" value={code} editable={false} selectTextOnFocus multiline style={{ fontFamily: Platform.OS === 'web' ? 'monospace' : undefined, fontSize: 13 }} />
+              <NavLink size={14} onPress={() => setCode(null)}>
+                Hide the code
+              </NavLink>
+            </View>
+          ) : (
+            <NavLink size={14} onPress={() => (backupNow(), setCode(restoreCode()))}>
+              Show this device's restore code
+            </NavLink>
+          )}
+          <Field label="Restore code from another device" value={entered} onChangeText={setEntered} placeholder="Paste a restore code" autoCapitalize="none" autoCorrect={false} returnKeyType="done" />
+          {entered.trim() ? <Btn label="Restore from this code" busy={restoring.busy} onPress={restore} style={{ flexGrow: 0 }} /> : null}
+          {(restoring.error || restored) && (
+            <Txt size={13} color={restoring.error ? C.recText : C.muted}>
+              {restoring.error ?? restored}
+            </Txt>
+          )}
+        </View>
+      )}
+
       <View style={{ gap: 8 }}>
         <Eyebrow>Storage</Eyebrow>
         <Muted size={13}>
@@ -79,9 +122,17 @@ export function SettingsBody() {
         <NavLink size={14} to="/privacy">
           Privacy
         </NavLink>
-        <NavLink size={14} onPress={() => void wipe()}>
-          {armed ? 'Tap again: this deletes every beat, take and cover here' : 'Delete everything on this device'}
-        </NavLink>
+        {/* Destructive, so it looks it: red and set apart from the links above, with a second tap to confirm. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={armed ? 'Tap again to delete every beat, take and cover on this device' : 'Delete everything on this device'}
+          onPress={() => void wipe()}
+          style={({ pressed }) => ({ marginTop: 16, minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: C.rec, backgroundColor: armed ? C.rec : 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, opacity: pressed ? 0.6 : 1 })}
+        >
+          <Txt size={15} w="semi" color={armed ? C.text : C.recText} center>
+            {armed ? `Tap again: this deletes every beat, take and cover here${backupAvailable ? ' and in your backup' : ''}` : 'Delete everything on this device'}
+          </Txt>
+        </Pressable>
       </View>
     </>
   );

@@ -14,6 +14,7 @@ import type * as backup from "../backup.js";
 import type * as beats from "../beats.js";
 import type * as entitlements from "../entitlements.js";
 import type * as http from "../http.js";
+import type * as shares from "../shares.js";
 import type * as takes from "../takes.js";
 import type * as users from "../users.js";
 
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   beats: typeof beats;
   entitlements: typeof entitlements;
   http: typeof http;
+  shares: typeof shares;
   takes: typeof takes;
   users: typeof users;
 }>;

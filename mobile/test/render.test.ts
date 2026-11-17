@@ -69,6 +69,22 @@ const run = async () => {
   const up = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 100 }, include: 'vocals' });
   const down = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 20 }, include: 'vocals' });
   check('vocal level slider', up.did.vocalGainDb > down.did.vocalGainDb + 15, `${down.did.vocalGainDb.toFixed(1)} → ${up.did.vocalGainDb.toFixed(1)} dB`);
+
+  // Layers: a second vocal stacked on the lead is audible, sits where it is panned, and leaves the mix clean.
+  {
+    const adlib = new Float32Array(voice.length);
+    for (let i = 0; i < adlib.length; i++) adlib[i] = voice[(i + Math.round(sr * 0.4)) % voice.length] * 0.8;
+    const alone = await renderMix({ ...base, include: 'vocals' });
+    const stacked = await renderMix({ ...base, include: 'vocals', layers: [{ mono: adlib, level: 68, pan: -100 }] });
+    const energy = (ch: Float32Array) => ch.reduce((n, v) => n + v * v, 0);
+    const leftGain = energy(stacked.channels[0]) / energy(alone.channels[0]);
+    const rightGain = energy(stacked.channels[1]) / energy(alone.channels[1]);
+    check('layer is heard on its side', leftGain > 1.3 && rightGain < 1.15, `left energy x${leftGain.toFixed(2)}, right x${rightGain.toFixed(2)}`);
+    const off = await renderMix({ ...base, include: 'vocals', layers: [{ mono: adlib, level: 0, pan: 0 }] });
+    check('a layer at zero is silent', Math.abs(energy(off.channels[0]) / energy(alone.channels[0]) - 1) < 0.02, `x${(energy(off.channels[0]) / energy(alone.channels[0])).toFixed(3)}`);
+    const whole = await renderMix({ ...base, layers: [{ mono: adlib, level: 68, pan: 40 }] });
+    check('mix with a layer stays clean', finite(whole.channels) && whole.truePeakDb <= -0.95, `${whole.lufs.toFixed(1)} LUFS, true peak ${whole.truePeakDb.toFixed(2)} dB`);
+  }
   const muted = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 0 }, include: 'vocals' });
   check('vocal level at 0 is silence', peakOf(muted.channels) === 0, `peak ${peakOf(muted.channels)}`);
   // A quiet take needs all the lift the automatic balance allows; the slider must still work on top of it.

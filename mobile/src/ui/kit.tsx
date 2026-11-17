@@ -1,5 +1,8 @@
-import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import {
+  Easing,
+  Animated,
+  AccessibilityInfo,
   ActivityIndicator,
   Platform,
   Pressable,
@@ -17,8 +20,10 @@ import { router, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, tabFor } from './tabs';
-import { RAIL_WIDTH, useWide } from './wide';
+import { getLibrary } from '@/data/store';
+import { tick } from './haptics';
+import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
+import { RAIL_WIDTH, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
 
 // ---------- Text ----------
@@ -53,6 +58,8 @@ export function Txt({
   const display = w === 'display' || w === 'displayMedium';
   return (
     <Text
+      // Larger text sizes from the system are honoured up to a point; past it, fixed rows and bars stop fitting.
+      maxFontSizeMultiplier={1.4}
       numberOfLines={numberOfLines}
       style={[
         {
@@ -91,6 +98,10 @@ export function Muted({ children, size = 14, center, lh = 1.45, style }: { child
 // ---------- Layout ----------
 
 /** Full-height phone screen. `gap` and `padBottom` vary per screen in the design. */
+/** How far down each tab was scrolled when it was last left, by screen and song. */
+const places = new Map<string, number>();
+const TAB_ROOTS = ['/', '/song', '/vocals', '/playback', '/vault'];
+
 export function Screen({
   gap = 12,
   padBottom,
@@ -108,10 +119,13 @@ export function Screen({
 }) {
   const insets = useSafeAreaInsets();
   // On tabbed screens the content runs under the floating bar, so it ends clear of it.
-  const tabbed = tabFor(usePathname()) !== null;
+  const pathname = usePathname();
+  const tabbed = tabFor(pathname) !== null;
   const top = Math.max(60, insets.top + 16);
   // In the wide layout the navigation is a rail down the left, so the content starts beside it and runs to the bottom.
   const wide = useWide();
+  // With room to spare the column is centred rather than stretched.
+  const gutter = useGutter(padX);
   const content: ViewStyle = wide
     ? {
         flexGrow: 1,
@@ -124,16 +138,44 @@ export function Screen({
     : {
         flexGrow: 1,
         gap,
-        paddingHorizontal: padX,
+        paddingHorizontal: gutter,
         paddingTop: tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top,
-        paddingBottom: tabbed ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
+        paddingBottom: tabbed && !hidesTabBar(pathname) ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
       };
+  // A tab comes back where it was left: switching away and back should not lose your place.
+  const place = TAB_ROOTS.includes(pathname) ? `${pathname}:${getLibrary().currentId ?? ''}` : null;
+  const view = useRef<ComponentRef<typeof ScrollView>>(null);
+  const restored = useRef(false);
+  // A screen that is still loading is too short to reach the old place at first, so it is put
+  // back a few times as the page fills in, and left alone as soon as the user scrolls.
+  useEffect(() => {
+    const y = place ? (places.get(place) ?? 0) : 0;
+    if (y <= 0) return void (restored.current = true);
+    const timers = [0, 80, 250, 600, 1200].map((ms, i, all) =>
+      setTimeout(() => {
+        if (restored.current) return;
+        view.current?.scrollTo({ y, animated: false });
+        if (i === all.length - 1) restored.current = true;
+      }, ms),
+    );
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   if (!scroll) return <View style={[{ flex: 1, backgroundColor: C.bg }, content, style]}>{children}</View>;
   return (
     <ScrollView
+      ref={view}
+      scrollEventThrottle={64}
+      // Nothing is noted down until the old place has been put back, or the page would record where it was stopped short.
+      onScroll={place ? (e) => void (restored.current && places.set(place, e.nativeEvent.contentOffset.y)) : undefined}
+      onScrollBeginDrag={() => void (restored.current = true)}
       style={{ flex: 1, backgroundColor: C.bg }}
       contentContainerStyle={[content, style]}
       keyboardShouldPersistTaps="handled"
+      // On the phone the keyboard pushes the page up so the field being typed in stays in view,
+      // and dragging the page down puts the keyboard away.
+      automaticallyAdjustKeyboardInsets
+      keyboardDismissMode="interactive"
       showsVerticalScrollIndicator={false}
     >
       {children}
@@ -272,7 +314,7 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
             key={o}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
-            onPress={() => onChange(o)}
+            onPress={() => (o !== value && tick(), onChange(o))}
             style={[s.segment, { borderRadius: inset ? 9 : 10 }, on && { backgroundColor: C.text }]}
           >
             <Txt size={variant ? 14 : 15} w="semi" color={on ? C.bg : C.muted}>
@@ -451,7 +493,38 @@ export function Meter({ label, pct, height = 6, accent }: { label?: string; pct:
   );
 }
 
+// ---------- Motion ----------
+
+/**
+ * A dot that breathes while something is live, such as recording. It holds still for anyone who
+ * has asked the system for less motion.
+ */
+export function Pulse({ size = 10, color, on = true }: { size?: number; color: string; on?: boolean }) {
+  const glow = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!on) return void glow.setValue(1);
+    let loop: Animated.CompositeAnimation | null = null;
+    let over = false;
+    void AccessibilityInfo.isReduceMotionEnabled()
+      .catch(() => false)
+      .then((still) => {
+        if (over || still) return;
+        const step = (toValue: number) => Animated.timing(glow, { toValue, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: Platform.OS !== 'web' });
+        loop = Animated.loop(Animated.sequence([step(0.35), step(1)]));
+        loop.start();
+      });
+    return () => {
+      over = true;
+      loop?.stop();
+    };
+  }, [on, glow]);
+  return <Animated.View accessible={false} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: glow }} />;
+}
+
 // ---------- Slider ----------
+
+/** How far a finger travels, in points, before a touch counts as a drag or a scroll. */
+const SLOP = 6;
 
 export function Slider({
   value,
@@ -460,6 +533,7 @@ export function Slider({
   step = 1,
   onChange,
   onCommit,
+  reset,
   height = 40,
   label,
   disabled,
@@ -472,6 +546,8 @@ export function Slider({
   onChange: (v: number) => void;
   /** Called once when the drag ends, for work too heavy to run on every move. */
   onCommit?: (v: number) => void;
+  /** Where a double tap puts the slider back to, for controls with a natural rest such as 0 dB. */
+  reset?: number;
   height?: number;
   label?: string;
   disabled?: boolean;
@@ -479,8 +555,11 @@ export function Slider({
 }) {
   const ref = useRef<ComponentRef<typeof View>>(null);
   const box = useRef({ left: 0, width: 1 });
+  const lastTap = useRef(0);
   const latest = useRef(value);
   latest.current = value;
+  // The touch in progress: where it began, the value then, and whether it has turned out to be a drag or a scroll.
+  const touch = useRef<{ x: number; y: number; mode: 'wait' | 'drag' | 'scroll'; from: number; lastX: number } | null>(null);
 
   const snap = (v: number) => {
     const stepped = Math.round((v - min) / step) * step + min;
@@ -511,6 +590,9 @@ export function Slider({
     Platform.OS === 'web'
       ? {
           tabIndex: disabled ? -1 : 0,
+          'aria-valuemin': min,
+          'aria-valuemax': max,
+          'aria-valuenow': value,
           onKeyDown: (e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
             if (e.key === 'ArrowRight' || e.key === 'ArrowUp') (e.preventDefault(), nudge(1, e.shiftKey));
             if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') (e.preventDefault(), nudge(-1, e.shiftKey));
@@ -522,23 +604,70 @@ export function Slider({
     <View
       ref={ref}
       {...(web as object)}
+      accessible
       accessibilityRole="adjustable"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
       accessibilityValue={{ min, max, now: value }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
       onLayout={() => measure()}
       onStartShouldSetResponder={() => !disabled}
       onMoveShouldSetResponder={() => !disabled}
-      onResponderTerminationRequest={() => false}
+      // Until the finger has clearly gone sideways the page may take the touch back to scroll.
+      onResponderTerminationRequest={() => touch.current?.mode !== 'drag'}
       onResponderGrant={(e) => {
-        const x = e.nativeEvent.pageX;
-        measure(() => setFromPage(x));
+        touch.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, mode: 'wait', from: latest.current, lastX: e.nativeEvent.pageX };
+        measure();
       }}
-      onResponderMove={(e) => setFromPage(e.nativeEvent.pageX)}
-      onResponderRelease={() => onCommit?.(latest.current)}
-      onResponderTerminate={() => onCommit?.(latest.current)}
-      style={[{ height, justifyContent: 'center', opacity: disabled ? 0.4 : 1 }, Platform.OS === 'web' && ({ cursor: 'pointer', userSelect: 'none', touchAction: 'none' } as object), style]}
+      onResponderMove={(e) => {
+        const g = touch.current;
+        if (!g || g.mode === 'scroll') return;
+        const dx = Math.abs(e.nativeEvent.pageX - g.x);
+        const dy = Math.abs(e.nativeEvent.pageY - g.y);
+        // Nothing changes on touch-down: a finger passing over on its way up or down the page is
+        // scrolling, and only one that sets off sideways is moving the slider.
+        if (g.mode === 'wait') {
+          if (dy > SLOP && dy > dx) g.mode = 'scroll';
+          else if (dx > SLOP) g.mode = 'drag';
+        }
+        if (g.mode === 'drag') {
+          // Sliding the finger away from the track, up or down, slows the thumb for fine settings,
+          // the way scrubbing does in the system's own players.
+          const fine = dy > 120 ? 0.25 : dy > 50 ? 0.5 : 1;
+          if (fine === 1) setFromPage(e.nativeEvent.pageX);
+          else {
+            const next = snap(latest.current + ((e.nativeEvent.pageX - g.lastX) / box.current.width) * (max - min) * fine);
+            if (next !== latest.current) {
+              latest.current = next;
+              onChange(next);
+              g.lastX = e.nativeEvent.pageX;
+            }
+          }
+          if (fine === 1) g.lastX = e.nativeEvent.pageX;
+        }
+      }}
+      onResponderRelease={() => {
+        const g = touch.current;
+        touch.current = null;
+        // A tap that never moved sets the value where it landed; a second tap straight after puts it back to rest.
+        if (g?.mode === 'wait') {
+          const now = Date.now();
+          if (reset !== undefined && now - lastTap.current < 320) {
+            latest.current = snap(reset);
+            tick();
+            onChange(latest.current);
+          } else setFromPage(g.x);
+          lastTap.current = now;
+        }
+        if (g && g.mode !== 'scroll' && latest.current !== g.from) onCommit?.(latest.current);
+      }}
+      onResponderTerminate={() => {
+        const g = touch.current;
+        touch.current = null;
+        if (g && latest.current !== g.from) onCommit?.(latest.current);
+      }}
+      style={[{ height, justifyContent: 'center', opacity: disabled ? 0.4 : 1 }, Platform.OS === 'web' && ({ cursor: 'pointer', userSelect: 'none', touchAction: 'pan-y' } as object), style]}
     >
       <View pointerEvents="none" style={{ height: 4, borderRadius: 2, backgroundColor: C.dim, marginHorizontal: 9 }}>
         <View style={{ width: `${t * 100}%`, height: 4, borderRadius: 2, backgroundColor: C.accent }} />
@@ -556,6 +685,7 @@ export function SliderRow({
   display,
   onChange,
   onCommit,
+  reset,
   min = 0,
   max = 100,
   step = 1,
@@ -569,6 +699,7 @@ export function SliderRow({
   display?: string;
   onChange: (v: number) => void;
   onCommit?: (v: number) => void;
+  reset?: number;
   min?: number;
   max?: number;
   step?: number;
@@ -582,7 +713,7 @@ export function SliderRow({
       <Txt size={fontSize} style={{ width: labelWidth }}>
         {label}
       </Txt>
-      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} height={minHeight} style={{ flex: 1 }} />
+      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
       {display !== undefined && (
         <Txt size={13} color={C.muted} right style={{ width: valueWidth }}>
           {display}
@@ -695,6 +826,7 @@ export function Field(props: TextInputProps & { label?: string }) {
   const { label, style, ...rest } = props;
   return (
     <TextInput
+      maxFontSizeMultiplier={1.4}
       accessibilityLabel={label}
       placeholderTextColor={C.muted}
       selectionColor={C.accent}

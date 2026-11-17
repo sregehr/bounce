@@ -47,9 +47,16 @@ export default defineSchema({
     key: v.optional(v.string()),
   }),
 
-  // Backup of the app's local library, kept under a random id made on each device. Signing
-  // in links that id to the account (the devices table); restoring onto another device is
-  // not built yet. Anyone holding the id can still read that device's backup.
+  // What proves a caller is the device a backup belongs to: a hash of the secret that device
+  // made up on first launch, registered the first time it backs up. See convex/backup.ts.
+  deviceSecrets: defineTable({
+    deviceId: v.string(),
+    hash: v.string(),
+  }).index("by_device", ["deviceId"]),
+
+  // Backup of the app's local library, kept under a random id made on each device and readable
+  // only with that device's secret. Signing in links the id to the account (the devices table);
+  // restoring onto another device is not built yet.
   backupProjects: defineTable({
     deviceId: v.string(),
     localId: v.string(),
@@ -65,6 +72,30 @@ export default defineSchema({
     storageId: v.id("_storage"),
     size: v.number(),
   }).index("by_device_key", ["deviceId", "key"]),
+
+  // A song put up for friends to hear, behind a link nobody could guess. The link opens a small
+  // player page (convex/http.ts) where they can leave notes at a moment in the song.
+  shares: defineTable({
+    token: v.string(),
+    deviceId: v.string(),
+    /** The song's id on the device that shared it. */
+    localId: v.string(),
+    title: v.string(),
+    artist: v.string(),
+    audio: v.id("_storage"),
+    durationSec: v.number(),
+    /** The waveform drawn on the page, as 0 to 1 peaks. */
+    peaks: v.array(v.number()),
+  })
+    .index("by_token", ["token"])
+    .index("by_device_local", ["deviceId", "localId"]),
+
+  shareNotes: defineTable({
+    shareId: v.id("shares"),
+    atSec: v.number(),
+    name: v.string(),
+    text: v.string(),
+  }).index("by_share", ["shareId"]),
 
   takes: defineTable({
     beatId: v.id("beats"),

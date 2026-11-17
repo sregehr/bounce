@@ -18,13 +18,44 @@ let state: EngineState = {
   input: { status: 'idle', error: null, inputs: [], deviceId: null, label: '', output: '', sampleRate: 0, channels: 0, pair: 0, levelL: 0, levelR: 0 },
   capture: { status: 'idle', elapsed: 0, peak: 0, clipped: false, wave: [] },
   transport: { id: null, playing: false, position: 0, duration: 0, side: 'a' },
-  take: { mode: 'idle', elapsed: 0, held: 0, level: 0, clipped: false, ended: false },
+  take: { mode: 'idle', elapsed: 0, lead: 0, held: 0, level: 0, clipped: false, ended: false },
 };
 
 const listeners = new Set<() => void>();
 function set<K extends keyof EngineState>(key: K, patch: Partial<EngineState[K]>) {
   state = { ...state, [key]: { ...state[key], ...patch } };
+  if (key === 'transport' && 'playing' in patch) syncSession();
   listeners.forEach((fn) => fn());
+}
+
+// ---------- Lock screen and headphone controls ----------
+
+const session = typeof navigator !== 'undefined' && 'mediaSession' in navigator ? navigator.mediaSession : null;
+
+function syncSession() {
+  if (session) session.playbackState = !session.metadata ? 'none' : state.transport.playing ? 'playing' : 'paused';
+}
+
+/**
+ * Tells the system what is playing, so the lock screen, the control centre and headphone
+ * buttons show the song and can play, pause and skip within it. Pass null when nothing is.
+ */
+export function setNowPlaying(info: { title: string; artist: string; artwork?: string | null } | null) {
+  if (!session || typeof MediaMetadata === 'undefined') return;
+  session.metadata = info ? new MediaMetadata({ title: info.title, artist: info.artist, album: 'Bounce', artwork: info.artwork ? [{ src: info.artwork, sizes: '512x512' }] : [] }) : null;
+  const on = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+    try {
+      session.setActionHandler(action, info ? handler : null);
+    } catch {
+      // Not every browser knows every action.
+    }
+  };
+  on('play', () => void resume());
+  on('pause', () => pause());
+  on('seekto', (d) => d.seekTime != null && seek(d.seekTime));
+  on('seekbackward', (d) => seek(Math.max(0, state.transport.position - (d.seekOffset ?? 10))));
+  on('seekforward', (d) => seek(Math.min(state.transport.duration, state.transport.position + (d.seekOffset ?? 10))));
+  syncSession();
 }
 const subscribe = (fn: () => void) => {
   listeners.add(fn);
@@ -71,13 +102,14 @@ async function context(rate?: number): Promise<AudioContext> {
     }
   }
   await worklet;
-  if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+  // After a call, Siri or the screen locking, the clock is left paused or "interrupted"; either way it is started again.
+  if (ctx.state !== 'running') await ctx.resume().catch(() => {});
   return ctx;
 }
 
 /** Browsers start the audio clock suspended until a tap; call this from one. */
 export function wake() {
-  if (ctx?.state === 'suspended') void ctx.resume();
+  if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().catch(() => {});
 }
 
 function buffer(c: AudioContext, audio: { channels: Float32Array[]; sampleRate: number }): AudioBuffer {
@@ -290,7 +322,7 @@ let frames = 0;
 let barPeak = 0;
 let barBlocks = 0;
 
-type TakeRun = { mode: 'listening' | 'recording'; startFrame: number; loopFrames: number | null; blocks: Block[]; held: number; peak: number; clipped: boolean; beat: AudioBufferSourceNode };
+type TakeRun = { mode: 'listening' | 'recording'; startFrame: number; loopFrames: number | null; blocks: Block[]; held: number; peak: number; clipped: boolean; beat: AudioBufferSourceNode; clicks: OscillatorNode[] };
 let run: TakeRun | null = null;
 let probe: { startFrame: number; need: number; blocks: Block[]; got: number; done: (heard: Float32Array) => void } | null = null;
 
@@ -335,7 +367,7 @@ function onBlock(msg: { peaks: Float32Array; l: Float32Array; r: Float32Array; p
       }
     }
     const elapsed = Math.max(0, (frame + l.length - run.startFrame) / ctx.sampleRate);
-    set('take', { elapsed, held: Math.min(run.held / ctx.sampleRate, run.mode === 'listening' ? HOLD_SECONDS : Infinity), level: Math.max(loud, state.take.level * 0.8), clipped: run.clipped });
+    set('take', { elapsed, lead: Math.max(0, (run.startFrame - (frame + l.length)) / ctx.sampleRate), held: Math.min(run.held / ctx.sampleRate, run.mode === 'listening' ? HOLD_SECONDS : Infinity), level: Math.max(loud, state.take.level * 0.8), clipped: run.clipped });
     return;
   }
 
@@ -615,8 +647,9 @@ function monoFrom(blocks: Block[], startFrame: number, limit?: number): { mono: 
 /**
  * Plays the beat (looping a region, or once through) and takes in the input from the same instant.
  * `listening` keeps only the last minute, for "keep that"; `recording` keeps everything.
+ * `countIn` plays that many clicks, one per beat, before the beat starts; nothing is recorded during them.
  */
-export async function startTake(mode: 'listening' | 'recording', beat: { channels: Float32Array[]; sampleRate: number }, loop: { start: number; end: number } | null) {
+export async function startTake(mode: 'listening' | 'recording', beat: { channels: Float32Array[]; sampleRate: number }, loop: { start: number; end: number } | null, countIn?: { beats: number; beatSec: number }) {
   if (state.input.status !== 'ready') throw new Error('Connect a microphone first.');
   endRun();
   stopTransport();
@@ -626,7 +659,24 @@ export async function startTake(mode: 'listening' | 'recording', beat: { channel
   const src = c.createBufferSource();
   src.buffer = buffer(c, beat);
   src.connect(master!);
-  const when = c.currentTime + 0.25;
+  const lead = countIn ? countIn.beats * countIn.beatSec : 0;
+  const first = c.currentTime + 0.25;
+  const when = first + lead;
+  const clicks: OscillatorNode[] = [];
+  for (let i = 0; countIn && i < countIn.beats; i++) {
+    // A short tick on each beat, the first one higher, the way a drummer counts a band in.
+    const at = first + i * countIn.beatSec;
+    const osc = c.createOscillator();
+    const env = c.createGain();
+    osc.frequency.value = i === 0 ? 1568 : 1047;
+    env.gain.setValueAtTime(0, at);
+    env.gain.linearRampToValueAtTime(0.35, at + 0.002);
+    env.gain.exponentialRampToValueAtTime(0.001, at + 0.06);
+    osc.connect(env).connect(master!);
+    osc.start(at);
+    osc.stop(at + 0.08);
+    clicks.push(osc);
+  }
   if (loop) {
     src.loop = true;
     src.loopStart = loop.start;
@@ -646,8 +696,9 @@ export async function startTake(mode: 'listening' | 'recording', beat: { channel
     peak: 0,
     clipped: false,
     beat: src,
+    clicks,
   };
-  set('take', { mode, elapsed: 0, held: 0, level: 0, clipped: false, ended: false });
+  set('take', { mode, elapsed: 0, lead, held: 0, level: 0, clipped: false, ended: false });
 }
 
 function endRun() {
@@ -659,6 +710,14 @@ function endRun() {
     // Already stopped.
   }
   run.beat.disconnect();
+  for (const click of run.clicks) {
+    try {
+      click.stop();
+    } catch {
+      // Already played.
+    }
+    click.disconnect();
+  }
   run = null;
 }
 
@@ -666,12 +725,12 @@ function endRun() {
 export function stopTake(keep = true): RecordedTake | null {
   const r = run;
   if (!r || !ctx) {
-    set('take', { mode: 'idle', ended: false });
+    set('take', { mode: 'idle', ended: false, lead: 0 });
     return null;
   }
   const rate = ctx.sampleRate;
   endRun();
-  set('take', { mode: 'idle', ended: false, level: 0 });
+  set('take', { mode: 'idle', ended: false, level: 0, lead: 0 });
   if (!keep || r.blocks.length === 0) return null;
   const { mono, firstFrame } = monoFrom(r.blocks, r.startFrame);
   if (mono.length < rate * 0.2) return null;

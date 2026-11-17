@@ -5,6 +5,8 @@ import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
+import { tick } from './haptics';
+import { useArmed } from './hooks';
 import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
 
@@ -215,7 +217,8 @@ const NO_SELECT = { userSelect: 'none' } as object;
 
 /**
  * A list row that slides left to show a Delete button, as iOS lists do. The swipe only shows
- * the button; tapping it is what deletes. Swiping back, or tapping the row, closes it again.
+ * the button, and deleting takes two taps on it: the first asks, the second deletes. Swiping
+ * back, tapping the row, or waiting a few seconds puts it away again.
  */
 export function SwipeRow({ children, label, onDelete }: { children: ReactNode; label: string; onDelete: () => void }) {
   const x = useRef(new Animated.Value(0)).current;
@@ -224,7 +227,10 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
   // A mouse drag ends with a click on whatever was pressed, which is the row itself. While dragging,
   // the row's content takes no pointer events, so that click lands on the wrapper and opens nothing.
   const [dragging, setDragging] = useState(false);
+  const [sure, askSure, notSure] = useArmed(4000);
   const settle = (show: boolean) => {
+    if (!show) notSure();
+    else if (!open) tick();
     setOpen(show);
     from.current = show ? -DELETE_WIDTH : 0;
     Animated.spring(x, { toValue: from.current, useNativeDriver: false, bounciness: 0, speed: 20 }).start();
@@ -250,20 +256,21 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
     <View style={{ overflow: 'hidden' }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={label}
+        accessibilityLabel={sure ? `Tap again to ${label.charAt(0).toLowerCase()}${label.slice(1)}` : label}
         accessibilityElementsHidden={!open}
         importantForAccessibility={open ? 'yes' : 'no-hide-descendants'}
         aria-hidden={!open}
         tabIndex={open ? 0 : -1}
         disabled={!open}
         onPress={() => {
+          if (!sure) return askSure();
           settle(false);
           onDelete();
         }}
         style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: DELETE_WIDTH, backgroundColor: C.rec, alignItems: 'center', justifyContent: 'center', opacity: open ? 1 : 0 }}
       >
-        <Txt size={14} w="semi" color={C.text}>
-          Delete
+        <Txt size={sure ? 13 : 14} w="semi" color={C.text} center>
+          {sure ? 'Tap again' : 'Delete'}
         </Txt>
       </Pressable>
       <Animated.View {...pan.panHandlers} style={[{ backgroundColor: C.bg, transform: [{ translateX: x }] }, NO_SELECT]}>

@@ -73,9 +73,9 @@ export default function Master() {
         <View style={{ paddingBottom: 4 }}>
           <Eyebrow>Fine tune</Eyebrow>
         </View>
-        <SliderRow {...fine} label="Low" min={-6} max={6} step={0.5} value={master.low} display={db(master.low, master.low % 1 ? 1 : 0)} onChange={(low) => setDraft({ ...draft, low })} onCommit={(low) => commit({ low })} />
-        <SliderRow {...fine} label="Mid" min={-6} max={6} step={0.5} value={master.mid} display={db(master.mid, master.mid % 1 ? 1 : 0)} onChange={(mid) => setDraft({ ...draft, mid })} onCommit={(mid) => commit({ mid })} />
-        <SliderRow {...fine} label="High" min={-6} max={6} step={0.5} value={master.high} display={db(master.high, master.high % 1 ? 1 : 0)} onChange={(high) => setDraft({ ...draft, high })} onCommit={(high) => commit({ high })} />
+        <SliderRow {...fine} label="Low" reset={0} min={-6} max={6} step={0.5} value={master.low} display={db(master.low, master.low % 1 ? 1 : 0)} onChange={(low) => setDraft({ ...draft, low })} onCommit={(low) => commit({ low })} />
+        <SliderRow {...fine} label="Mid" reset={0} min={-6} max={6} step={0.5} value={master.mid} display={db(master.mid, master.mid % 1 ? 1 : 0)} onChange={(mid) => setDraft({ ...draft, mid })} onCommit={(mid) => commit({ mid })} />
+        <SliderRow {...fine} label="High" reset={0} min={-6} max={6} step={0.5} value={master.high} display={db(master.high, master.high % 1 ? 1 : 0)} onChange={(high) => setDraft({ ...draft, high })} onCommit={(high) => commit({ high })} />
         <SliderRow {...fine} label="Compression" value={master.comp} display={`${master.comp}%`} onChange={(comp) => setDraft({ ...draft, comp })} onCommit={(comp) => commit({ comp })} />
       </View>
   );
@@ -105,11 +105,14 @@ export default function Master() {
   // A song is finished by saving it to the Vault; its files are exported from there.
   const next = project.saved ? <Btn label="Done" to="/player" back disabled={!mix} /> : <Btn label="Save to the Vault" to="/cover?finish=1" disabled={!mix} />;
 
+  // Back returns to wherever mastering was opened from: the mix, the beat's details, or the player.
+  const top = <TopBar left="Master" right={<NavLink to={project.saved ? '/player' : project.takeId ? '/playback' : '/song'} back>Back</NavLink>} />;
+
   // Wide: listening and what the master did on the left, the controls and the last step on the right.
   if (wide)
     return (
       <Screen gap={22}>
-        <TopBar left="Master" />
+        {top}
         <Columns
           side={440}
           gap={36}
@@ -135,8 +138,7 @@ export default function Master() {
 
   return (
     <Screen gap={14} padBottom={32}>
-      {/* No way back here: the bar at the bottom leads everywhere, and a finished song has Done below. */}
-      <TopBar left="Master" />
+      {top}
 
       {sides}
       {transport}

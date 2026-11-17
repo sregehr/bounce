@@ -5,7 +5,18 @@ import { C, F } from '@/ui/theme';
 export type SnippetVideo = { blob: Blob; extension: 'mp4' | 'webm' };
 export type SnippetCard = { title: string; artist: string; caption: string | null; credit: string | null; peaks: number[]; coverUrl: string | null };
 
-const W = 720, H = 1280;
+export type SnippetShape = 'tall' | 'square' | 'wide';
+
+/**
+ * The frame for each place a snippet gets posted, and where things sit in it. Tall is for
+ * Reels, TikTok, Shorts and Stories, whose own buttons and captions cover the bottom of the
+ * frame, so the words stop well short of it. Square is for feeds; wide is for YouTube and X.
+ */
+const SHAPES: Record<SnippetShape, { w: number; h: number; top: number; title: number; titleLines: number; wave: number; waveTall: number; foot: number; captionLines: number }> = {
+  tall: { w: 720, h: 1280, top: 136, title: 96, titleLines: 2, wave: 640, waveTall: 200, foot: 210, captionLines: 3 },
+  square: { w: 1080, h: 1080, top: 96, title: 88, titleLines: 2, wave: 430, waveTall: 180, foot: 96, captionLines: 3 },
+  wide: { w: 1280, h: 720, top: 56, title: 72, titleLines: 1, wave: 270, waveTall: 110, foot: 64, captionLines: 2 },
+};
 
 function pickType(): { mime: string; extension: 'mp4' | 'webm' } | null {
   if (typeof MediaRecorder === 'undefined') return null;
@@ -56,9 +67,11 @@ export const SCRIM: [number, number][] = [
   [1, 0.88],
 ];
 
-function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageElement | null, progress: number) {
+function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageElement | null, progress: number, shape: SnippetShape) {
+  const f = SHAPES[shape];
+  const W = f.w, H = f.h;
   const pad = 56;
-  let y = 136;
+  let y = f.top;
   if (cover) {
     // The song's photo fills the frame, darkened so light words and bars read on any picture.
     const scale = Math.max(W / cover.width, H / cover.height);
@@ -73,17 +86,17 @@ function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageEl
   }
   g.fillStyle = cover ? C.text : C.bg;
   g.textBaseline = 'top';
-  g.font = `96px ${F.display}, sans-serif`;
-  for (const line of wrap(g, card.title, W - pad * 2, 2)) {
+  g.font = `${f.title}px ${F.display}, sans-serif`;
+  for (const line of wrap(g, card.title, W - pad * 2, f.titleLines)) {
     g.fillText(line, pad, y);
-    y += 100;
+    y += f.title + 4;
   }
   g.font = `32px ${F.semi}, sans-serif`;
   g.fillText(card.artist, pad, y + 8);
 
   // Waveform: bars already played are solid, the rest faded.
   const bars = card.peaks.length;
-  const top = H - 520, height = 200;
+  const top = f.wave, height = f.waveTall;
   const step = (W - pad * 2) / bars;
   for (let i = 0; i < bars; i++) {
     const h = Math.max(8, Math.sqrt(card.peaks[i]) * height);
@@ -94,7 +107,7 @@ function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageEl
   }
   g.globalAlpha = 1;
 
-  let bottom = H - 96;
+  let bottom = H - f.foot;
   if (card.credit) {
     g.font = `26px ${F.semi}, sans-serif`;
     g.fillText(card.credit.toUpperCase(), pad, bottom - 26);
@@ -102,56 +115,66 @@ function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageEl
   }
   if (card.caption) {
     g.font = `44px ${F.display}, sans-serif`;
-    const lines = wrap(g, card.caption, W - pad * 2, 3);
+    const lines = wrap(g, card.caption, W - pad * 2, f.captionLines);
     bottom -= lines.length * 54;
     lines.forEach((line, i) => g.fillText(line, pad, bottom + i * 54));
   }
 }
 
 /** Records the card with its audio. `onProgress` is called with the seconds left. */
-export async function makeSnippetVideo(audio: { channels: Float32Array[]; sampleRate: number }, card: SnippetCard, onProgress: (secondsLeft: number) => void): Promise<SnippetVideo> {
+export async function makeSnippetVideo(audio: { channels: Float32Array[]; sampleRate: number }, card: SnippetCard, onProgress: (secondsLeft: number) => void, shape: SnippetShape = 'tall'): Promise<SnippetVideo> {
   const type = pickType();
   if (!type) throw new Error('This browser cannot record video. The audio can still be saved.');
   const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = SHAPES[shape].w;
+  canvas.height = SHAPES[shape].h;
   const g = canvas.getContext('2d')!;
   const cover = await loadImage(card.coverUrl);
-  draw(g, card, cover, 0);
+  draw(g, card, cover, 0, shape);
 
   const ctx = new AudioContext({ sampleRate: audio.sampleRate });
-  const buffer = ctx.createBuffer(Math.min(2, audio.channels.length), audio.channels[0].length, audio.sampleRate);
-  for (let i = 0; i < buffer.numberOfChannels; i++) buffer.copyToChannel(audio.channels[i] as Float32Array<ArrayBuffer>, i);
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
-  const dest = ctx.createMediaStreamDestination();
-  src.connect(dest);
-
-  const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
-  const recorder = new MediaRecorder(stream, { mimeType: type.mime, videoBitsPerSecond: 4_000_000, audioBitsPerSecond: 256_000 });
+  let stream: MediaStream | null = null;
+  let timer: ReturnType<typeof setInterval> | null = null;
   const parts: Blob[] = [];
-  recorder.ondataavailable = (e) => e.data.size && parts.push(e.data);
-  const stopped = new Promise<void>((resolve, reject) => {
-    recorder.onstop = () => resolve();
-    recorder.onerror = () => reject(new Error('Recording the video failed.'));
-  });
+  // Whatever happens, the audio clock made for this video is closed again: browsers only allow a few.
+  try {
+    const buffer = ctx.createBuffer(Math.min(2, audio.channels.length), audio.channels[0].length, audio.sampleRate);
+    for (let i = 0; i < buffer.numberOfChannels; i++) buffer.copyToChannel(audio.channels[i] as Float32Array<ArrayBuffer>, i);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const dest = ctx.createMediaStreamDestination();
+    src.connect(dest);
 
-  const duration = buffer.duration;
-  await ctx.resume();
-  recorder.start(250);
-  const began = ctx.currentTime + 0.05;
-  src.start(began);
-  // A timer rather than animation frames, so it keeps going if the tab is in the background.
-  const timer = setInterval(() => {
-    const t = Math.max(0, ctx.currentTime - began);
-    draw(g, card, cover, Math.min(1, t / duration));
-    onProgress(Math.max(0, Math.ceil(duration - t)));
-  }, 33);
-  await new Promise((r) => setTimeout(r, duration * 1000 + 250));
-  clearInterval(timer);
-  recorder.stop();
-  await stopped;
-  stream.getTracks().forEach((t) => t.stop());
-  void ctx.close();
+    stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const recorder = new MediaRecorder(stream, { mimeType: type.mime, videoBitsPerSecond: shape === 'tall' ? 4_000_000 : 5_000_000, audioBitsPerSecond: 256_000 });
+    recorder.ondataavailable = (e) => e.data.size && parts.push(e.data);
+    const stopped = new Promise<void>((resolve, reject) => {
+      recorder.onstop = () => resolve();
+      recorder.onerror = () => reject(new Error('Recording the video failed.'));
+    });
+
+    const duration = buffer.duration;
+    await ctx.resume();
+    recorder.start(250);
+    const began = ctx.currentTime + 0.05;
+    // The video ends when the audio does, by the audio's own clock, so a tab that was put in
+    // the background for a while still gets the whole snippet.
+    const played = new Promise<void>((resolve) => (src.onended = () => resolve()));
+    src.start(began);
+    // A timer rather than animation frames, so it keeps going if the tab is in the background.
+    timer = setInterval(() => {
+      const t = Math.max(0, ctx.currentTime - began);
+      draw(g, card, cover, Math.min(1, t / duration), shape);
+      onProgress(Math.max(0, Math.ceil(duration - t)));
+    }, 33);
+    await Promise.race([played, new Promise((r) => setTimeout(r, duration * 1000 + 15000))]);
+    await new Promise((r) => setTimeout(r, 200));
+    recorder.stop();
+    await stopped;
+  } finally {
+    if (timer) clearInterval(timer);
+    stream?.getTracks().forEach((t) => t.stop());
+    void ctx.close().catch(() => {});
+  }
   return { blob: new Blob(parts, { type: type.mime.split(';')[0] }), extension: type.extension };
 }

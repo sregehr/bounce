@@ -86,6 +86,9 @@ function Details({ project }: { project: Project }) {
             onBlur={commitTempo}
             onSubmitEditing={commitTempo}
             keyboardType="decimal-pad"
+            // The number pad has no return key of its own, so it gets a Done.
+            returnKeyType="done"
+            inputAccessoryViewButtonLabel="Done"
             placeholder="BPM"
             placeholderTextColor={C.muted}
             selectionColor={C.accent}

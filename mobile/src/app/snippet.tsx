@@ -24,6 +24,10 @@ const LENGTHS = ['15 s', '20 s', '30 s'] as const;
 /** How long a snippet takes to fade out at its end. */
 const FADE_OUT_SEC = 3;
 
+const SHAPES = ['Tall 9:16', 'Square 1:1', 'Wide 16:9'] as const;
+const SHAPE_OF = { 'Tall 9:16': 'tall', 'Square 1:1': 'square', 'Wide 16:9': 'wide' } as const;
+const SHAPE_LABEL = { tall: 'Tall 9:16', square: 'Square 1:1', wide: 'Wide 16:9' } as const;
+
 export default function Snippet() {
   const project = useProject();
   const profile = useLibrary((l) => l.profile);
@@ -43,6 +47,7 @@ export default function Snippet() {
   useStopOnLeave();
 
   const choice = project?.snippet;
+  const shape = choice?.shape ?? 'tall';
   const length = mix ? Math.min(choice?.lengthSec ?? 20, Math.floor(mix.durationSec)) : (choice?.lengthSec ?? 20);
   const bar = barSeconds(project?.beat.bpm ?? null);
 
@@ -92,7 +97,7 @@ export default function Snippet() {
 
   // Making the snippet takes as long as the snippet is, and a phone only opens its share sheet
   // straight after a tap. So it is made first, and sharing or saving it is a second tap.
-  const recipe = clip ? JSON.stringify([project.id, clip.start, length, choice.captions && caption, choice.credit && credit, coverUrl]) : '';
+  const recipe = clip ? JSON.stringify([project.id, clip.start, length, choice.captions && caption, choice.credit && credit, coverUrl, shape]) : '';
   const fresh = ready && ready.recipe === recipe ? ready.files : null;
 
   const make = () =>
@@ -103,8 +108,8 @@ export default function Snippet() {
       let files: OutFile[];
       if (videoSupported()) {
         setLeft(Math.ceil(length));
-        const video = await makeSnippetVideo(clip, { title: project.name, artist, caption: choice.captions && caption ? caption : null, credit: choice.credit ? credit : null, peaks: clip.peaks, coverUrl }, setLeft);
-        files = [{ name: `${base}.${video.extension}`, data: video.blob, type: video.blob.type }];
+        const video = await makeSnippetVideo(clip, { title: project.name, artist, caption: choice.captions && caption ? caption : null, credit: choice.credit ? credit : null, peaks: clip.peaks, coverUrl }, setLeft, shape);
+        files = [{ name: `${base}${shape === 'tall' ? '' : ` (${shape})`}.${video.extension}`, data: video.blob, type: video.blob.type }];
       } else {
         files = [{ name: `${base}.wav`, data: encodeWav(clip.channels, clip.sampleRate, 16), type: 'audio/wav' }];
       }
@@ -223,6 +228,12 @@ export default function Snippet() {
 
   const options = (
       <View>
+        {videoSupported() && (
+          <View style={{ gap: 6, paddingBottom: 10 }}>
+            <Segmented options={SHAPES} value={SHAPE_LABEL[shape]} onChange={(v) => set({ shape: SHAPE_OF[v] })} variant="compact" />
+            <Muted size={12}>{shape === 'tall' ? 'For Reels, TikTok, Shorts and Stories. The words stay clear of their buttons.' : shape === 'square' ? 'For feeds and messages.' : 'For YouTube and X.'}</Muted>
+          </View>
+        )}
         <Option label="Caption on screen" sub={choice.captions ? 'Tap the line on the card to change it.' : undefined} checked={choice.captions} onChange={(captions) => set({ captions })} divided minHeight={46} />
         <Option label="Producer credit on screen" checked={choice.credit} onChange={(credit2) => set({ credit: credit2 })} minHeight={46} />
       </View>
@@ -261,7 +272,7 @@ export default function Snippet() {
         <View style={{ flex: 1, flexDirection: 'row', gap: 48, minHeight: 0 }}>
           <View style={{ width: 430 }}>{card}</View>
           <View style={{ flex: 1, minWidth: 0, gap: 16 }}>
-            <TopBar left="Snippet" />
+            <TopBar left="Snippet" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />
             {pick}
             {options}
             <Foot>
@@ -280,7 +291,7 @@ export default function Snippet() {
 
   return (
     <Screen>
-      <TopBar left="Snippet" />
+      <TopBar left="Snippet" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />
 
       {card}
 

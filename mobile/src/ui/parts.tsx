@@ -7,6 +7,7 @@ import type { ClapRun, EngineState } from '@/engine/types';
 
 import { pastThreshold } from './feel';
 import { tick } from './haptics';
+import { Collapse, NATIVE, reduceMotion } from './motion';
 import { useArmed } from './hooks';
 import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
@@ -47,8 +48,8 @@ export function Picker<T extends string>({ label, value, options, onChange, fall
           {open ? 'Close' : 'Change'}
         </Txt>
       </Pressable>
-      {open &&
-        options.map((o) => (
+      <Collapse open={open}>
+        {options.map((o) => (
           <Pressable
             key={o.value}
             accessibilityRole="radio"
@@ -65,6 +66,7 @@ export function Picker<T extends string>({ label, value, options, onChange, fall
             </Txt>
           </Pressable>
         ))}
+      </Collapse>
     </View>
   );
 }
@@ -236,7 +238,9 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
     if (!show) notSure();
     setOpen(show);
     from.current = show ? -DELETE_WIDTH : 0;
-    Animated.spring(x, { toValue: from.current, useNativeDriver: false, bounciness: 0, speed: 20 }).start();
+    // The row is only ever moved sideways, so it can run on the native driver.
+    if (reduceMotion()) x.setValue(from.current);
+    else Animated.spring(x, { toValue: from.current, useNativeDriver: NATIVE, bounciness: 0, speed: 20 }).start();
   };
   const pan = useRef(
     PanResponder.create({

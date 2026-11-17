@@ -162,7 +162,7 @@ export default function Record() {
     </Card>
   );
 
-  const stop = <StopButton size={wide ? 112 : 96} label={failed ? 'Discard capture' : recording ? 'Stop recording' : 'Cancel'} onPress={failed ? discard : finish} disabled={saving} />;
+  const stop = <StopButton size={wide ? 112 : 96} live={recording} label={failed ? 'Discard capture' : recording ? 'Stop recording' : 'Cancel'} onPress={failed ? discard : finish} disabled={saving} />;
   const hint = failed
     ? 'The round button discards this capture and listens for a new one.'
     : recording

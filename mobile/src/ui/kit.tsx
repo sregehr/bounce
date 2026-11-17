@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from '
 import {
   Easing,
   Animated,
-  AccessibilityInfo,
   ActivityIndicator,
   Platform,
   Pressable,
@@ -23,6 +22,7 @@ import Svg, { Path, Rect } from 'react-native-svg';
 
 import { getLibrary } from '@/data/store';
 import { reachedDetent } from './feel';
+import { Collapse, Halo, NATIVE, useGlide, useReduceMotion } from './motion';
 import { tick } from './haptics';
 import { BackButton, SHEET_TOP, useSheet } from './nav';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
@@ -522,23 +522,14 @@ export function Meter({ label, pct, height = 6, accent }: { label?: string; pct:
  */
 export function Pulse({ size = 10, color, on = true }: { size?: number; color: string; on?: boolean }) {
   const glow = useRef(new Animated.Value(1)).current;
+  const still = useReduceMotion();
   useEffect(() => {
-    if (!on) return void glow.setValue(1);
-    let loop: Animated.CompositeAnimation | null = null;
-    let over = false;
-    void AccessibilityInfo.isReduceMotionEnabled()
-      .catch(() => false)
-      .then((still) => {
-        if (over || still) return;
-        const step = (toValue: number) => Animated.timing(glow, { toValue, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: Platform.OS !== 'web' });
-        loop = Animated.loop(Animated.sequence([step(0.35), step(1)]));
-        loop.start();
-      });
-    return () => {
-      over = true;
-      loop?.stop();
-    };
-  }, [on, glow]);
+    if (!on || still) return void glow.setValue(1);
+    const step = (toValue: number) => Animated.timing(glow, { toValue, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: NATIVE });
+    const loop = Animated.loop(Animated.sequence([step(0.35), step(1)]));
+    loop.start();
+    return () => loop.stop();
+  }, [on, still, glow]);
   return <Animated.View accessible={false} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: glow }} />;
 }
 
@@ -841,7 +832,7 @@ export function Disclosure({ title, summary, open, onToggle, last, children, siz
           {summary}
         </Txt>
       </Pressable>
-      {open && children}
+      <Collapse open={open}>{children}</Collapse>
     </>
   );
 }
@@ -917,13 +908,18 @@ export function SkipIcon({ size = 26, color = C.text, back }: { size?: number; c
 }
 
 /** The record/stop control: a ring with a red square (stop) or red disc (record). */
-export function StopButton({ size = 96, recording = true, onPress, halo, label, disabled }: { size?: number; recording?: boolean; onPress?: () => void; halo?: boolean; label: string; disabled?: boolean }) {
+export function StopButton({ size = 96, recording = true, live, onPress, halo, label, disabled }: { size?: number; recording?: boolean; /** Sound is being recorded right now: a ring spreads from the button. */ live?: boolean; onPress?: () => void; halo?: boolean; label: string; disabled?: boolean }) {
   const inner = Math.round(size * 0.35);
+  const disc = inner * 1.5;
+  // The red disc shrinks into the stop square, and back, instead of swapping.
+  const at = useGlide(recording);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ opacity: disabled ? 0.35 : pressed ? 0.8 : 1 })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ opacity: disabled ? 0.35 : pressed ? 0.8 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] })}>
       <View style={[halo && { padding: 10, borderRadius: size, backgroundColor: C.recHalo }]}>
         <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: size > 110 ? 4 : 3, borderColor: C.text, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: recording ? inner : inner * 1.5, height: recording ? inner : inner * 1.5, borderRadius: recording ? Math.round(inner * 0.23) : inner, backgroundColor: C.rec }} />
+          <Halo on={!!live && !disabled} size={size} color={C.rec} />
+          <Animated.View style={{ position: 'absolute', width: disc, height: disc, borderRadius: disc / 2, backgroundColor: C.rec, opacity: at.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [1, inner / disc] }) }] }} />
+          <Animated.View style={{ width: inner, height: inner, borderRadius: Math.round(inner * 0.23), backgroundColor: C.rec, opacity: at, transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [disc / inner, 1] }) }] }} />
         </View>
       </View>
     </Pressable>

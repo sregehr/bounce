@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, ScrollView, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,6 +8,7 @@ import { useProject } from '@/data/store';
 import { spectrum, setNowPlaying } from '@/engine/engine';
 import { Btn, Eyebrow, NavLink, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
+import { NATIVE, useReduceMotion } from '@/ui/motion';
 import { BackButton, asSheet } from '@/ui/nav';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
 import { C } from '@/ui/theme';
@@ -21,26 +22,35 @@ const close = () => {
   router.push('/vault');
 };
 
-/** Bars that follow the sound of whatever is playing. `tall` is the wide layout's, spread along the bottom of the cover. */
+/** How often the bars are given new heights to glide to. */
+const BEAT_MS = 90;
+
+/**
+ * Bars that follow the sound of whatever is playing. `tall` is the wide layout's, spread along the bottom of the cover.
+ * Each bar is drawn once at full height and scaled, on the native driver: the sound is read a
+ * few times a second and the bars glide between readings, with no re-render in between.
+ * With less motion asked for they rest.
+ */
 function Visualiser({ playing, tall }: { playing: boolean; tall?: boolean }) {
-  const [levels, setLevels] = useState<number[]>(() => new Array(BARS).fill(0.08));
+  const still = useReduceMotion();
+  const levels = useRef(Array.from({ length: BARS }, () => new Animated.Value(0.08))).current;
   useEffect(() => {
+    if (still) return levels.forEach((level) => level.setValue(0.08));
     if (!playing) return;
-    let frame = 0, last = 0;
-    const step = (now: number) => {
-      if (now - last > 45) {
-        last = now;
-        setLevels(spectrum(BARS));
-      }
-      frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [playing]);
+    const timer = setInterval(() => {
+      const heard = spectrum(BARS);
+      Animated.parallel(
+        levels.map((level, i) => Animated.timing(level, { toValue: Math.max(0.06, Math.min(1, (heard[i] ?? 0) * 1.15)), duration: BEAT_MS, easing: Easing.linear, useNativeDriver: NATIVE })),
+        { stopTogether: false },
+      ).start();
+    }, BEAT_MS);
+    return () => clearInterval(timer);
+  }, [playing, still, levels]);
+  const full = tall ? 96 : 72;
   return (
     <View accessible={false} style={[{ height: 88, flexDirection: 'row', alignItems: 'flex-end', gap: 4, paddingHorizontal: 24, paddingTop: 16, overflow: 'hidden' }, tall && { height: 112, gap: 6, paddingHorizontal: 28, pointerEvents: 'none' }]}>
-      {levels.map((v, i) => (
-        <View key={i} style={{ flex: 1, maxWidth: tall ? undefined : 6, height: Math.max(4, Math.round((tall ? 96 : 72) * Math.min(1, v * 1.15))), borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: i % 5 === 0 ? C.text : C.accent }} />
+      {levels.map((level, i) => (
+        <Animated.View key={i} style={{ flex: 1, maxWidth: tall ? undefined : 6, height: full, borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: i % 5 === 0 ? C.text : C.accent, transformOrigin: 'bottom', transform: [{ scaleY: level }] }} />
       ))}
     </View>
   );

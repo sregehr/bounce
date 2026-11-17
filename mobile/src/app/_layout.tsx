@@ -13,6 +13,7 @@ import { loadLibrary, useLibrary, useLoadError, useReady } from '@/data/store';
 import { closeInput, useEngine } from '@/engine/engine';
 import { TabBar, TopNav } from '@/ui/TabBar';
 import { useGuarded } from '@/ui/guard';
+import { useReduceMotion } from '@/ui/motion';
 import { Btn, Muted, Txt } from '@/ui/kit';
 import { C } from '@/ui/theme';
 import { WIDE_MAX, useRoomy, useWide } from '@/ui/wide';
@@ -58,6 +59,9 @@ export default function Layout() {
   const touch = Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
   const framed = !wide && !roomy && !touch && Platform.OS === 'web' && width >= 520 && height >= 880;
   const loaded = ready && (fontsLoaded || !!fontError);
+  // With less motion asked for, screens cross-fade instead of sliding in.
+  const still = useReduceMotion();
+  const push = still ? 'fade' : 'slide_from_right';
   // A sheet cannot be swiped away either while the screen in view is holding a recording.
   const SHEET = sheetOptions(live);
 
@@ -84,9 +88,9 @@ export default function Layout() {
               <Stack screenOptions={{ title: 'Bounce', headerShown: false, contentStyle: { backgroundColor: C.bg }, animation: 'fade' }}>
                 {/* Drilling in pushes from the right, as it does everywhere on the phone: Home to Capture to Record, a song to its mastering, Settings to Privacy. Tabs cross-fade. */}
                 {['capture', 'master', 'privacy'].map((name) => (
-                  <Stack.Screen key={name} name={name} options={{ animation: 'slide_from_right' }} />
+                  <Stack.Screen key={name} name={name} options={{ animation: push }} />
                 ))}
-                <Stack.Screen name="record" options={{ animation: 'slide_from_right', gestureEnabled: !live }} />
+                <Stack.Screen name="record" options={{ animation: push, gestureEnabled: !live }} />
                 <Stack.Screen name="vocals" options={{ gestureEnabled: !live }} />
                 {/* Tasks you step out to and come back from are sheets over the screen that opened them. */}
                 {['cover', 'export', 'snippet', 'demos'].map((name) => (
@@ -95,7 +99,7 @@ export default function Layout() {
                 {/* The welcome is a full screen the first time; opened again from the mic screen it is a sheet. */}
                 <Stack.Screen name="onboarding" options={({ route }) => ((route.params as { setup?: string } | undefined)?.setup ? SHEET : {})} />
                 {/* The player rises over the Vault and is swiped back down. On the phone it covers the whole screen, as a music player does. */}
-                <Stack.Screen name="player" options={Platform.OS === 'web' ? SHEET : { animation: 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: !live }} />
+                <Stack.Screen name="player" options={Platform.OS === 'web' ? SHEET : { animation: still ? 'fade' : 'slide_from_bottom', gestureDirection: 'vertical', gestureEnabled: !live }} />
               </Stack>
               <TopNav />
               <TabBar />

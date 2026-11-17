@@ -8,6 +8,7 @@ import { backendAvailable } from '@/auth/backend';
 import { useLibrary } from '@/data/store';
 
 import { Txt } from './kit';
+import { Pop } from './motion';
 import { TOP_NAV_HEIGHT } from './tabs';
 import { C } from './theme';
 
@@ -62,7 +63,8 @@ function Menu({ name, image, onNavigate }: Props & { name: string; image: string
         <>
           {/* A tap anywhere else puts the menu away. */}
           <Pressable accessibilityLabel="Close menu" onPress={() => setOpen(false)} style={{ position: 'absolute', top: -200, right: -40, width: 4000, height: height + 400 }} />
-          <View accessibilityRole="menu" style={{ position: 'absolute', top: TOP_NAV_HEIGHT - 2, right: 0, minWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingVertical: 6, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
+          <Pop style={{ position: 'absolute', top: TOP_NAV_HEIGHT - 2, right: 0 }}>
+          <View accessibilityRole="menu" style={{ minWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingVertical: 6, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
             {ITEMS.map((item) => (
               <Pressable
                 key={item.to}
@@ -78,6 +80,7 @@ function Menu({ name, image, onNavigate }: Props & { name: string; image: string
               </Pressable>
             ))}
           </View>
+          </Pop>
         </>
       )}
     </>

@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
-import { RAIL_WIDTH, useWide } from './wide';
+import { RAIL_WIDTH, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
 
 // ---------- Text ----------
@@ -113,6 +113,8 @@ export function Screen({
   const top = Math.max(60, insets.top + 16);
   // In the wide layout the navigation is a rail down the left, so the content starts beside it and runs to the bottom.
   const wide = useWide();
+  // With room to spare the column is centred rather than stretched.
+  const gutter = useGutter(padX);
   const content: ViewStyle = wide
     ? {
         flexGrow: 1,
@@ -125,7 +127,7 @@ export function Screen({
     : {
         flexGrow: 1,
         gap,
-        paddingHorizontal: padX,
+        paddingHorizontal: gutter,
         paddingTop: tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top,
         paddingBottom: tabbed && !hidesTabBar(pathname) ? TAB_BAR_HEIGHT + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12)),
       };

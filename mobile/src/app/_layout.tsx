@@ -14,7 +14,7 @@ import { closeInput } from '@/engine/engine';
 import { Rail, TabBar, TopNav } from '@/ui/TabBar';
 import { Btn, Muted, Txt } from '@/ui/kit';
 import { C } from '@/ui/theme';
-import { WIDE_MAX, useWide } from '@/ui/wide';
+import { WIDE_MAX, useRoomy, useWide } from '@/ui/wide';
 
 // Screens anyone can open before the welcome is done.
 const OPEN = ['/onboarding', '/privacy'];
@@ -40,8 +40,12 @@ export default function Layout() {
 
   // A tablet on its side, or a wide browser window, gets the two-pane layout with a rail down the left.
   const wide = useWide();
-  // On a tall desktop browser window, show the app in a phone-sized frame, as the original design does.
-  const framed = !wide && Platform.OS === 'web' && width >= 520 && height >= 880;
+  // A tablet held upright, or a window about that size, uses its whole width with the content in a column down the middle.
+  const roomy = useRoomy();
+  // A tall desktop browser window between the two shows the app in a phone-sized frame, as the original design does.
+  // A touch screen never gets the frame: there it would be a tablet sharing its screen, drawn as a phone in a box.
+  const touch = Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  const framed = !wide && !roomy && !touch && Platform.OS === 'web' && width >= 520 && height >= 880;
   const loaded = ready && (fontsLoaded || !!fontError);
 
   return (
@@ -49,7 +53,7 @@ export default function Layout() {
       <Backend>
       <StatusBar style="light" />
       <View style={{ flex: 1, backgroundColor: framed ? '#000' : C.bg, alignItems: framed ? 'center' : 'stretch', justifyContent: framed ? 'center' : 'flex-start' }}>
-        <View style={framed ? { width: 390, height: 844, borderRadius: 32, overflow: 'hidden', backgroundColor: C.bg } : { flex: 1, backgroundColor: C.bg, width: '100%', maxWidth: wide ? WIDE_MAX : 430, alignSelf: 'center' }}>
+        <View style={framed ? { width: 390, height: 844, borderRadius: 32, overflow: 'hidden', backgroundColor: C.bg } : { flex: 1, backgroundColor: C.bg, width: '100%', maxWidth: wide ? WIDE_MAX : roomy ? undefined : 430, alignSelf: 'center' }}>
           {loadError && !ready ? (
             // The saved songs could not be read. Carrying on would start an empty library over them.
             <View accessibilityRole="alert" style={{ flex: 1, justifyContent: 'center', padding: 32, gap: 12 }}>

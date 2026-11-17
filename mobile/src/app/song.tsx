@@ -14,7 +14,7 @@ import { SongHeader } from '@/ui/SongHeader';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
-import { Columns, useWide } from '@/ui/wide';
+import { Columns, useGutter, useWide } from '@/ui/wide';
 
 // Height of the pinned next step, above the floating bar.
 const NEXT_HEIGHT = 62;
@@ -27,6 +27,7 @@ export default function Song() {
   const song = useSong(take ? project : null, { autoplay: false, repeat });
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const insets = useSafeAreaInsets();
+  const gutter = useGutter();
   const [details, setDetails] = useState(false);
   const wide = useWide();
   useStopOnLeave();
@@ -140,7 +141,7 @@ export default function Song() {
 
       {/* The next step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
       {take && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
           <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, minHeight: 52 }} />
         </View>
       )}

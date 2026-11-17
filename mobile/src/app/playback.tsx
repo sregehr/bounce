@@ -18,7 +18,7 @@ import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { TAB_BAR_HEIGHT } from '@/ui/tabs';
 import { C, clock } from '@/ui/theme';
-import { useWide } from '@/ui/wide';
+import { useGutter, useWide } from '@/ui/wide';
 
 // Height of the pinned last step, above the floating bar.
 const FINISH_HEIGHT = 62;
@@ -32,6 +32,7 @@ export default function Playback() {
   const repeat = useRepeat();
   const song = useSong(take ? project : null, { compare: true, repeat });
   const insets = useSafeAreaInsets();
+  const gutter = useGutter();
   const [level, setLevel] = useState<number | null>(null);
   const [armed, arm] = useArmed();
   const stems = useTask();
@@ -174,7 +175,7 @@ export default function Playback() {
       </Screen>
 
       {/* The last step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: 24, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: TAB_BAR_HEIGHT + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
         <Btn label="Finish song" to="/cover?finish=1" style={{ flex: 0, minHeight: 52 }} />
       </View>
     </View>

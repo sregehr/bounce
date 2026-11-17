@@ -13,6 +13,7 @@ import { aacSupported } from '@/dsp/aac';
 import { Btn, Card, Chip, Eyebrow, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
 import { asSheet } from '@/ui/nav';
+import { useRowLines } from '@/ui/type';
 import { C, clock, lufs, plural } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
@@ -31,6 +32,7 @@ function Export() {
   // Files that are rendered and waiting for a tap: the share sheet only opens straight from one.
   const [ready, setReady] = useState<OutFile[] | null>(null);
   const wide = useWide();
+  const lines = useRowLines();
   useStopOnLeave();
   // Whether this browser can make the small format, at this beat's sample rate.
   const [small, setSmall] = useState(false);
@@ -70,7 +72,7 @@ function Export() {
   const card = (
       <Card style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ gap: 2, flex: 1 }}>
-          <Txt size={16} w="semi" numberOfLines={1}>
+          <Txt size={16} w="semi" numberOfLines={lines}>
             {project.name}
           </Txt>
           <Txt size={13} color={C.muted}>
@@ -169,7 +171,7 @@ function Export() {
         )}
         {notes.map((n, i) => (
           <View key={i} style={[s.row, { gap: 10, alignItems: 'flex-start', paddingVertical: 6, borderTopWidth: 0.5, borderTopColor: C.border }]}>
-            <Txt size={13} w="semi" color={C.accent} style={{ width: 40 }}>
+            <Txt size={13} w="semi" color={C.accent} style={{ minWidth: 40 }}>
               {clock(n.atSec)}
             </Txt>
             <View style={{ flex: 1 }}>

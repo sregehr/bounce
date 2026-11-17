@@ -12,6 +12,7 @@ import { useArmed } from './hooks';
 import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { positionText } from './spoken';
 import { C, meterPct, rateLabel } from './theme';
+import { useTextScale } from './type';
 
 export function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
@@ -111,6 +112,7 @@ export function InputPanel({ input, onPick, onPair }: { input: EngineState['inpu
 /** Play button, a seek bar and the time, for screens where the song plays while you adjust it. */
 export function MiniTransport({ playing, position, duration, onToggle, onSeek, busy }: { playing: boolean; position: number; duration: number; onToggle: () => void; onSeek: (seconds: number) => void; busy?: boolean }) {
   const [drag, setDrag] = useState<number | null>(null);
+  const scale = useTextScale();
   const shown = drag ?? position;
   const mm = (v: number) => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
   return (
@@ -134,7 +136,7 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
           }}
         />
       </View>
-      <Txt size={13} color={C.muted} right style={{ width: 82, fontVariant: ['tabular-nums'] }}>
+      <Txt size={13} color={C.muted} right style={{ width: Math.round(82 * scale), fontVariant: ['tabular-nums'] }}>
         {busy ? 'Updating…' : `${mm(shown)} / ${mm(duration)}`}
       </Txt>
     </View>

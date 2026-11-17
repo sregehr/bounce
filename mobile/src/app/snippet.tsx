@@ -18,6 +18,7 @@ import { Btn, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmen
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
 import { asSheet } from '@/ui/nav';
 import { stretchText } from '@/ui/spoken';
+import { MAX_TEXT_SCALE, useDrawScale, useTextScale } from '@/ui/type';
 import { WindowTrack } from '@/ui/WindowTrack';
 import { C, F, clock } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -46,6 +47,8 @@ function Snippet() {
   // The snippet once it has been made, and what it was made from, so a change makes it again.
   const [ready, setReady] = useState<{ recipe: string; files: OutFile[] } | null>(null);
   const wide = useWide();
+  const scale = useTextScale();
+  const drawn = useDrawScale();
   useStopOnLeave();
 
   const choice = project?.snippet;
@@ -159,6 +162,7 @@ function Snippet() {
           {choice.captions && (
             <TextInput
               accessibilityLabel="Caption line"
+              maxFontSizeMultiplier={MAX_TEXT_SCALE}
               multiline
               numberOfLines={2}
               submitBehavior="blurAndSubmit"
@@ -172,7 +176,8 @@ function Snippet() {
               placeholderTextColor={coverUrl ? 'rgba(242,240,234,0.6)' : 'rgba(18,18,18,0.5)'}
               selectionColor={ink}
               maxLength={80}
-              style={[{ fontFamily: F.display, fontSize: 22, lineHeight: 26, height: 54, color: ink, padding: 0 }, wide && { fontSize: 28, lineHeight: 34, height: 70 }]}
+              // The box grows with the text size, so two lines of a larger caption are not cut off.
+              style={[{ fontFamily: F.display, fontSize: 22 * drawn, lineHeight: Math.round(26 * drawn), height: Math.round(54 * scale), color: ink, padding: 0 }, wide && { fontSize: 28 * drawn, lineHeight: Math.round(34 * drawn), height: Math.round(70 * scale) }]}
             />
           )}
           {choice.credit && credit && (

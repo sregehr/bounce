@@ -9,6 +9,7 @@ import { loopSeconds } from '@/data/studio';
 import { AddBeat } from '@/ui/AddBeat';
 import { Eyebrow, Foot, MicIcon, Muted, Screen, Txt, s } from '@/ui/kit';
 import { SwipeRow } from '@/ui/parts';
+import { useLargeText, useRowLines } from '@/ui/type';
 import { C, plural } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
@@ -25,6 +26,8 @@ export default function Home() {
   const saveError = useSaveError();
   const latest = projects[0];
   const wide = useWide();
+  const large = useLargeText();
+  const lines = useRowLines();
 
   const open = (p: Project, to: '/vocals' | '/song') => {
     setCurrent(p.id);
@@ -77,9 +80,9 @@ export default function Home() {
           </View>
           {projects.map((p, i) => (
             <SwipeRow key={p.id} label={`Delete ${p.name}${p.takes.length ? ' and its takes' : ''}`} onDelete={() => void deleteProject(p.id)}>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, '/song')} style={[s.row, s.between, { minHeight: 56 }, i < projects.length - 1 && s.divided]}>
-              {/* A long name gives way; the tempo and take count always fit on one line. */}
-              <Txt size={16} w="semi" numberOfLines={1} style={{ flex: 1, minWidth: 0 }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p, '/song')} style={[s.row, s.between, { minHeight: 56 }, large && { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 2, paddingVertical: 10 }, i < projects.length - 1 && s.divided]}>
+              {/* A long name gives way; the tempo and take count always fit on one line. With large text the name wraps and they go under it. */}
+              <Txt size={16} w="semi" numberOfLines={lines} style={large ? undefined : { flex: 1, minWidth: 0 }}>
                 {p.name}
               </Txt>
               <Txt size={13} color={C.muted} numberOfLines={1} style={{ flexShrink: 0 }}>

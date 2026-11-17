@@ -26,6 +26,8 @@ const WIDE = viewWidth >= 1000 && viewWidth > viewHeight;
 // Something only the Vault says: the phone labels its search field, the wide layout does not need to.
 const IN_VAULT = WIDE ? 'Removing a song here' : 'Search your songs';
 await page.setViewport({ width: viewWidth, height: viewHeight, deviceScaleFactor: 2 });
+// TEXT=22.4px runs everything at a larger text size (16px is the usual; 22.4px is the largest the app follows), for looking over the screenshots.
+if (process.env.TEXT) await page.evaluateOnNewDocument((size) => document.documentElement.style.setProperty('font-size', size), process.env.TEXT);
 const problems = [];
 const chatter = new Set();
 page.on('console', (m) => {
@@ -475,6 +477,22 @@ async function song() {
     log(Math.abs(top - 320) < 40, 'Mix is still scrolled to where it was left', `scrollTop ${top}, before ${before}, after ${await page.evaluate(`(() => { const n = (${scroller})(); return n ? [n.scrollTop, n.scrollHeight, n.clientHeight].join('/') : 'none'; })()`)}`);
   }
   await shot('13-mix-master');
+
+  // Larger text. A browser has no Dynamic Type, so the app follows the browser's own font size:
+  // turned up to the most the app allows, a slider's label and value move above its track,
+  // which then has the whole width, and nothing spills off the side of the page.
+  const sliderWidth = () => state(() => [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Vocal level').pop()?.getBoundingClientRect().width ?? 0);
+  const textSize = (px) => state(`document.documentElement.style.fontSize = '${px}'; window.dispatchEvent(new Event('resize'))`);
+  const beside = await sliderWidth();
+  await textSize('22.4px');
+  await sleep(500);
+  const above = await sliderWidth();
+  log(above > beside + 80, 'with large text a slider row stacks its label and value above the track', `track ${Math.round(beside)} -> ${Math.round(above)} px wide`);
+  log(await state(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'and the page does not spill sideways');
+  await shot('13b-large-text');
+  await textSize('');
+  await sleep(300);
+  log(Math.abs((await sliderWidth()) - beside) < 2, 'and goes back beside it at the usual size');
 }
 
 const DOWNLOADS = path.join(SHOTS, 'downloads-' + Date.now());

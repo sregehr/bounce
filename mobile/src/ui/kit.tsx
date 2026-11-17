@@ -29,6 +29,7 @@ import { actionDir, percentText, positionText, stepFraction } from './spoken';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { useBar, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
+import { MAX_TEXT_SCALE, useDrawScale, useLargeText, useTextScale } from './type';
 
 // ---------- Text ----------
 
@@ -60,18 +61,20 @@ export function Txt({
   numberOfLines?: number;
 }) {
   const display = w === 'display' || w === 'displayMedium';
+  // The phone enlarges the text itself; in a browser it is done here (see `type.ts`).
+  const drawn = size * useDrawScale();
   return (
     <Text
       // Larger text sizes from the system are honoured up to a point; past it, fixed rows and bars stop fitting.
-      maxFontSizeMultiplier={1.4}
+      maxFontSizeMultiplier={MAX_TEXT_SCALE}
       numberOfLines={numberOfLines}
       style={[
         {
           fontFamily: F[w],
-          fontSize: size,
+          fontSize: drawn,
           color,
-          letterSpacing: (ls ?? (w === 'display' ? -0.02 : 0)) * size,
-          lineHeight: Math.round(size * (lh ?? (display ? 1.15 : 1.35))),
+          letterSpacing: (ls ?? (w === 'display' ? -0.02 : 0)) * drawn,
+          lineHeight: Math.round(drawn * (lh ?? (display ? 1.15 : 1.35))),
           textAlign: center ? 'center' : right ? 'right' : undefined,
           textTransform: upper ? 'uppercase' : undefined,
         },
@@ -339,7 +342,7 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
             onPress={() => (o !== value && tick(), onChange(o))}
             style={[s.segment, { borderRadius: inset ? 9 : 10 }, on && { backgroundColor: C.text }]}
           >
-            <Txt size={variant ? 14 : 15} w="semi" color={on ? C.bg : C.muted}>
+            <Txt size={variant ? 14 : 15} w="semi" center color={on ? C.bg : C.muted}>
               {o}
             </Txt>
           </Pressable>
@@ -750,14 +753,33 @@ export function SliderRow({
   minHeight?: number;
   fontSize?: number;
 }) {
+  const scale = useTextScale();
+  // At the largest text sizes the label and the value no longer fit beside the track: they go
+  // above it on a line of their own, and the track gets the full width.
+  if (useLargeText())
+    return (
+      <View style={{ paddingTop: 6 }}>
+        <View style={[s.row, s.between]}>
+          <Txt size={fontSize} style={{ flexShrink: 1 }}>
+            {label}
+          </Txt>
+          {display !== undefined && (
+            <Txt size={13} color={C.muted} right>
+              {display}
+            </Txt>
+          )}
+        </View>
+        <Slider label={label} text={display} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} />
+      </View>
+    );
   return (
     <View style={[s.row, { minHeight }]}>
-      <Txt size={fontSize} style={{ width: labelWidth }}>
+      <Txt size={fontSize} style={{ width: Math.round(labelWidth * scale) }}>
         {label}
       </Txt>
       <Slider label={label} text={display} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
       {display !== undefined && (
-        <Txt size={13} color={C.muted} right style={{ width: valueWidth }}>
+        <Txt size={13} color={C.muted} right style={{ width: Math.round(valueWidth * scale) }}>
           {display}
         </Txt>
       )}
@@ -816,13 +838,15 @@ export function Option({
   w?: Weight;
 }) {
   const box = <Check checked={checked} round={radio} size={radio ? 20 : 22} />;
+  // With large text the hint goes under the label instead of squeezing it from the right.
+  const large = useLargeText();
   return (
     <Pressable
       accessibilityRole={radio ? 'radio' : 'checkbox'}
       accessibilityState={{ checked }}
       accessibilityLabel={label}
       onPress={() => onChange(radio ? true : !checked)}
-      style={[s.row, { minHeight, gap: boxFirst ? 12 : 14 }, divided && s.divided]}
+      style={[s.row, { minHeight, gap: boxFirst ? 12 : 14 }, large && { paddingVertical: 8 }, divided && s.divided]}
     >
       {boxFirst && box}
       <View style={{ flex: 1, gap: 2 }}>
@@ -830,8 +854,9 @@ export function Option({
           {label}
         </Txt>
         {sub ? <Txt size={13} color={C.muted}>{sub}</Txt> : null}
+        {hint && large ? <Txt size={13} color={C.muted}>{hint}</Txt> : null}
       </View>
-      {hint ? (
+      {hint && !large ? (
         <Txt size={13} color={C.muted}>
           {hint}
         </Txt>
@@ -842,18 +867,20 @@ export function Option({
 }
 
 export function Disclosure({ title, summary, open, onToggle, last, children, size = 16 }: { title: string; summary: string; open: boolean; onToggle: () => void; last?: boolean; children?: ReactNode; size?: number }) {
+  // With large text the summary goes under the title, in full, instead of being cut short beside it.
+  const large = useLargeText();
   return (
     <>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         onPress={onToggle}
-        style={[s.row, { minHeight: 48, justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.line }, last && !open && s.divided]}
+        style={[s.row, { minHeight: 48, justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.line }, large && { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 2, paddingVertical: 10 }, last && !open && s.divided]}
       >
         <Txt size={size} w="semi">
           {title}
         </Txt>
-        <Txt size={13} color={C.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
+        <Txt size={13} color={C.muted} numberOfLines={large ? undefined : 1} style={{ flexShrink: 1 }}>
           {summary}
         </Txt>
       </Pressable>
@@ -866,14 +893,15 @@ export function Disclosure({ title, summary, open, onToggle, last, children, siz
 
 export function Field(props: TextInputProps & { label?: string }) {
   const { label, style, ...rest } = props;
+  const drawn = useDrawScale();
   return (
     <TextInput
-      maxFontSizeMultiplier={1.4}
+      maxFontSizeMultiplier={MAX_TEXT_SCALE}
       accessibilityLabel={label}
       placeholderTextColor={C.muted}
       selectionColor={C.accent}
       {...rest}
-      style={[s.field, Platform.OS === 'web' && ({ outlineColor: C.accent } as object), style]}
+      style={[s.field, drawn !== 1 && { fontSize: 16 * drawn }, Platform.OS === 'web' && ({ outlineColor: C.accent } as object), style]}
     />
   );
 }
@@ -961,7 +989,7 @@ export const s = StyleSheet.create({
   card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 20, padding: 20, gap: 14 },
   btn: { alignItems: 'center', justifyContent: 'center', borderRadius: 16, minHeight: 56, paddingHorizontal: 16 },
   segmented: { flexDirection: 'row', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 4, gap: 4 },
-  segment: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  segment: { flex: 1, minHeight: 44, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center' },
   chip: { minHeight: 44, paddingHorizontal: 14, borderRadius: 22, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   field: { minHeight: 48, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, color: C.text, fontFamily: F.regular, fontSize: 16 },
 });

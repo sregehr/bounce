@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { analyseClaps, analyseClicks, clickTrainSeconds, makeClickTrain, TAPS, tapTrainSeconds, type LatencyResult } from '@/dsp/latency';
+import { decodeRate, sniffAudio, SNIFF_BYTES } from '@/dsp/sniff';
 import { parseWav } from '@/dsp/wav';
 
 import type { Captured, EngineState, InputDevice, PlayOptions, RecordedTake, ClapRun } from './types';
@@ -854,12 +855,27 @@ export async function measureLatency(): Promise<LatencyResult> {
 
 // ---------- Decoding ----------
 
-/** Decodes any audio file the browser understands. Our own WAVs are read directly, at their own rate. */
+/**
+ * Decodes any audio file the browser understands. Our own WAVs are read directly, at their own rate.
+ * Everything else is decoded away from the live audio clock, at 44.1 or 48 kHz to suit the file:
+ * the live clock follows the microphone, and after a headset microphone it can be running at
+ * 16 or 24 kHz, which is no rate to keep a beat at.
+ */
 export async function decode(data: ArrayBuffer): Promise<{ channels: Float32Array[]; sampleRate: number }> {
   const wav = parseWav(data);
   if (wav) return { channels: wav.channels.slice(0, 2), sampleRate: wav.sampleRate };
-  const c = await context();
-  const decoded = await c.decodeAudioData(data.slice(0));
+  const bytes = new Uint8Array(data);
+  const rate = decodeRate(sniffAudio(bytes.subarray(0, SNIFF_BYTES), bytes.length, bytes.subarray(Math.max(0, bytes.length - SNIFF_BYTES))).sampleRate);
+  let c: BaseAudioContext;
+  try {
+    c = new OfflineAudioContext(2, 1, rate);
+  } catch {
+    // A browser with no offline decoder: the live clock is better than not opening the file.
+    c = await context();
+  }
+  const copy = data.slice(0);
+  // Older Safari only takes callbacks; newer browsers return a promise as well.
+  const decoded = await new Promise<AudioBuffer>((resolve, reject) => void c.decodeAudioData(copy, resolve, reject)?.then(resolve, reject));
   const channels: Float32Array[] = [];
   for (let i = 0; i < Math.min(2, decoded.numberOfChannels); i++) channels.push(decoded.getChannelData(i).slice());
   return { channels, sampleRate: decoded.sampleRate };

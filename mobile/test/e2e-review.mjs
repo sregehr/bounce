@@ -44,7 +44,8 @@ await page.evaluateOnNewDocument(() => {
   const Real = window.AudioContext;
   window.AudioContext = class extends Real {
     constructor(options) {
-      super(window.__liveRate ? { ...options, sampleRate: window.__liveRate } : options);
+      const rate = Number(sessionStorage.getItem('liveRate'));
+      super(rate ? { ...options, sampleRate: rate } : options);
     }
   };
 });
@@ -196,7 +197,52 @@ async function mic() {
   await expectText('Connect a microphone', 'with no take running and no microphone, the button offers to connect one');
 }
 
-const flows = { mic };
+// ---------- Importing files ----------
+
+/** Makes a test file with ffmpeg, or returns null where there is none. */
+function made(name, args) {
+  const file = path.join(FILES, name);
+  if (!fs.existsSync(file)) spawnSync('ffmpeg', ['-loglevel', 'error', '-y', ...args, file]);
+  return fs.existsSync(file) ? file : null;
+}
+const beatNamed = async (name) => {
+  // The library is written to storage a moment after it changes.
+  for (let i = 0; i < 20; i++) {
+    const found = (await library()).projects.find((p) => p.name === name)?.beat;
+    if (found) return found;
+    await sleep(250);
+  }
+  console.log('     saved beats: ' + (await library()).projects.map((p) => p.name).join(', '));
+};
+
+async function imports() {
+  // The live audio clock at 16 kHz, as it is left after a Bluetooth headset has been the microphone.
+  await page.evaluate(() => sessionStorage.setItem('liveRate', '16000'));
+  await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
+  await expectText('Night bus', 'Home opens', 20000);
+  log((await page.evaluate(() => new AudioContext().sampleRate)) === 16000, 'the live audio clock is running at 16 kHz');
+
+  const demo = path.join(FILES, 'Sky at forty four.m4a');
+  fs.copyFileSync(path.resolve('public/demo/a-little-more-sky.m4a'), demo);
+  await choose('Import a file', demo);
+  await expectText('No takes yet', 'a 44.1 kHz M4A is imported', 30000);
+  const sky = await beatNamed('Sky at forty four');
+  log(sky?.sampleRate === 44100, 'and kept at 44.1 kHz, not the live clock\'s rate', `${sky?.sampleRate} Hz`);
+  log(Math.abs((sky?.durationSec ?? 0) - 45) < 1.5, 'at its full length', `${sky?.durationSec?.toFixed(1)} s`);
+
+  const mp3 = made('Tone at forty eight.mp3', ['-f', 'lavfi', '-i', 'sine=frequency=220:duration=8:sample_rate=48000', '-ac', '2']);
+  if (!mp3) console.log('skip the 48 kHz MP3: ffmpeg is not installed');
+  else {
+    await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
+    await choose('Import a file', mp3);
+    await expectText('No takes yet', 'a 48 kHz MP3 is imported', 30000);
+    const tone = await beatNamed('Tone at forty eight');
+    log(tone?.sampleRate === 48000, 'and kept at 48 kHz', `${tone?.sampleRate} Hz`);
+  }
+  await page.evaluate(() => sessionStorage.removeItem('liveRate'));
+}
+
+const flows = { mic, imports };
 const order = flow === 'all' ? Object.keys(flows) : flow.split(',');
 try {
   console.log('\n== start');

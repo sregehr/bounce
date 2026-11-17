@@ -45,7 +45,7 @@ export default defineSchema({
     // Filled in by tempo and key detection, which does not exist yet.
     bpm: v.optional(v.number()),
     key: v.optional(v.string()),
-  }),
+  }).index("by_audio", ["audio"]),
 
   // What proves a caller is the device a backup belongs to: a hash of the secret that device
   // made up on first launch, registered the first time it backs up. See convex/backup.ts.
@@ -55,7 +55,17 @@ export default defineSchema({
     // How much this device's backup holds, kept up to date so a limit can be checked cheaply.
     bytes: v.optional(v.number()),
     files: v.optional(v.number()),
+    // Upload addresses handed to this device in the hour starting at `hourAt`.
+    hourAt: v.optional(v.number()),
+    uploads: v.optional(v.number()),
   }).index("by_device", ["deviceId"]),
+
+  // Counters for things that are only allowed so many times an hour, such as new devices registering.
+  rateLimits: defineTable({
+    name: v.string(),
+    hourAt: v.number(),
+    count: v.number(),
+  }).index("by_name", ["name"]),
 
   // Backup of the app's local library, kept under a random id made on each device and readable
   // only with that device's secret. Signing in links the id to the account (the devices table);
@@ -74,7 +84,9 @@ export default defineSchema({
     key: v.string(),
     storageId: v.id("_storage"),
     size: v.number(),
-  }).index("by_device_key", ["deviceId", "key"]),
+  })
+    .index("by_device_key", ["deviceId", "key"])
+    .index("by_storage", ["storageId"]),
 
   // A song put up for friends to hear, behind a link nobody could guess. The link opens a small
   // player page (convex/http.ts) where they can leave notes at a moment in the song.
@@ -91,7 +103,8 @@ export default defineSchema({
     peaks: v.array(v.number()),
   })
     .index("by_token", ["token"])
-    .index("by_device_local", ["deviceId", "localId"]),
+    .index("by_device_local", ["deviceId", "localId"])
+    .index("by_audio", ["audio"]),
 
   shareNotes: defineTable({
     shareId: v.id("shares"),
@@ -106,5 +119,7 @@ export default defineSchema({
     durationSec: v.number(),
     // How far the take is shifted against the beat on playback, from the device's latency test.
     compensationMs: v.number(),
-  }).index("by_beat", ["beatId"]),
+  })
+    .index("by_beat", ["beatId"])
+    .index("by_audio", ["audio"]),
 });

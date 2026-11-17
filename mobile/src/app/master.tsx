@@ -64,7 +64,7 @@ export default function Master() {
             {master.amount}%
           </Txt>
         </View>
-        <Slider label="Intensity" value={master.amount} min={0} max={100} step={1} height={wide ? 44 : 32} onChange={(amount) => setDraft({ ...draft, amount })} onCommit={(amount) => commit({ amount })} />
+        <Slider label="Intensity" text={`${master.amount}%`} value={master.amount} min={0} max={100} step={1} height={wide ? 44 : 32} onChange={(amount) => setDraft({ ...draft, amount })} onCommit={(amount) => commit({ amount })} />
       </View>
   );
 

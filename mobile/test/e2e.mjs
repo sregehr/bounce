@@ -180,6 +180,8 @@ async function swipeLeft(label) {
 }
 const enabled = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=button]')].some((n) => n.getAttribute('aria-label') === label && n.getAttribute('aria-disabled') !== 'true' && n.getBoundingClientRect().width > 0), label);
 const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
+/** What a slider (found by the start of its label) reads out to a screen reader. */
+const valueText = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label')?.startsWith(label)).pop()?.getAttribute('aria-valuetext') ?? '', label);
 async function tapTrack(label, fraction) {
   const box = await page.evaluate((label) => {
     const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
@@ -423,6 +425,17 @@ async function song() {
   await shot('11-advanced');
   await slide('Gain', 0.9);
   await expectText('Set by hand', 'editing a band marks the chain as set by hand', 5000);
+  // Adjustable controls say their value in real units, and move without a drag.
+  let spoken = await valueText('Gain');
+  log(/^[−+]?\d+\.\d dB$/.test(spoken), 'the gain slider reads out in dB', spoken);
+  spoken = await valueText('Position in take');
+  log(/^\d:\d\d of \d:\d\d$/.test(spoken), 'the seek bar reads out as a time', spoken);
+  const point = await valueText('Curve point 2');
+  await page.evaluate(() => [...document.querySelectorAll('[role=slider]')].find((n) => n.getAttribute('aria-label')?.startsWith('Curve point 2'))?.focus());
+  await page.keyboard.press('ArrowDown');
+  await sleep(400);
+  spoken = await valueText('Curve point 2');
+  log(/Hz, [−+]?\d+\.\d dB$/.test(spoken) && spoken !== point, 'an EQ point says where it is and moves from the keyboard', `${point} -> ${spoken}`);
   await tap('Compressor', { exact: false, optional: WIDE });
   await slide('Threshold', 0.3);
   await tap('Save as my preset');
@@ -660,6 +673,8 @@ async function finish() {
   if (await state(() => !![...document.querySelectorAll('[role=slider]')].find((n) => n.getAttribute('aria-label') === 'Snippet position'))) {
     await tapTrack('Snippet position', 0.2);
     await expectText('Your pick', 'the snippet can be moved to another part of the song', 5000);
+    const stretch = await valueText('Snippet position');
+    log(/^\d:\d\d to \d:\d\d$/.test(stretch), 'the snippet window reads out as the stretch it covers', stretch);
     await tap('Strongest stretch');
     await expectText('Strongest stretch picked', 'and put back on the strongest stretch', 5000);
   }

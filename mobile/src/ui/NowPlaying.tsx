@@ -10,6 +10,7 @@ import { activeTake, openSong, setCurrent, useLibrary } from '@/data/store';
 import { useSong } from '@/data/song';
 
 import { PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from './kit';
+import { positionText } from './spoken';
 import { C, clock, lufs } from './theme';
 
 /**
@@ -61,6 +62,8 @@ export function Scrubber({ now, height = 28 }: { now: NowPlaying; height?: numbe
     <View style={{ gap: 2 }}>
       <Slider
         label="Position in track"
+        text={positionText(drag ?? t.position, t.duration)}
+        flick={5}
         value={Math.min(drag ?? t.position, t.duration)}
         min={0}
         max={Math.max(1, t.duration)}

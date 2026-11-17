@@ -2,6 +2,7 @@ import { useRef, useState, type ComponentRef } from 'react';
 import { Platform, View, type ViewStyle } from 'react-native';
 
 import { waveBars } from './kit';
+import { actionDir, percentText } from './spoken';
 import { C } from './theme';
 
 /**
@@ -9,7 +10,7 @@ import { C } from './theme';
  * stretch, centred under the finger; `onMove` is told where it now starts (0–1) on letting go.
  * `snap` can pull a start onto a bar line, and is applied while dragging too.
  */
-export function WindowTrack({ peaks, height, from, span, onMove, snap = (f) => f, label, disabled }: { peaks: number[]; height: number; from: number; span: number; onMove: (from: number) => void; snap?: (from: number) => number; label: string; disabled?: boolean }) {
+export function WindowTrack({ peaks, height, from, span, onMove, snap = (f) => f, label, say, disabled }: { peaks: number[]; height: number; from: number; span: number; onMove: (from: number) => void; snap?: (from: number) => number; label: string; /** Where the stretch is, as it is read aloud: "0:30 to 0:50". */ say?: (from: number) => string; disabled?: boolean }) {
   const ref = useRef<ComponentRef<typeof View>>(null);
   const box = useRef({ left: 0, width: 1 });
   const dragging = useRef<number | null>(null);
@@ -27,6 +28,15 @@ export function WindowTrack({ peaks, height, from, span, onMove, snap = (f) => f
   const lit = (i: number) => (i + 0.5) / count >= shown && (i + 0.5) / count <= shown + span;
   const bars = width > 0 ? waveBars(peaks, count, height - 8, (i) => (lit(i) ? C.accent : C.dim)) : [];
 
+  const spoken = say ? say(shown) : `Starts ${percentText(shown)} of the way in`;
+  // One arrow key, or one flick of VoiceOver, moves the stretch a quarter of its own length (and onto a bar line, where `snap` does that).
+  const step = Math.max(0.01, span / 4);
+  const nudge = (dir: 1 | -1) => {
+    let next = fit(from + dir * step);
+    // Snapping can pull a small step straight back; keep going until it lands somewhere new.
+    for (let n = 2; next === fit(from) && n <= 8; n++) next = fit(from + dir * step * n);
+    if (next !== fit(from)) onMove(next);
+  };
   const web =
     Platform.OS === 'web'
       ? {
@@ -34,11 +44,11 @@ export function WindowTrack({ peaks, height, from, span, onMove, snap = (f) => f
           'aria-valuemin': 0,
           'aria-valuemax': 100,
           'aria-valuenow': Math.round(shown * 100),
+          'aria-valuetext': spoken,
           onKeyDown: (e: { key: string; preventDefault: () => void }) => {
             if (disabled) return;
-            const step = Math.max(0.01, span / 4);
-            if (e.key === 'ArrowRight') (e.preventDefault(), onMove(fit(from + step)));
-            if (e.key === 'ArrowLeft') (e.preventDefault(), onMove(fit(from - step)));
+            if (e.key === 'ArrowRight') (e.preventDefault(), nudge(1));
+            if (e.key === 'ArrowLeft') (e.preventDefault(), nudge(-1));
           },
         }
       : {};
@@ -50,8 +60,13 @@ export function WindowTrack({ peaks, height, from, span, onMove, snap = (f) => f
       accessible
       accessibilityRole="adjustable"
       accessibilityLabel={label}
-      accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100) }}
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100), text: spoken }}
       accessibilityState={{ disabled: !!disabled }}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(e) => {
+        const dir = actionDir(e.nativeEvent.actionName);
+        if (dir && !disabled) nudge(dir);
+      }}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
       onStartShouldSetResponder={() => !disabled}
       onMoveShouldSetResponder={() => !disabled}

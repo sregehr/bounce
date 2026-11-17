@@ -10,6 +10,7 @@ import { tick } from './haptics';
 import { Collapse, NATIVE, reduceMotion } from './motion';
 import { useArmed } from './hooks';
 import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
+import { positionText } from './spoken';
 import { C, meterPct, rateLabel } from './theme';
 
 export function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
@@ -118,6 +119,8 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
       <View style={{ flex: 1 }}>
         <SliderLazy
           label="Position in track"
+          text={positionText(shown, duration)}
+          flick={5}
           value={Math.min(shown, duration)}
           min={0}
           max={Math.max(1, duration)}

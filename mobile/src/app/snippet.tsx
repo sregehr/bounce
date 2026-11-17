@@ -17,6 +17,7 @@ import { SCRIM, makeSnippetVideo, videoSupported } from '@/snippet/video';
 import { Btn, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
 import { asSheet } from '@/ui/nav';
+import { stretchText } from '@/ui/spoken';
 import { WindowTrack } from '@/ui/WindowTrack';
 import { C, F, clock } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -153,7 +154,7 @@ function Snippet() {
             {artist}
           </Txt>
         </View>
-        <SeekTrack peaks={clip?.peaks ?? []} height={wide ? 140 : 96} progress={t.duration > 0 ? t.position / t.duration : 0} played={ink} rest={t.loaded && t.position > 0 ? faint : ink} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
+        <SeekTrack peaks={clip?.peaks ?? []} height={wide ? 140 : 96} progress={t.duration > 0 ? t.position / t.duration : 0} played={ink} rest={t.loaded && t.position > 0 ? faint : ink} disabled={!t.loaded || t.duration <= 0} duration={t.duration} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
         <View style={{ gap: wide ? 10 : 8, minHeight: 52, justifyContent: 'flex-end' }}>
           {choice.captions && (
             <TextInput
@@ -202,6 +203,7 @@ function Snippet() {
           <View style={{ gap: 4 }}>
             <WindowTrack
               label="Snippet position"
+              say={(f) => stretchText(f * mix.durationSec, length)}
               peaks={whole}
               height={wide ? 84 : 56}
               from={start / mix.durationSec}

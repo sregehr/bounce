@@ -25,6 +25,7 @@ import { reachedDetent } from './feel';
 import { Collapse, Halo, NATIVE, useGlide, useReduceMotion } from './motion';
 import { tick } from './haptics';
 import { BackButton, SHEET_TOP, useSheet } from './nav';
+import { actionDir, percentText, positionText, stepFraction } from './spoken';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { useBar, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
@@ -399,6 +400,7 @@ export function SeekTrack({
   played = C.accent,
   rest = C.waveDim,
   label = 'Position in track',
+  duration,
   disabled,
   style,
 }: {
@@ -411,6 +413,8 @@ export function SeekTrack({
   played?: string;
   rest?: string;
   label?: string;
+  /** The length of the track in seconds, so the position is read out as a time. */
+  duration?: number;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -429,6 +433,8 @@ export function SeekTrack({
   const count = Math.max(8, Math.floor((width + 2) / 5));
   const bars = width > 0 ? waveBars(peaks, count, height, (i) => ((i + 0.5) / count <= shown ? played : rest)) : [];
 
+  // Read out as a time when the length is known: "0:42 of 3:10".
+  const spoken = duration && duration > 0 ? positionText(shown * duration, duration) : percentText(shown);
   const web =
     Platform.OS === 'web'
       ? {
@@ -436,10 +442,11 @@ export function SeekTrack({
           'aria-valuemin': 0,
           'aria-valuemax': 100,
           'aria-valuenow': Math.round(shown * 100),
+          'aria-valuetext': spoken,
           onKeyDown: (e: { key: string; preventDefault: () => void }) => {
             if (disabled) return;
-            if (e.key === 'ArrowRight') (e.preventDefault(), onSeek(Math.min(1, progress + 0.05)));
-            if (e.key === 'ArrowLeft') (e.preventDefault(), onSeek(Math.max(0, progress - 0.05)));
+            if (e.key === 'ArrowRight') (e.preventDefault(), onSeek(stepFraction(progress, 1)));
+            if (e.key === 'ArrowLeft') (e.preventDefault(), onSeek(stepFraction(progress, -1)));
           },
         }
       : {};
@@ -451,8 +458,14 @@ export function SeekTrack({
       accessible
       accessibilityRole="adjustable"
       accessibilityLabel={label}
-      accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100) }}
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100), text: spoken }}
       accessibilityState={{ disabled: !!disabled }}
+      // A flick up or down with VoiceOver moves a twentieth of the track.
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(e) => {
+        const dir = actionDir(e.nativeEvent.actionName);
+        if (dir && !disabled) onSeek(stepFraction(progress, dir));
+      }}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
       onStartShouldSetResponder={() => !disabled}
       onMoveShouldSetResponder={() => !disabled}
@@ -547,6 +560,8 @@ export function Slider({
   onCommit,
   reset,
   detents,
+  text,
+  flick,
   height = 40,
   label,
   disabled,
@@ -563,6 +578,10 @@ export function Slider({
   reset?: number;
   /** Values that are felt as the thumb arrives at them. The resting point is one already. */
   detents?: readonly number[];
+  /** The value as it is read aloud, in its own units: "−3.5 dB", "0:42 of 3:10". */
+  text?: string;
+  /** How far one flick of VoiceOver, or one arrow key, moves it, when a single step is too small to be useful. */
+  flick?: number;
   height?: number;
   label?: string;
   disabled?: boolean;
@@ -598,7 +617,7 @@ export function Slider({
       then?.();
     });
   const nudge = (dir: number, big?: boolean) => {
-    const next = snap(latest.current + dir * step * (big ? 10 : 1));
+    const next = snap(latest.current + dir * (flick ?? step) * (big ? 10 : 1));
     move(next);
     onCommit?.(next);
   };
@@ -611,7 +630,9 @@ export function Slider({
           'aria-valuemin': min,
           'aria-valuemax': max,
           'aria-valuenow': value,
+          'aria-valuetext': text,
           onKeyDown: (e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+            if (disabled) return;
             if (e.key === 'ArrowRight' || e.key === 'ArrowUp') (e.preventDefault(), nudge(1, e.shiftKey));
             if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') (e.preventDefault(), nudge(-1, e.shiftKey));
           },
@@ -626,9 +647,13 @@ export function Slider({
       accessibilityRole="adjustable"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}
-      accessibilityValue={{ min, max, now: value }}
+      // VoiceOver reads `text` when it is given, so a level is heard as "−3.5 dB", not as a bare number.
+      accessibilityValue={text === undefined ? { min, max, now: value } : { min, max, now: value, text }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-      onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
+      onAccessibilityAction={(e) => {
+        const dir = actionDir(e.nativeEvent.actionName);
+        if (dir && !disabled) nudge(dir);
+      }}
       onLayout={() => measure()}
       onStartShouldSetResponder={() => !disabled}
       onMoveShouldSetResponder={() => !disabled}
@@ -730,7 +755,7 @@ export function SliderRow({
       <Txt size={fontSize} style={{ width: labelWidth }}>
         {label}
       </Txt>
-      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
+      <Slider label={label} text={display} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
       {display !== undefined && (
         <Txt size={13} color={C.muted} right style={{ width: valueWidth }}>
           {display}

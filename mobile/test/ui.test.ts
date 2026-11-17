@@ -1,5 +1,7 @@
 // The rules behind how controls feel and read aloud: when a haptic fires, and what is spoken.
 import { pastThreshold, reachedDetent } from '../src/ui/feel';
+import { actionDir, percentText, positionText, stepFraction, stepFrequency, stepValue, stretchText } from '../src/ui/spoken';
+import { db } from '../src/ui/theme';
 
 let failed = 0;
 const assert = {
@@ -51,6 +53,40 @@ test('and a finger resting on the line does not flip it back and forth', () => {
   }
   assert.equal(flips, 1);
   assert.equal(pastThreshold(true, -30, -46), false);
+});
+
+test('levels are spoken in dB with a real minus sign', () => {
+  assert.equal(db(-3.5, 1), '−3.5 dB');
+  assert.equal(db(2, 1), '+2.0 dB');
+  assert.equal(db(0, 1), '0.0 dB');
+});
+test('a place in a track is spoken as a time, not a percentage', () => {
+  assert.equal(positionText(42, 190), '0:42 of 3:10');
+  assert.equal(positionText(500, 190), '3:10 of 3:10');
+  assert.equal(stretchText(30, 20), '0:30 to 0:50');
+  assert.equal(percentText(0.416), '42 percent');
+});
+test('one flick moves a seek bar a twentieth of the track and stops at the ends', () => {
+  assert.equal(stepFraction(0.5, 1), 0.55);
+  assert.equal(stepFraction(0.5, -1), 0.45);
+  assert.equal(stepFraction(0.98, 1), 1);
+  assert.equal(stepFraction(0.02, -1), 0);
+});
+test('one flick moves an EQ point half a dB, within ±12', () => {
+  assert.equal(stepValue(-3.5, 1, 0.5, -12, 12), -3);
+  assert.equal(stepValue(-3.5, -1, 0.5, -12, 12), -4);
+  assert.equal(stepValue(12, 1, 0.5, -12, 12), 12);
+});
+test('and its frequency a third of an octave, within hearing', () => {
+  assert.equal(stepFrequency(1000, 1), 1260);
+  assert.equal(stepFrequency(1000, -1), 794);
+  assert.equal(stepFrequency(19000, 1), 20000);
+  assert.equal(stepFrequency(21, -1), 20);
+});
+test('only the system\'s increment and decrement move a control', () => {
+  assert.equal(actionDir('increment'), 1);
+  assert.equal(actionDir('decrement'), -1);
+  assert.equal(actionDir('activate'), 0);
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

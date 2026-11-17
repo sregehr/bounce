@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Layer, Take } from '@/data/model';
 import { LAYER_START } from '@/data/model';
+import { artistById } from '@/data/artists';
 import { activeTake, deleteTake, patchProject, redoSong, setCompBar, setLayers, setLyrics, stacks, undoSong, useLibrary, useProject, useSongHistory } from '@/data/store';
 import { barSeconds, compOf, layersOf } from '@/data/studio';
 import { useSong } from '@/data/song';
@@ -33,6 +34,7 @@ export default function Song() {
   const repeat = useRepeat();
   const song = useSong(take ? project : null, { autoplay: false, repeat });
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
+  const library = useLibrary((l) => l);
   const insets = useSafeAreaInsets();
   const gutter = useGutter();
   const tabBar = useBar();
@@ -62,7 +64,9 @@ export default function Song() {
 
   if (!project || project.saved) return <NoSong title="No song yet" about="A song starts with a beat. Add one and its takes and lyrics live here." />;
 
-  const about = (k: Take) => [dayLabel(k.createdAt), clock(k.durationSec), k.origin === 'kept' ? 'kept' : k.origin === 'punched' ? 'punched in' : null].filter(Boolean).join(' · ');
+  // A take by someone other than the song's artist says whose it is.
+  const by = (k: Take) => (k.artistId && k.artistId !== project.artistId ? (artistById(library, k.artistId)?.name ?? null) : null);
+  const about = (k: Take) => [by(k), dayLabel(k.createdAt), clock(k.durationSec), k.origin === 'kept' ? 'kept' : k.origin === 'punched' ? 'punched in' : null].filter(Boolean).join(' · ');
   /** Tapping a take picks it and plays it polished over the beat; tapping the picked one plays or pauses. */
   const pick = (k: Take) => {
     if (k.id === take?.id) return song.toggle();

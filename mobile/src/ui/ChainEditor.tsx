@@ -4,7 +4,8 @@ import { Platform, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import type { Project } from '@/data/model';
-import { activeTake, patchProject, setSettings, useLibrary } from '@/data/store';
+import { artistById } from '@/data/artists';
+import { activeTake, patchProject, setArtistSound, setSettings, useLibrary } from '@/data/store';
 import type { useSong } from '@/data/song';
 import { biquad, responseDb } from '@/dsp/core';
 import { DEFAULT_ROOM_CUT, MASTER_STYLES, styleReverb, summarise, type Band, type Chain, type MasterSettings, type Send } from '@/dsp/presets';
@@ -124,6 +125,8 @@ function Panel({ title, summary, children }: { title: string; summary: string; c
  */
 export function ChainEditor({ project, song }: { project: Project; song: Pick<ReturnType<typeof useSong>, 'mix' | 'error'> }) {
   const preset = useLibrary((l) => l.settings.vocalPreset);
+  // The artist on this song, when they have a profile: their vocal sound is kept there, the way "my preset" is kept in Settings.
+  const artist = useLibrary((l) => artistById(l, project.artistId));
   const wide = useWide();
   const take = activeTake(project);
   const tabs: Tab[] = take ? ['Vocal', 'Beat', 'Master'] : ['Beat', 'Master'];
@@ -273,9 +276,17 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   );
 
   const presets = tab === 'Vocal' && chain && (
-    <View style={[s.row, { gap: 10 }]}>
-      <Btn kind="outline" label={preset && JSON.stringify(preset) === JSON.stringify(chain) ? 'Saved as my preset' : 'Save as my preset'} style={{ flex: 1 }} onPress={() => setSettings({ vocalPreset: chain })} />
-      {preset && <Btn kind="outline" label="Use my preset" style={{ flex: 1 }} onPress={() => commit(preset)} />}
+    <View style={{ gap: 10 }}>
+      <View style={[s.row, { gap: 10 }]}>
+        <Btn kind="outline" label={preset && JSON.stringify(preset) === JSON.stringify(chain) ? 'Saved as my preset' : 'Save as my preset'} style={{ flex: 1 }} onPress={() => setSettings({ vocalPreset: chain })} />
+        {preset && <Btn kind="outline" label="Use my preset" style={{ flex: 1 }} onPress={() => commit(preset)} />}
+      </View>
+      {artist && (
+        <View style={[s.row, { gap: 10 }]}>
+          <Btn kind="outline" label={artist.chain && JSON.stringify(artist.chain) === JSON.stringify(chain) ? `Saved for ${artist.name}` : `Save for ${artist.name}`} style={{ flex: 1 }} onPress={() => setArtistSound(artist.id, chain, project.polish.style)} />
+          {artist.chain && <Btn kind="outline" label={`Use ${artist.name}'s sound`} style={{ flex: 1 }} onPress={() => (setDraft(null), patchProject(project.id, (p) => ({ overrides: { ...p.overrides, vocal: artist.chain }, polish: artist.style ? { ...p.polish, style: artist.style } : p.polish })))} />}
+        </View>
+      )}
     </View>
   );
 

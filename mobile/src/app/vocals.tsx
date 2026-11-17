@@ -3,19 +3,24 @@ import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 
 import type { LoopChoice } from '@/data/model';
+import { sessionArtist } from '@/data/artists';
+import { artistOf } from '@/data/songs';
 import { activeTake, patchProject, setSettings, useLibrary, useProject } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
 import { barSeconds, barsIn, getMix, loadPcm, loopSeconds, saveTake } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
-import { engineState, inputAllowed, openInput, startTake, stopTake, useEngine, wake } from '@/engine/engine';
+import { engineState, inputAllowed, openInput, play, startTake, stopTake, stopTransport, useEngine, wake } from '@/engine/engine';
 import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
+import { ArtistView } from '@/ui/ArtistView';
+import { setArtistViewOpen } from '@/ui/artistViewOpen';
 import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Pulse, Screen, Segmented, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
+import { OnTheMic } from '@/ui/OnTheMic';
 import { useTiming } from '@/ui/timing';
 import { success, thump } from '@/ui/haptics';
-import { useArmed, useOnScreen, useRecordingGuard, useTask } from '@/ui/hooks';
+import { useArmed, useOnScreen, useRecordingGuard, useTask, useTransport } from '@/ui/hooks';
 import { askForMic, setRecordControl } from '@/ui/recordControl';
 import { SongHeader } from '@/ui/SongHeader';
 import { C, clock, meterPct, plural } from '@/ui/theme';
@@ -46,6 +51,17 @@ export default function Vocals() {
   const finishing = useRef(false);
   const [dropArmed, armDrop, disarmDrop] = useArmed();
   const [onScreen, setOnScreen] = useState(false);
+  // The artist view: this screen as the person at the mic needs it, with the navigation put away.
+  const [booth, setBooth] = useState(false);
+  const inBooth = useRef(false);
+  inBooth.current = booth;
+  const who = useLibrary((l) => sessionArtist(l)?.name ?? null);
+  const ownName = useLibrary((l) => l.profile.artist);
+  const hearing = useTransport(`booth:${project?.id}`).playing;
+  useEffect(() => {
+    setArtistViewOpen(booth && onScreen);
+    return () => setArtistViewOpen(false);
+  }, [booth, onScreen]);
   const live = input.status === 'ready';
   const mode = take.mode;
   const wide = useWide();
@@ -83,6 +99,10 @@ export default function Vocals() {
   const count = counting ? Math.max(1, Math.ceil(take.lead / beatSec - 0.05)) : 0;
 
   useRecordingGuard(mode === 'recording' || !!unsaved);
+  // A take that could not be saved needs the owner: what to do with it is on the full screen.
+  useEffect(() => {
+    if (unsaved) setBooth(false);
+  }, [unsaved]);
 
   /** Writes a recording into the song. If storage refuses it, the recording is kept in hand. */
   const store = async (pending: Pending, then?: () => void) => {
@@ -99,7 +119,8 @@ export default function Vocals() {
     success();
     setSaved(`Take ${made.number} saved${pending.layer ? ' as a layer' : ''} · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
     setPunch(false);
-    then?.();
+    // In the artist view a saved take stays on this screen: the mix is the owner's to open.
+    if (!inBooth.current) then?.();
   };
 
   const finish = async (then?: () => void) => {
@@ -175,6 +196,42 @@ export default function Vocals() {
     else void begin('recording');
   };
 
+  if (booth) {
+    /** Plays the take just made, mixed as the song is now, or stops it. */
+    const hearLast = () =>
+      hearing
+        ? stopTransport()
+        : task.run(async () => {
+            wake();
+            const mix = await getMix(project);
+            await play(`booth:${project.id}`, { a: { channels: mix.channels, sampleRate: mix.sampleRate }, autoplay: true });
+          });
+    return (
+      <ArtistView
+        artist={who ?? artistOf(project, { artist: ownName })}
+        song={project.name}
+        lyrics={project.lyrics}
+        live={live}
+        micNote={input.error ?? 'Connect the microphone to record.'}
+        onConnect={() => void openInput(settings.inputId, 'mic')}
+        mode={mode}
+        count={count}
+        elapsed={take.elapsed}
+        level={mode !== 'idle' ? take.level : Math.max(input.levelL, input.levelR)}
+        clipped={take.clipped}
+        busy={task.busy}
+        note={task.error ?? (saved ? saved.split(' · ')[0] : null)}
+        failed={!!task.error}
+        takes={project.takes.length}
+        hearing={hearing}
+        onRecord={() => press.current()}
+        onBeat={() => (mode === 'listening' ? void stopTake(false) : void begin('listening'))}
+        onHear={hearLast}
+        onExit={() => (stopTransport(), stopTake(false), setBooth(false))}
+      />
+    );
+  }
+
   const active = mode !== 'idle';
   const within = active ? take.elapsed % span : 0;
   const cell = active && !counting ? Math.min(cells - 1, Math.floor((within / span) * cells)) : -1;
@@ -184,6 +241,22 @@ export default function Vocals() {
   const first = (loop?.startBar ?? 0) + 1;
 
   const header = <SongHeader project={project} locked={active || !!unsaved} />;
+
+  const onTheMic = <OnTheMic project={project} locked={active || !!unsaved} />;
+  // Handing the phone over: the same screen, cut down to what the person at the mic needs.
+  const artistView = !active && !unsaved && (
+    <View style={[s.row, s.between, s.divided, { minHeight: 56 }]}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Txt size={15} w="semi">
+          Artist view
+        </Txt>
+        <Txt size={13} color={C.muted}>
+          Their bars and one big record button, for whoever is at the mic.
+        </Txt>
+      </View>
+      <Chip label="Open artist view" style={{ paddingHorizontal: 16, borderColor: C.text }} onPress={() => (setSaved(null), task.setError(null), setBooth(true))} />
+    </View>
+  );
 
   // What is missing, and where to start it: the mic in the bar below is this screen's record button.
   const empty = !active && project.takes.length === 0 && (
@@ -397,6 +470,8 @@ export default function Vocals() {
             <>
               {message}
               {empty}
+              {onTheMic}
+              {artistView}
               {loopCard}
               {punchIn}
               {layerOption}
@@ -440,6 +515,10 @@ export default function Vocals() {
       {message}
 
       {empty}
+
+      {onTheMic}
+
+      {artistView}
 
       {loopCard}
 

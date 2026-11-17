@@ -1,9 +1,11 @@
 // The parts of the newer features that are plain sums: where a slider's bubble sits, what undo
-// puts back, how an artist's profile reaches a song, and when each lyric line shows on a snippet.
-import { DEFAULT_MASTER, DEFAULT_POLISH } from '../src/dsp/presets';
+// puts back, and how an artist's profile reaches a song.
+import { DEFAULT_POLISH } from '../src/dsp/presets';
+import { artistNamed, namesWithoutProfile, withArtist } from '../src/data/artists';
 import { blobs, kv } from '../src/data/db';
 import type { Project, Take } from '../src/data/model';
-import { addTake, createProject, deleteProject, deleteTake, getProject, loadLibrary, redoSong, setCompBar, setLayers, setLyrics, undoSong, update } from '../src/data/store';
+import { addTake, createProject, deleteProject, deleteTake, getLibrary, getProject, loadLibrary, redoSong, removeArtist, renameArtist, saveArtist, setArtistSound, setCompBar, setLayers, setLyrics, setSession, undoSong, update } from '../src/data/store';
+import { artistOf } from '../src/data/songs';
 import { BUBBLE_HEIGHT, BUBBLE_MARGIN, bubblePlace } from '../src/ui/bubble';
 
 let failed = 0;
@@ -136,8 +138,69 @@ async function undoTests() {
   await deleteProject(p.id);
   check('deleting a beat removes the takes its undo steps were holding', !(await blobs.get('take-3')) && !(await blobs.get('take-1')));
 }
+// ---------- Artist profiles and sessions ----------
+async function artistTests() {
+  const beat = (key: string) => ({ ...audio(key), source: 'demo' as const, sourceLabel: '', peakDb: -1, lufs: -12, clipped: false, trimmedSec: 0, wave: [], leadSec: 0, bpm: 90, musicalKey: null });
+  const now = (id: string): Project => getProject(id)!;
+  const chain = { eq: [{ type: 'peaking' as const, freq: 3000, gain: 2, q: 1 }], comp: { threshold: -22, ratio: 4, attack: 8, release: 90, makeup: 3 }, deess: { freq: 6500, amount: 4 }, limiter: { ceiling: -1, release: 80 } };
+
+  // A song from before profiles has only a name on it, and still goes out under it.
+  const old = createProject(beat('beat-old'), 'Old song');
+  update((l) => ({ ...l, projects: l.projects.map((p) => (p.id === old.id ? { ...p, artist: 'Mina Cole' } : p)) }));
+  check('a song with only a name still goes out under it', artistOf(now(old.id), { artist: 'Kai' }) === 'Mina Cole' && now(old.id).artistId === undefined);
+  check('and the name is offered where an artist is picked', namesWithoutProfile(getLibrary()).join() === 'Mina Cole');
+
+  let mina = saveArtist('  Mina Cole ')!;
+  check('saving a profile for that name joins the old song to it', now(old.id).artistId === mina.id && now(old.id).artist === 'Mina Cole');
+  check('the same name, however it is typed, is the same artist', saveArtist('MINA COLE')!.id === mina.id && (getLibrary().artists ?? []).length === 1 && artistNamed(getLibrary(), 'Mina cole')?.id === mina.id);
+  check('a name with nothing in it is not an artist', saveArtist('   ') === null);
+  check('once it has a profile the name is no longer a loose one', namesWithoutProfile(getLibrary()).length === 0);
+
+  // Their sound, saved the way a preset is, and what a session does with it.
+  setArtistSound(mina.id, chain, 'Melodic');
+  mina = artistNamed(getLibrary(), 'Mina Cole')!;
+  setSession(mina.id);
+  const fresh = createProject(beat('beat-new'), 'New song');
+  check('a beat added during a session is that artist\'s song', now(fresh.id).artist === 'Mina Cole' && now(fresh.id).artistId === mina.id);
+  check('and starts with their vocal chain and style', JSON.stringify(now(fresh.id).overrides.vocal) === JSON.stringify(chain) && now(fresh.id).polish.style === 'Melodic');
+
+  // A song that is no one's becomes theirs when they record on it.
+  setSession(null);
+  const loose = createProject(beat('beat-loose'), 'Loose song');
+  check('with no session a new song is no one\'s', now(loose.id).artist === undefined && now(loose.id).overrides.vocal === undefined);
+  setSession(mina.id);
+  addTake(loose.id, take(1));
+  check('a take recorded in a session carries the artist', now(loose.id).takes[0].artistId === mina.id);
+  check('and a song that was no one\'s becomes theirs, with their sound', now(loose.id).artist === 'Mina Cole' && JSON.stringify(now(loose.id).overrides.vocal) === JSON.stringify(chain));
+
+  // Someone else's song is left alone, and so is a vocal chain shaped by hand.
+  const jay = saveArtist('Jay Oh')!;
+  setSession(jay.id, loose.id);
+  addTake(loose.id, take(2));
+  check('recording on another artist\'s song leaves the song theirs', now(loose.id).artist === 'Mina Cole' && now(loose.id).takes[1].artistId === jay.id);
+  const hand = { ...chain, comp: { ...chain.comp, ratio: 2 } };
+  const shaped = withArtist({ overrides: { vocal: hand }, polish: DEFAULT_POLISH, takes: [take(1)] }, mina);
+  check('a vocal chain set by hand on a song with takes is kept', shaped.overrides === undefined && shaped.artist === 'Mina Cole');
+  const untouched = withArtist({ overrides: { vocal: hand }, polish: DEFAULT_POLISH, takes: [] }, mina);
+  check('before any take, the artist\'s chain replaces it', JSON.stringify(untouched.overrides?.vocal) === JSON.stringify(chain));
+  check('an artist with no saved sound changes only the name', Object.keys(withArtist({ overrides: {}, polish: DEFAULT_POLISH, takes: [] }, jay)).sort().join() === 'artist,artistId');
+
+  // Picking an artist on a song that has no takes yet makes it theirs straight away.
+  setSession(null);
+  const empty = createProject(beat('beat-empty'), 'Empty song');
+  setSession(jay.id, empty.id);
+  check('picking who is on the mic puts them on a song with no takes', now(empty.id).artist === 'Jay Oh');
+
+  renameArtist(mina.id, 'Mina C');
+  check('renaming an artist renames their songs', now(old.id).artist === 'Mina C' && now(fresh.id).artist === 'Mina C');
+  removeArtist(jay.id);
+  check('removing an artist ends their session and leaves their songs named', getLibrary().sessionArtistId === null && now(empty.id).artist === 'Jay Oh' && now(empty.id).artistId === undefined);
+  setSession(null);
+}
+
 async function main() {
   await undoTests();
+  await artistTests();
   console.log(failed ? `\n${failed} FAILED` : '\nall passed');
   process.exit(failed ? 1 : 0);
 }

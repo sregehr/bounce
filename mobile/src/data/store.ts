@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react';
 
-import { DEFAULT_MASTER, DEFAULT_POLISH } from '@/dsp/presets';
+import { DEFAULT_MASTER, DEFAULT_POLISH, type Chain, type VocalStyle } from '@/dsp/presets';
 
+import { adopts, artistNamed, artistsIn, sessionArtist, withArtist } from './artists';
 import { blobs, kv, persist } from './db';
-import { LAYER_START, emptyLibrary, newId, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
+import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
 import { carryOver, makeSong } from './songs';
 
 let library: Library = emptyLibrary();
@@ -101,6 +102,51 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof w
 export const setProfile = (patch: Partial<Profile>) => update((l) => ({ ...l, profile: { ...l.profile, ...patch } }));
 export const setSettings = (patch: Partial<Settings>) => update((l) => ({ ...l, settings: { ...l.settings, ...patch } }));
 export const setCurrent = (id: string | null) => update((l) => (l.currentId === id ? l : { ...l, currentId: id }));
+
+// ---------- Artists ----------
+
+/** Saves a profile for a name, or finds the one that name already has. */
+export function saveArtist(name: string): Artist | null {
+  const trimmed = name.trim().slice(0, 40);
+  if (!trimmed) return null;
+  const known = artistNamed(library, trimmed);
+  if (known) return known;
+  const artist: Artist = { id: newId(), name: trimmed, createdAt: Date.now() };
+  // Songs that already carry the name, from before it had a profile, are joined to it.
+  update((l) => ({ ...l, artists: [...artistsIn(l), artist], projects: l.projects.map((p) => (!p.artistId && p.artist?.trim().toLowerCase() === trimmed.toLowerCase() ? { ...p, artistId: artist.id } : p)) }));
+  return artist;
+}
+
+/** Renames an artist, on their profile and on every song of theirs. */
+export function renameArtist(id: string, name: string) {
+  update((l) => ({ ...l, artists: artistsIn(l).map((a) => (a.id === id ? { ...a, name } : a)), projects: l.projects.map((p) => (p.artistId === id ? { ...p, artist: name } : p)) }));
+}
+
+/** Keeps a vocal chain, and the style it was made under, as the sound for an artist. */
+export function setArtistSound(id: string, chain: Chain | undefined, style?: VocalStyle) {
+  update((l) => ({ ...l, artists: artistsIn(l).map((a) => (a.id === id ? { ...a, chain, style: chain ? style : undefined } : a)) }));
+}
+
+/** Removes a profile. Their songs keep their name. */
+export function removeArtist(id: string) {
+  update((l) => ({ ...l, artists: artistsIn(l).filter((a) => a.id !== id), sessionArtistId: l.sessionArtistId === id ? null : l.sessionArtistId, projects: l.projects.map((p) => (p.artistId === id ? { ...p, artistId: undefined } : p)) }));
+}
+
+/** Puts an artist on a song: their name, and their vocal chain where the song has none of its own. */
+export function setSongArtist(projectId: string, artist: Artist) {
+  patchProject(projectId, (p) => withArtist(p, artist), false);
+}
+
+/**
+ * Says who is at the mic from now on, or no one. New songs and takes are theirs until it is
+ * changed. The song open at the time becomes theirs too if it is no one's yet, or has no takes.
+ */
+export function setSession(artistId: string | null, projectId?: string | null) {
+  update((l) => ({ ...l, sessionArtistId: artistId }));
+  const artist = sessionArtist(library);
+  const project = getProject(projectId ?? null);
+  if (artist && project && !project.saved && (adopts(project) || project.takes.length === 0)) setSongArtist(project.id, artist);
+}
 
 export function useProject(): Project | null {
   const id = useLibrary((l) => l.currentId);
@@ -301,6 +347,9 @@ export function createProject(beat: Beat, name: string): Project {
     lyrics: '',
     stats: null,
   };
+  // A beat brought in during a session starts out as that artist's song, with their sound.
+  const artist = sessionArtist(library);
+  if (artist) Object.assign(project, withArtist(project, artist));
   update((l) => ({ ...l, projects: [project, ...l.projects], currentId: project.id }));
   return project;
 }
@@ -337,10 +386,14 @@ export function finishSong(projectId: string, title: string): Project | null {
   return song;
 }
 
-export function addTake(projectId: string, take: Take, layer?: Layer['role']) {
+export function addTake(projectId: string, recorded: Take, layer?: Layer['role']) {
+  // A take recorded during a session is that artist's, and a song that was no one's becomes theirs with it.
+  const artist = sessionArtist(library);
+  const take: Take = artist && !recorded.artistId ? { ...recorded, artistId: artist.id } : recorded;
+  const mine = (p: Project) => (artist && adopts(p) ? withArtist(p, artist) : null);
   // A take recorded as a layer joins the stack on the picked take instead of replacing it.
-  if (layer) patchProject(projectId, (p) => ({ takes: [...p.takes, take], layers: [...(p.layers ?? []), { takeId: take.id, role: layer, ...LAYER_START[layer] }] }));
-  else patchProject(projectId, (p) => ({ takes: [...p.takes, take], takeId: take.id }));
+  if (layer) patchProject(projectId, (p) => ({ ...mine(p), takes: [...p.takes, take], layers: [...(p.layers ?? []), { takeId: take.id, role: layer, ...LAYER_START[layer] }] }));
+  else patchProject(projectId, (p) => ({ ...mine(p), takes: [...p.takes, take], takeId: take.id }));
 }
 
 /** Whether a take lines up with the picked one bar for bar, so it can be layered on it or stand in for some of its bars. */

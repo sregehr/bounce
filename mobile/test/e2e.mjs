@@ -920,6 +920,62 @@ async function library() {
   log(await transportPlaying(), 'and plays');
   await shot('28-playback-48k');
 
+  // Artists: picking who is on the mic starts a session, and a song that is no one's becomes theirs.
+  await tap('Freestyle over Basement tape');
+  await expectText('On the mic: no one picked', 'the mic screen says no one has been picked yet', 10000);
+  await tap('Pick');
+  await type('New artist name', 'Jay Oh');
+  await tap('Add');
+  await expectText('On the mic: Jay Oh', 'an artist is added and picked for the session');
+  await shot('28b-on-the-mic');
+  // Their vocal sound is saved from the Mix page, next to the preset.
+  await tap('Mix');
+  await expectText(/Polished\s/, 'the mix opens', 30000);
+  await tap('Pause', { optional: true });
+  await tap('Save for Jay Oh');
+  await expectText('Saved for Jay Oh', 'the vocal chain is saved for the artist on the song');
+  await expectText("Use Jay Oh's sound", 'and can be put on a song of theirs again');
+  // The artist view: the mic screen for the person at the mic, with the navigation put away.
+  await tap('Freestyle over Basement tape');
+  await expectText('Always listening');
+  await tap('Open artist view');
+  await expectText('Exit artist view', 'the artist view opens');
+  await expectText('Tap to record', 'with one large record button');
+  log(await state(() => ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0)), 'and no navigation around it');
+  const big = await state(() => { const r = [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).find((n) => n.getAttribute('aria-label') === 'Start recording')?.getBoundingClientRect(); return r ? Math.min(r.width, r.height) : 0; });
+  log(big >= 140, 'the record button is large enough to hit from a step away', `${Math.round(big)} points`);
+  await shot('28c-artist-view');
+  await tap('Start recording');
+  await expectText('Tap to stop', 'recording starts from the artist view', 12000);
+  await sleep(1200);
+  await shot('28d-artist-view-recording');
+  await sleep(2500);
+  await tap('Stop recording');
+  await expectText('Take 2 saved', 'the take is saved and the artist view stays up', 10000);
+  await expectText('Exit artist view');
+  await tap('Hear the last take');
+  let heard = false;
+  for (let i = 0; i < 60 && !heard; i++) (heard = /Stop playing/.test(await text())) || (await sleep(500));
+  log(heard, 'the take can be heard back from the artist view');
+  await tap('Stop playing', { optional: true });
+  await tap('Exit artist view');
+  await expectText('Always listening', 'leaving it returns to the full mic screen');
+  await tap('Song');
+  await expectText('2 takes', 'the take recorded in the artist view is on the song');
+  await swipeLeft('Take 2');
+  await tap('Delete take 2');
+  await tap('Tap again to delete take 2');
+  await expectText('1 take', 'and can be deleted like any other');
+  // The artist has a profile, with their songs and their sound on it.
+  await page.goto(BASE + '/profile', { waitUntil: 'networkidle2' });
+  await expectText('Artists you record', 'Profile lists the artists recorded here', 20000);
+  await expectText(/1 song · Vocal sound saved/, 'with their songs and the vocal sound saved for them');
+  await shot('28e-artists');
+  await page.goto(BASE + '/', { waitUntil: 'networkidle2' });
+  await expectText('Basement tape', 'Home opens again', 20000);
+  await tap('Open Basement tape');
+  await expectText('1 take', 'and the song is as it was left', 20000);
+
   // Swipe to delete: a take from the song, then the beat from Home.
   await tap('Song');
   await expectText('1 take', 'Song shows the new take');

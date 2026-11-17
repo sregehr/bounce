@@ -5,6 +5,7 @@ import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
+import { pastThreshold } from './feel';
 import { tick } from './haptics';
 import { useArmed } from './hooks';
 import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
@@ -228,9 +229,11 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
   // the row's content takes no pointer events, so that click lands on the wrapper and opens nothing.
   const [dragging, setDragging] = useState(false);
   const [sure, askSure, notSure] = useArmed(4000);
+  // Whether the drag in progress is past the point where letting go shows Delete. Crossing it is
+  // felt, once each way, so the finger knows before it lifts.
+  const past = useRef(false);
   const settle = (show: boolean) => {
     if (!show) notSure();
-    else if (!open) tick();
     setOpen(show);
     from.current = show ? -DELETE_WIDTH : 0;
     Animated.spring(x, { toValue: from.current, useNativeDriver: false, bounciness: 0, speed: 20 }).start();
@@ -240,10 +243,18 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
       // Only a sideways drag is taken, so the page still scrolls and a tap still reaches the row.
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
       onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-      onPanResponderGrant: () => setDragging(true),
-      onPanResponderMove: (_, g) => x.setValue(Math.max(-DELETE_WIDTH - 24, Math.min(0, from.current + g.dx))),
+      onPanResponderGrant: () => {
+        past.current = from.current < 0;
+        setDragging(true);
+      },
+      onPanResponderMove: (_, g) => {
+        const now = pastThreshold(past.current, from.current + g.dx, -DELETE_WIDTH / 2);
+        if (now !== past.current) tick();
+        past.current = now;
+        x.setValue(Math.max(-DELETE_WIDTH - 24, Math.min(0, from.current + g.dx)));
+      },
       onPanResponderRelease: (_, g) => {
-        settle(from.current + g.dx < -DELETE_WIDTH / 2);
+        settle(pastThreshold(past.current, from.current + g.dx, -DELETE_WIDTH / 2));
         setTimeout(() => setDragging(false), 80);
       },
       onPanResponderTerminate: () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 
@@ -32,10 +32,12 @@ export default function Record() {
   const [failed, setFailed] = useState<Captured | null>(null);
   const recording = cap.status === 'recording';
   useRecordingGuard(recording || saving || !!failed);
-  // The capture starting by itself at the first sound, and stopping, can each be felt.
+  // The capture starting by itself at the first sound, and stopping, can each be felt. Arriving on the screen is neither.
+  const wasRecording = useRef(false);
   useEffect(() => {
-    if (cap.status !== 'armed') thump();
-  }, [cap.status]);
+    if (recording !== wasRecording.current) thump();
+    wasRecording.current = recording;
+  }, [recording]);
   const wide = useWide();
 
   useOnScreen(() => {

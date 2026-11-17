@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { getLibrary } from '@/data/store';
+import { reachedDetent } from './feel';
 import { tick } from './haptics';
 import { BackButton, SHEET_TOP, useSheet } from './nav';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
@@ -554,6 +555,7 @@ export function Slider({
   onChange,
   onCommit,
   reset,
+  detents,
   height = 40,
   label,
   disabled,
@@ -568,6 +570,8 @@ export function Slider({
   onCommit?: (v: number) => void;
   /** Where a double tap puts the slider back to, for controls with a natural rest such as 0 dB. */
   reset?: number;
+  /** Values that are felt as the thumb arrives at them. The resting point is one already. */
+  detents?: readonly number[];
   height?: number;
   label?: string;
   disabled?: boolean;
@@ -576,6 +580,13 @@ export function Slider({
   const ref = useRef<ComponentRef<typeof View>>(null);
   const box = useRef({ left: 0, width: 1 });
   const lastTap = useRef(0);
+  // A light tap as the thumb reaches the centre or the resting point: once on arriving, not on every move.
+  const stops = detents ?? (reset !== undefined ? [reset] : []);
+  const move = (next: number) => {
+    if (stops.length && reachedDetent(latest.current, next, stops)) tick();
+    latest.current = next;
+    onChange(next);
+  };
   const latest = useRef(value);
   latest.current = value;
   // The touch in progress: where it began, the value then, and whether it has turned out to be a drag or a scroll.
@@ -588,10 +599,7 @@ export function Slider({
   const setFromPage = (pageX: number) => {
     const t = Math.max(0, Math.min(1, (pageX - box.current.left) / box.current.width));
     const next = snap(min + t * (max - min));
-    if (next !== latest.current) {
-      latest.current = next;
-      onChange(next);
-    }
+    if (next !== latest.current) move(next);
   };
   const measure = (then?: () => void) =>
     ref.current?.measureInWindow((x, _y, width) => {
@@ -600,8 +608,7 @@ export function Slider({
     });
   const nudge = (dir: number, big?: boolean) => {
     const next = snap(latest.current + dir * step * (big ? 10 : 1));
-    latest.current = next;
-    onChange(next);
+    move(next);
     onCommit?.(next);
   };
 
@@ -659,8 +666,7 @@ export function Slider({
           else {
             const next = snap(latest.current + ((e.nativeEvent.pageX - g.lastX) / box.current.width) * (max - min) * fine);
             if (next !== latest.current) {
-              latest.current = next;
-              onChange(next);
+              move(next);
               g.lastX = e.nativeEvent.pageX;
             }
           }

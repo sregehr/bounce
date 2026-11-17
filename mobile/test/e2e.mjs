@@ -568,6 +568,24 @@ async function finish() {
   await waitDownloads(3);
   const header = fs.existsSync(path.join(DOWNLOADS, 'Night bus.wav')) ? fs.readFileSync(path.join(DOWNLOADS, 'Night bus.wav')) : null;
   log(!!header && header.toString('latin1', 0, 4) === 'RIFF' && header.readUInt16LE(34) === 16 && header.readUInt16LE(22) === 2, 'the song is a 16-bit stereo WAV', header ? `${header.length} bytes` : 'missing');
+  // Credits and splits: naming people adds a split sheet to what goes out.
+  await tap('Add credits');
+  await expectText('Splits add up to 100%', 'credits start from the artist and producer, split evenly');
+  await tap('Add a person');
+  await type('Name 3', 'Jo Park');
+  await type('Share 3, percent', '10');
+  await expectText('Splits add up to 110%, not 100%', 'a split that does not add up is pointed out');
+  await type('Share 2, percent', '40');
+  await expectText('Splits add up to 100%', 'and fixed by changing a share');
+  if (!(await tap('Save to Files', { optional: true }))) await tap('Save 2 files');
+  await expectText('2 files saved to your downloads as Night bus.zip', 'the split sheet is saved with the song', 60000);
+  await sleep(800);
+  // Chrome numbers a second download of the same name, so the newest ZIP is the one to read.
+  const newestZip = fs.readdirSync(DOWNLOADS).filter((f) => /^Night bus.*\.zip$/.test(f) && !/stems/.test(f)).map((f) => path.join(DOWNLOADS, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  const sheetNames = newestZip ? unzipNames(newestZip) : [];
+  log(sheetNames.includes('Night bus split sheet.txt'), 'the ZIP holds the split sheet', sheetNames.join(', '));
+  for (let i = 0; i < 3; i++) await tap('Remove');
+  await expectText('Add credits', 'credits can be taken off again');
   // The small format for sending, where the browser can make it. ffprobe reads it as a real M4A.
   if (await tap('M4A, for sending', { optional: true })) {
     if (!(await tap('Save to Files', { optional: true }))) await tap('Save 1 file');

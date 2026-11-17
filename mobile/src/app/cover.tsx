@@ -9,7 +9,7 @@ import { composeScene, coverSupported, cutOut, normalisePhoto } from '@/cover/co
 import { blobUrl, blobs } from '@/data/db';
 import { newId, SCENES, type SceneId } from '@/data/model';
 import { dropBlob, finishSong, patchProject, setProfile, update, useLibrary, useProject } from '@/data/store';
-import { Btn, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Chip, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -26,6 +26,7 @@ export default function Cover() {
   const [title, setTitle] = useState(project?.name ?? '');
   const lastPhoto = useLibrary((l) => l.coverPhotoKey);
   const ownName = useLibrary((l) => l.profile.artist);
+  const others = useLibrary((l) => l.projects);
   // The producer is the person holding the phone, so the credit carries over to the next song.
   const producer = useLibrary((l) => l.profile.producer);
   const task = useTask();
@@ -148,6 +149,7 @@ export default function Cover() {
 
   const working = task.busy;
 
+  const recent = [...new Set(others.map((p) => p.artist?.trim()).filter((n): n is string => !!n && n !== project.artist?.trim()))].slice(0, 4);
   const top = <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to={project.takeId ? '/playback' : '/master'} back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />;
 
   const fields = (
@@ -166,6 +168,14 @@ export default function Cover() {
           Artist on this song
         </Txt>
         <Field label="Artist on this song" value={project.artist ?? ''} onChangeText={(name) => patchProject(project.id, { artist: name }, false)} placeholder={ownName || 'Who is on the mic?'} maxLength={40} autoCapitalize="words" returnKeyType="done" />
+        {/* People who have been on other songs here are one tap away. */}
+        {recent.length > 0 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {recent.map((name) => (
+              <Chip key={name} label={name} on={project.artist === name} onPress={() => patchProject(project.id, { artist: name }, false)} style={{ paddingHorizontal: 12 }} />
+            ))}
+          </View>
+        )}
       </View>
 
       <View style={{ gap: 6 }}>

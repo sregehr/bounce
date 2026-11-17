@@ -31,5 +31,32 @@ export async function exportFiles(project: Project, onStage?: (stage: string) =>
   if (take) await add('', 'mix', 'Rendering the song');
   if (!take || choice.instrumental) await add(take ? ' (instrumental)' : '', 'instrumental', 'Rendering the instrumental');
   if (take && choice.vocals) await add(' (vocals)', 'vocals', 'Rendering the vocals');
+  const sheet = splitSheet(project);
+  if (sheet) out.push({ name: `${base} split sheet.txt`, data: new TextEncoder().encode(sheet).buffer as ArrayBuffer, type: 'text/plain' });
   return out;
+}
+
+/** The people credited on a song with a name filled in. */
+export const creditsOf = (project: Pick<Project, 'credits'>) => (project.credits ?? []).filter((c) => c.name.trim());
+
+/** A plain split sheet to send with the song: who did what, and each person's share. Null when nobody is credited. */
+export function splitSheet(project: Pick<Project, 'name' | 'credits'>, on = new Date()): string | null {
+  const credits = creditsOf(project);
+  if (credits.length === 0) return null;
+  const total = credits.reduce((n, c) => n + c.share, 0);
+  const wide = Math.max(...credits.map((c) => c.name.trim().length), 4);
+  return [
+    `SPLIT SHEET`,
+    `Song: ${project.name}`,
+    `Date: ${on.toISOString().slice(0, 10)}`,
+    ``,
+    `${'Name'.padEnd(wide)}  ${'Role'.padEnd(9)}  Share`,
+    ...credits.map((c) => `${c.name.trim().padEnd(wide)}  ${c.role.padEnd(9)}  ${c.share}%`),
+    ``,
+    `Total: ${total}%${total === 100 ? '' : '  (does not add up to 100%)'}`,
+    ``,
+    `Each person named above agrees to the share shown against their name.`,
+    ...credits.map((c) => `\n${c.name.trim()}: ______________________   Date: __________`),
+    ``,
+  ].join('\n');
 }

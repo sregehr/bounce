@@ -56,6 +56,9 @@ export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format
 /** `startSec` is where the snippet begins when the user moved it; without one the strongest stretch is used. */
 export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean; startSec?: number | null; shape?: 'tall' | 'square' | 'wide' };
 
+/** One person's part in a song. `share` is their percentage of it. */
+export type Credit = { name: string; role: 'Writer' | 'Producer' | 'Performer'; share: number };
+
 /** One more vocal on top of the lead. Level 68 is balanced against the beat, as it is for the lead; pan runs -100 (left) to 100 (right). */
 export type Layer = { takeId: string; role: 'double' | 'adlib' | 'hook'; level: number; pan: number };
 export const LAYER_START: Record<Layer['role'], { level: number; pan: number }> = { double: { level: 44, pan: -35 }, adlib: { level: 50, pan: 40 }, hook: { level: 60, pan: 0 } };
@@ -79,6 +82,8 @@ export type Project = {
   overrides: { vocal?: Chain; beat?: Chain; master?: Chain };
   /** Reverb and echo set by hand on the Mix page. */
   space?: Space;
+  /** Who wrote, produced and performed the song, and how it is split between them. */
+  credits?: Credit[];
   /** Vocals stacked on the picked take: doubles, ad-libs, a hook. */
   layers?: Layer[];
   /** Bars of the picked take that play from another take instead, by bar number from 0. */

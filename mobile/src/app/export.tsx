@@ -2,20 +2,24 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect } from 'expo-router';
 
-import { exportFiles, LOUDNESS } from '@/data/exporting';
+import { creditsOf, exportFiles, LOUDNESS } from '@/data/exporting';
 import { canShareFiles, saveFiles, shareFiles, type OutFile } from '@/data/files';
-import type { ExportChoice } from '@/data/model';
-import { activeTake, patchProject, useProject } from '@/data/store';
+import type { Credit, ExportChoice } from '@/data/model';
+import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
+import { artistOf } from '@/data/songs';
 import { useSong } from '@/data/song';
 import { aacSupported } from '@/dsp/aac';
-import { Btn, Card, Eyebrow, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt } from '@/ui/kit';
+import { Btn, Card, Chip, Eyebrow, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
 import { C, clock, lufs, plural } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
+const ROLES = ['Writer', 'Producer', 'Performer'] as const;
+
 export default function Export() {
   const project = useProject();
   const take = activeTake(project);
+  const profile = useLibrary((l) => l.profile);
   const choice = project?.exporting;
   // What plays here is what will be exported, at the chosen loudness.
   const song = useSong(project, { autoplay: false, mix: choice ? { targetLufs: LOUDNESS[choice.loudness] } : undefined });
@@ -38,7 +42,8 @@ export default function Export() {
   if (!project || !choice) return <Redirect href="/" />;
 
   const set = (patch: Partial<ExportChoice>) => (setDone(null), setReady(null), patchProject(project.id, { exporting: { ...choice, ...patch } }, false));
-  const count = (take ? 1 : 0) + (!take || choice.instrumental ? 1 : 0) + (take && choice.vocals ? 1 : 0);
+  const credits = project.credits ?? [];
+  const count = (take ? 1 : 0) + (!take || choice.instrumental ? 1 : 0) + (take && choice.vocals ? 1 : 0) + (creditsOf(project).length ? 1 : 0);
   const run = (how: 'share' | 'save') =>
     task.run(async () => {
       setDone(null);
@@ -107,6 +112,56 @@ export default function Export() {
         </View>
       );
 
+  // Who did what and who gets what. With anyone named, a split sheet goes out with the files.
+  const setCredits = (next: Credit[]) => (setDone(null), setReady(null), patchProject(project.id, { credits: next }, false));
+  const editCredit = (i: number, patch: Partial<Credit>) => setCredits(credits.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const startCredits = () => {
+    const artist = artistOf(project, profile);
+    const producer = profile.producer.trim();
+    setCredits(producer && producer !== artist ? [{ name: artist, role: 'Performer', share: 50 }, { name: producer, role: 'Producer', share: 50 }] : [{ name: artist === 'You' ? '' : artist, role: 'Performer', share: 100 }]);
+  };
+  const total = credits.reduce((n, c) => n + c.share, 0);
+  const splits = (
+      <View style={{ gap: 8 }}>
+        <View style={{ paddingBottom: 2 }}>
+          <Eyebrow>Credits and splits</Eyebrow>
+        </View>
+        {credits.length === 0 ? (
+          <View style={{ gap: 8 }}>
+            <Muted size={13}>Say who wrote, produced and performed, and how it is split. A split sheet then goes out with the song.</Muted>
+            <Chip label="Add credits" onPress={startCredits} style={{ alignSelf: 'flex-start', paddingHorizontal: 16 }} />
+          </View>
+        ) : (
+          <>
+            {credits.map((c, i) => (
+              <View key={i} style={{ gap: 6, paddingBottom: 8, borderBottomWidth: 0.5, borderBottomColor: C.border }}>
+                <View style={[s.row, { gap: 8 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Field label={`Name ${i + 1}`} value={c.name} onChangeText={(name) => editCredit(i, { name })} placeholder="Name" maxLength={40} autoCapitalize="words" returnKeyType="done" />
+                  </View>
+                  <View style={{ width: 84 }}>
+                    <Field label={`Share ${i + 1}, percent`} value={c.share ? String(c.share) : ''} onChangeText={(v) => editCredit(i, { share: Math.max(0, Math.min(100, Math.round(Number(v.replace(/[^0-9.]/g, '')) || 0))) })} placeholder="%" maxLength={3} keyboardType="number-pad" returnKeyType="done" />
+                  </View>
+                </View>
+                <View style={[s.row, { gap: 6, flexWrap: 'wrap' }]}>
+                  {ROLES.map((role) => (
+                    <Chip key={role} label={role} on={c.role === role} onPress={() => editCredit(i, { role })} style={{ paddingHorizontal: 12 }} />
+                  ))}
+                  <Chip label="Remove" onPress={() => setCredits(credits.filter((_, j) => j !== i))} style={{ paddingHorizontal: 12, marginLeft: 'auto' }} />
+                </View>
+              </View>
+            ))}
+            <View style={[s.row, s.between, { gap: 8 }]}>
+              <Chip label="Add a person" onPress={() => setCredits([...credits, { name: '', role: 'Writer', share: Math.max(0, 100 - total) }])} style={{ paddingHorizontal: 14 }} />
+              <Txt size={13} w="medium" color={total === 100 ? C.muted : C.recText}>
+                {total === 100 ? 'Splits add up to 100%' : `Splits add up to ${total}%, not 100%`}
+              </Txt>
+            </View>
+          </>
+        )}
+      </View>
+  );
+
   const foot = (
       <Foot>
         {(task.error || done || task.busy) && (
@@ -138,6 +193,7 @@ export default function Export() {
               {loudness}
               {format}
               {include}
+              {splits}
             </>
           }
           right={
@@ -161,6 +217,8 @@ export default function Export() {
       {format}
 
       {include}
+
+      {splits}
 
       {foot}
     </Screen>

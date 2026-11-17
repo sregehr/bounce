@@ -186,3 +186,33 @@ export const erase = mutation({
     return true;
   },
 });
+
+/**
+ * Everything in a device's backup, for bringing it onto another device: each project as the app
+ * stores it, and a short-lived address for each of its files. Only the device's own secret opens it.
+ */
+export const restore = query({
+  args: owner,
+  returns: v.union(
+    v.null(),
+    v.object({
+      projects: v.array(v.object({ localId: v.string(), data: v.string() })),
+      files: v.array(v.object({ key: v.string(), url: v.union(v.string(), v.null()), size: v.number() })),
+    }),
+  ),
+  handler: async (ctx, { deviceId, secret }) => {
+    if (!(await owns(ctx, deviceId, secret))) return null;
+    const projects = await ctx.db
+      .query("backupProjects")
+      .withIndex("by_device_local", (q) => q.eq("deviceId", deviceId))
+      .take(1000);
+    const files = await ctx.db
+      .query("backupFiles")
+      .withIndex("by_device_key", (q) => q.eq("deviceId", deviceId))
+      .take(2000);
+    return {
+      projects: projects.map((p) => ({ localId: p.localId, data: p.data })),
+      files: await Promise.all(files.map(async (f) => ({ key: f.key, url: await ctx.storage.getUrl(f.storageId), size: f.size }))),
+    };
+  },
+});

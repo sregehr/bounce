@@ -7,7 +7,7 @@ import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { blobs, kv } from './db';
 import type { Library, Project } from './model';
-import { getLibrary, onLibraryChange } from './store';
+import { flushLibrary, getLibrary, onLibraryChange, update } from './store';
 
 export type BackupState = { status: 'off' | 'idle' | 'working' | 'unreachable' | 'done'; pending: number; lastAt: number | null };
 
@@ -145,3 +145,48 @@ export function startBackup() {
 
 export const backupNow = () => void run();
 export const backupAvailable = !!client;
+
+// ---------- Bringing a backup onto another device ----------
+
+/** What another device needs to open this one's backup. Anyone holding it can read the backup, so it is shown only on request. */
+export const restoreCode = () => `${getLibrary().settings.deviceId}.${getLibrary().settings.deviceSecret}`;
+
+/**
+ * Copies a backup onto this device from its restore code. Songs already here are left alone;
+ * the rest arrive with their audio and covers. Returns how many songs were added.
+ */
+export async function restoreBackup(code: string, onProgress?: (left: number) => void): Promise<number> {
+  if (!client) throw new Error('This build has no backup server to restore from.');
+  const [deviceId, secret] = code.trim().split('.');
+  if (!deviceId || !secret || secret.length < 32) throw new Error('That does not look like a restore code. Copy it again from Settings on the other device.');
+  const found = await client.query(api.backup.restore, { deviceId, secret }).catch(() => {
+    throw new Error('The backup server could not be reached. Check the connection and try again.');
+  });
+  if (!found) throw new Error('No backup was found for that code. Check that the other device has finished backing up.');
+  const here = new Set(getLibrary().projects.map((p) => p.id));
+  const incoming = found.projects.flatMap((row) => {
+    try {
+      const project = JSON.parse(row.data) as Project;
+      return project?.id && project.beat?.key && !here.has(project.id) ? [project] : [];
+    } catch {
+      return [];
+    }
+  });
+  const have = new Set(await blobs.keys());
+  const wanted = new Set(incoming.flatMap(keysOf));
+  const fetchable = found.files.filter((f) => wanted.has(f.key) && !have.has(f.key) && f.url);
+  let left = fetchable.length;
+  onProgress?.(left);
+  for (const file of fetchable) {
+    const response = await fetch(file.url!);
+    if (!response.ok) throw new Error(`A file could not be downloaded (${response.status}). Try again.`);
+    await blobs.put(file.key, await response.blob());
+    have.add(file.key);
+    onProgress?.(--left);
+  }
+  // Only songs whose beat arrived are added; one without its audio would not open.
+  const whole = incoming.filter((p) => have.has(p.beat.key));
+  if (whole.length) update((l) => ({ ...l, projects: [...whole.map((p) => ({ ...p, takes: p.takes.filter((t) => have.has(t.key)) })), ...l.projects] }));
+  await flushLibrary();
+  return whole.length;
+}

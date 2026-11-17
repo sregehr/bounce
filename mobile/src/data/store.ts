@@ -79,6 +79,24 @@ export function update(change: (l: Library) => Library) {
   }, 250);
 }
 
+/** Writes any change still waiting to be saved, now. For moments that cannot wait: the page going away, or a restore finishing. */
+export async function flushLibrary() {
+  if (!saveTimer || loadError) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await kv.set('library', library).catch((e) => {
+    saveError = e instanceof Error ? e.message : 'Could not save.';
+    notify();
+  });
+  changeHooks.forEach((fn) => fn(library));
+}
+
+// A change made in the last moment before the tab is closed, reloaded or put away is still saved.
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => void flushLibrary());
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void flushLibrary());
+}
+
 export const setProfile = (patch: Partial<Profile>) => update((l) => ({ ...l, profile: { ...l.profile, ...patch } }));
 export const setSettings = (patch: Partial<Settings>) => update((l) => ({ ...l, settings: { ...l.settings, ...patch } }));
 export const setCurrent = (id: string | null) => update((l) => (l.currentId === id ? l : { ...l, currentId: id }));

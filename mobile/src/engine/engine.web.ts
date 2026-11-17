@@ -24,7 +24,38 @@ let state: EngineState = {
 const listeners = new Set<() => void>();
 function set<K extends keyof EngineState>(key: K, patch: Partial<EngineState[K]>) {
   state = { ...state, [key]: { ...state[key], ...patch } };
+  if (key === 'transport' && 'playing' in patch) syncSession();
   listeners.forEach((fn) => fn());
+}
+
+// ---------- Lock screen and headphone controls ----------
+
+const session = typeof navigator !== 'undefined' && 'mediaSession' in navigator ? navigator.mediaSession : null;
+
+function syncSession() {
+  if (session) session.playbackState = !session.metadata ? 'none' : state.transport.playing ? 'playing' : 'paused';
+}
+
+/**
+ * Tells the system what is playing, so the lock screen, the control centre and headphone
+ * buttons show the song and can play, pause and skip within it. Pass null when nothing is.
+ */
+export function setNowPlaying(info: { title: string; artist: string; artwork?: string | null } | null) {
+  if (!session || typeof MediaMetadata === 'undefined') return;
+  session.metadata = info ? new MediaMetadata({ title: info.title, artist: info.artist, album: 'Bounce', artwork: info.artwork ? [{ src: info.artwork, sizes: '512x512' }] : [] }) : null;
+  const on = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+    try {
+      session.setActionHandler(action, info ? handler : null);
+    } catch {
+      // Not every browser knows every action.
+    }
+  };
+  on('play', () => void resume());
+  on('pause', () => pause());
+  on('seekto', (d) => d.seekTime != null && seek(d.seekTime));
+  on('seekbackward', (d) => seek(Math.max(0, state.transport.position - (d.seekOffset ?? 10))));
+  on('seekforward', (d) => seek(Math.min(state.transport.duration, state.transport.position + (d.seekOffset ?? 10))));
+  syncSession();
 }
 const subscribe = (fn: () => void) => {
   listeners.add(fn);
@@ -71,13 +102,14 @@ async function context(rate?: number): Promise<AudioContext> {
     }
   }
   await worklet;
-  if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+  // After a call, Siri or the screen locking, the clock is left paused or "interrupted"; either way it is started again.
+  if (ctx.state !== 'running') await ctx.resume().catch(() => {});
   return ctx;
 }
 
 /** Browsers start the audio clock suspended until a tap; call this from one. */
 export function wake() {
-  if (ctx?.state === 'suspended') void ctx.resume();
+  if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().catch(() => {});
 }
 
 function buffer(c: AudioContext, audio: { channels: Float32Array[]; sampleRate: number }): AudioBuffer {

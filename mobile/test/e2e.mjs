@@ -73,6 +73,7 @@ async function counted() {
   for (let i = 0; i < 60 && /Count-in/.test(await text()); i++) await sleep(250);
 }
 
+let restoreCode = '';
 async function tap(label, { exact = true, optional = false } = {}) {
   const hit = await page.evaluate(
     (label, exact) => {
@@ -718,6 +719,13 @@ async function library() {
   await expectText('Storage');
   await expectText('Everything is backed up', 'the library is backed up to the server', 30000);
   await shot('24-settings');
+  // The restore code for this device is shown on request. Backup is then switched off, so the beats
+  // deleted later in this run stay on the server to be restored at the end.
+  await tap("Show this device's restore code");
+  restoreCode = await state(() => [...document.querySelectorAll('input,textarea')].find((n) => n.getAttribute('aria-label') === 'Restore code')?.value ?? '');
+  log(/^[a-z0-9]{16,}\.[0-9a-f]{64}$/.test(restoreCode), 'Settings shows a restore code for this device');
+  await tap('Hide the code');
+  await tap('Back up my beats and takes');
 
   // The microphone and its timing are set where recording happens, with the guided setup one tap away.
   await tap('Freestyle over Night bus');
@@ -852,6 +860,20 @@ async function library() {
   await expectText('Nothing to record over yet', 'and so does the mic');
   await tap('Try a demo song');
   await expectText('Ready-made beats', 'its tiles lead on, here to the demo songs');
+
+  // Restore: the beats deleted above come back from the backup, with their audio, from the code alone.
+  if (restoreCode) {
+    await page.goto(BASE + '/settings', { waitUntil: 'networkidle2' });
+    await expectText('Move to another device', 'Settings opens', 20000);
+    await type('Restore code from another device', restoreCode);
+    await tap('Restore from this code');
+    await expectText(/\d+ songs? restored/, 'a backup is restored from its code', 60000);
+    await page.goto(BASE + '/', { waitUntil: 'networkidle2' });
+    await expectText('Night bus', 'the restored beat is back on Home', 20000);
+    await tap('Open Night bus');
+    await expectText('4 takes', 'with its takes', 20000);
+    await expectText(/Take \d, polished over the beat/, 'and its audio, which renders and plays', 40000);
+  }
 }
 
 const flows = { onboarding, song, finish, library };

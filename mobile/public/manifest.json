@@ -5,7 +5,7 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#121212",
   "theme_color": "#121212",
   "icons": [
@@ -26,6 +26,32 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Capture a beat",
+      "short_name": "Capture",
+      "description": "Record a beat from your gear",
+      "url": "/capture",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Freestyle over the last beat",
+      "short_name": "Freestyle",
+      "description": "Open the mic on the beat you worked on last",
+      "url": "/vocals",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }

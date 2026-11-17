@@ -31,6 +31,7 @@ export const toggle = () => {};
 export const seek = (_seconds: number) => {};
 export const setSide = (_side: 'a' | 'b') => {};
 export const stopTransport = () => {};
+export const setNowPlaying = (_info: { title: string; artist: string; artwork?: string | null } | null) => {};
 export const spectrum = (bars: number): number[] => new Array(bars).fill(0);
 export const startTake = (_mode: 'listening' | 'recording', _beat: { channels: Float32Array[]; sampleRate: number }, _loop: { start: number; end: number } | null, _countIn?: { beats: number; beatSec: number }): Promise<void> => missing();
 export const stopTake = (_keep?: boolean): RecordedTake | null => null;

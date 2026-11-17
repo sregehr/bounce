@@ -16,6 +16,8 @@ export type InputState = {
   pair: number;
   levelL: number;
   levelR: number;
+  /** True while the input is connected but sending nothing: muted on the device, or taken by a call. */
+  muted?: boolean;
 };
 
 export type CaptureState = {
@@ -48,6 +50,12 @@ export type TakeState = {
   clipped: boolean;
   /** True once a beat that plays through once has reached its end. */
   ended: boolean;
+  /**
+   * Set when the microphone went away mid-take: unplugged or switched off (`disconnected`), or
+   * silenced by the device or a call (`muted`). The beat has stopped and nothing more is taken
+   * in; what was recorded up to then is still there for `stopTake`.
+   */
+  lost?: 'disconnected' | 'muted' | null;
 };
 
 export type EngineState = { input: InputState; capture: CaptureState; transport: TransportState; take: TakeState };

@@ -156,7 +156,7 @@ async function scrollOver(label) {
  * Holds a finger on a slider (found by its label) and drags it sideways to a fraction of its width, or
  * up the page when `scroll` is set. Reports the value bubble as it is with the finger still down, then lifts.
  */
-async function holdSlider(label, fraction, scroll = false) {
+async function holdSlider(label, fraction, scroll = false, picture = null) {
   const box = await page.evaluate((label) => {
     const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
     if (!n) return null;
@@ -180,6 +180,7 @@ async function holdSlider(label, fraction, scroll = false) {
     const track = slider?.getBoundingClientRect();
     return { text: n?.innerText ?? null, left: r?.left, right: r?.right, bottom: r?.bottom, thumbTop: track ? track.top + track.height / 2 - 9 : 0, width: innerWidth, now: Number(slider?.getAttribute('aria-valuenow')) };
   }, label);
+  if (picture) await shot(picture);
   await finger.end();
   await sleep(250);
   return { ...seen, gone: await page.evaluate(() => !document.querySelector('[data-testid=slider-bubble]')) };
@@ -421,8 +422,35 @@ async function song() {
   await tap('Remove');
   await sleep(300);
   log(!/Take 2 level/.test(await text()), 'a layer can be removed again');
+  // What was just done is offered back at the foot of the screen for a few seconds.
+  await tap('Undo: Removed the layer of take 2');
+  await expectText('Take 2 level', 'Undo, offered where the layer was removed, puts it back');
+  await tap('Remove');
+  await sleep(300);
   await expectText('Take 1, polished over the beat', 'and the song is as it was', 30000);
+  // A deleted take can be brought back, and its audio comes with it.
+  await swipeLeft('Take 3');
+  await tap('Delete take 3');
+  await tap('Tap again to delete take 3');
+  await expectText('2 takes', 'a take is deleted');
+  await shot('10d-undo-delete');
+  await tap('Undo: Deleted take 3');
+  await expectText('3 takes', 'Undo brings a deleted take back');
+  await tap('Take 3');
+  await expectText('Take 3, polished over the beat', 'with its audio, which renders again', 30000);
+  await tap('Redo');
+  await expectText('2 takes', 'Redo deletes it again');
+  await tap('Undo');
+  await expectText('3 takes', 'and Undo on the song page steps back through edits');
+  await tap('Take 1');
+  await expectText('Take 1, polished over the beat', 'the first take is picked again', 30000);
   await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
+  // Typing is undone a line at a time, not a letter at a time.
+  const lyricsNow = () => state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Lyrics').pop()?.value ?? '');
+  await tap('Undo typing');
+  log((await lyricsNow()) === 'Night bus rolling, city on mute', 'Undo typing takes back the last line of lyrics', JSON.stringify(await lyricsNow()));
+  await tap('Redo');
+  log((await lyricsNow()) === 'Night bus rolling, city on mute\nEvery red light is a breath I use', 'and Redo puts it back', JSON.stringify(await lyricsNow()));
   await tap('Pause', { optional: true });
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'switching takes renders', 30000);
@@ -474,7 +502,7 @@ async function song() {
   // While a slider is dragged, its value shows in a bubble above the thumb, where the finger does not hide it.
   const scrolled = await holdSlider('Intensity', 0, true);
   log(scrolled?.text === null, 'scrolling over a slider shows no value bubble');
-  const bubble = await holdSlider('Intensity', 1);
+  const bubble = await holdSlider('Intensity', 1, false, '12b-slider-bubble');
   log(bubble?.text === `${bubble?.now}%` && bubble.now === 100, 'dragging a slider shows its value in a bubble, in the words the row uses', `${bubble?.text}`);
   log(bubble?.left >= 0 && bubble.right <= bubble.width && bubble.bottom <= bubble.thumbTop, 'the bubble sits above the thumb and inside the screen', `${Math.round(bubble?.left)}–${Math.round(bubble?.right)} of ${bubble?.width}`);
   log(bubble?.gone === true, 'and goes when the finger lifts');

@@ -13,7 +13,7 @@ import { NoSong } from '@/ui/AddBeat';
 import { Btn, Chip, Chips, Muted, NavLink, Option, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
 import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
-import { Status } from '@/ui/parts';
+import { Status, UndoToast } from '@/ui/parts';
 import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, clock } from '@/ui/theme';
@@ -62,6 +62,7 @@ export default function Playback() {
   // A beat with nothing recorded over it: Mix says so, and leads to the mic.
   if (!take)
     return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Screen gap={20}>
         <SongHeader project={project} />
         <View style={{ gap: 4 }}>
@@ -72,6 +73,9 @@ export default function Playback() {
         </View>
         <Btn label="Record a take" to="/vocals" />
       </Screen>
+      {/* The take that was just deleted here can still be brought back. */}
+      <UndoToast projectId={project.id} />
+      </View>
     );
 
   const { mix } = song;
@@ -137,7 +141,7 @@ export default function Playback() {
               size={14}
               onPress={() => {
                 if (!armed) return arm();
-                void deleteTake(project.id, take.id);
+                deleteTake(project.id, take.id);
               }}
             >
               {armed ? `Tap again to delete take ${take.number}` : 'Delete this take'}
@@ -162,6 +166,7 @@ export default function Playback() {
   // Wide: listening and the broad strokes on the left, the chains open on the right, and the last step in the header.
   if (wide)
     return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Screen gap={22}>
         <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
           <View style={{ flex: 1 }}>{header}</View>
@@ -182,6 +187,8 @@ export default function Playback() {
           <View style={{ flex: 1, minWidth: 0 }}>{chains}</View>
         </View>
       </Screen>
+      <UndoToast projectId={project.id} />
+      </View>
     );
 
   return (
@@ -210,6 +217,7 @@ export default function Playback() {
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: bar.room + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
         <Btn label="Finish song" to="/cover?finish=1" style={{ flex: 0, minHeight: 52 }} />
       </View>
+      <UndoToast projectId={project.id} lift={FINISH_HEIGHT + 4} />
     </View>
   );
 }

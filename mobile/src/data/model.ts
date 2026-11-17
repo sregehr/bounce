@@ -54,7 +54,7 @@ export type Cover = {
 
 export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format: 'wav24' | 'wav16' | 'm4a'; instrumental: boolean; vocals: boolean };
 /** `startSec` is where the snippet begins when the user moved it; without one the strongest stretch is used. */
-export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean; startSec?: number | null };
+export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean; startSec?: number | null; shape?: 'tall' | 'square' | 'wide' };
 
 export type Project = {
   id: string;

@@ -573,6 +573,19 @@ async function finish() {
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');
+  // The same snippet in the square shape for feeds: picking a shape asks for it to be made again.
+  if (await tap('Square 1:1', { optional: true })) {
+    await tap('Make snippet');
+    await expectText('Snippet ready', 'the square snippet is made', 60000);
+    await sleep(500);
+    await tap('Save snippet');
+    await expectText(/Saved Night bus snippet \(square\)\.(mp4|webm) to your downloads/i, 'and saved under its own name', 60000);
+    await sleep(1500);
+    const square = fs.readdirSync(DOWNLOADS).find((f) => /snippet \(square\)\.(mp4|webm)$/.test(f));
+    const probe = square ? spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path.join(DOWNLOADS, square)], { encoding: 'utf8' }) : null;
+    if (probe && !probe.error) log(probe.stdout.trim() === '1080,1080', 'the square snippet is 1080 by 1080', probe.stdout.trim() || 'unreadable');
+    await tap('Tall 9:16');
+  }
   await tap('Done, back to the Vault');
   await expectText(IN_VAULT, 'vault opens');
   await expectText('Snippet made');

@@ -65,7 +65,7 @@ function Export() {
     });
   const asMastered = project.stats ? lufs(project.stats.lufs) : 'as it is';
 
-  const top = <TopBar left="Share" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />;
+  const top = <TopBar back left="Share" />;
 
   const card = (
       <Card style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

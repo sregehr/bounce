@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 
-import { Eyebrow, Muted, NavLink, Screen, TopBar } from '@/ui/kit';
+import { Eyebrow, Muted, Screen, TopBar } from '@/ui/kit';
 
 // What Bounce does with what you give it, in plain words. Keep this true: change it in the
 // same commit as anything that changes where recordings, photos or account details go.
@@ -49,7 +49,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
 export default function Privacy() {
   return (
     <Screen gap={22} padBottom={40}>
-      <TopBar left="Privacy" right={<NavLink to="/" back>Close</NavLink>} />
+      <TopBar back={{ to: '/settings' }} left="Privacy" />
       <Muted size={13}>Last updated 15 November 2026.</Muted>
       {SECTIONS.map((section) => (
         <View key={section.title} style={{ gap: 8 }}>

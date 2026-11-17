@@ -8,7 +8,7 @@ import { useProject } from '@/data/store';
 import { spectrum, setNowPlaying } from '@/engine/engine';
 import { Btn, Eyebrow, NavLink, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
-import { asSheet } from '@/ui/nav';
+import { BackButton, asSheet } from '@/ui/nav';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -76,13 +76,8 @@ function Player() {
         </Pressable>
   );
 
-  const shut = (
-        <Pressable accessibilityRole="button" accessibilityLabel="Close the player" onPress={close} hitSlop={8} style={[pill, { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }, wide && { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: C.borderStrong }]}>
-          <Txt size={18} w="semi" color={C.text}>
-            ✕
-          </Txt>
-        </Pressable>
-  );
+  // The same close button as every sheet, in the same corner, on a disc so it reads over any cover.
+  const shut = <BackButton disc label="Close the player" />;
 
   const again = beat && (
           <NavLink center size={14} onPress={now.again}>
@@ -98,7 +93,10 @@ function Player() {
           <Pressable accessibilityRole="link" accessibilityLabel="Change cover art" onPress={() => router.push('/cover')} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
             <CoverImage project={project} fill />
           </Pressable>
-          <View style={{ alignItems: 'flex-start', paddingTop: Math.max(28, insets.top + 12), paddingLeft: Math.max(28, insets.left + 12), pointerEvents: 'box-none' }}>{mastering}</View>
+          <View style={[s.row, { gap: 10, paddingTop: Math.max(28, insets.top + 12), paddingLeft: Math.max(28, insets.left + 12), pointerEvents: 'box-none' }]}>
+            {shut}
+            {mastering}
+          </View>
           <Visualiser playing={t.playing} tall />
         </View>
 
@@ -112,7 +110,6 @@ function Player() {
                 {song.error ?? credit}
               </Txt>
             </View>
-            {shut}
           </View>
 
           <Scrubber now={now} height={32} />
@@ -148,8 +145,8 @@ function Player() {
       </View>
 
       <View style={[s.topbar, { paddingHorizontal: 16, paddingTop: Math.max(20, insets.top + 8) }]}>
-        {mastering}
         {shut}
+        {mastering}
       </View>
 
       <View style={{ flexGrow: 1 }} />
@@ -186,7 +183,7 @@ function Player() {
 
         <View style={[s.row, { gap: 10 }]}>
           <Btn kind="outline" label="Snippet" to="/snippet" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
-          {hasLyrics && <Btn kind="outline" label={lyrics ? 'Done' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />}
+          {hasLyrics && <Btn kind="outline" label={lyrics ? 'Hide lyrics' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />}
           {/* Sharing opens the choices first (loudness, format, stems), then the share sheet or a saved file. */}
           <Btn kind="outline" label="Share" to="/export" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
         </View>

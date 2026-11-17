@@ -7,7 +7,7 @@ import { DEMO_GROUPS, DEMO_SONGS, type DemoSong } from '@/data/demoSongs';
 import type { Project } from '@/data/model';
 import { DEMO, makeDemoBeat } from '@/dsp/demoBeat';
 import { decode, play, stopTransport, toggle } from '@/engine/engine';
-import { Chip, Eyebrow, Muted, NavLink, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { Chip, Eyebrow, Muted, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
 import { asSheet } from '@/ui/nav';
 import { C, clock } from '@/ui/theme';
@@ -97,7 +97,7 @@ function Demos() {
     void task.run(async () => void ((await work()) && router.replace('/song')));
   };
 
-  const title = <TopBar left="Demo songs" right={<NavLink to="/" back>Close</NavLink>} />;
+  const title = <TopBar back left="Demo songs" />;
   const intro = <Muted>Ready-made beats to freestyle over. Play one to hear it first; tap its name to add it to your library.</Muted>;
   const error = task.error && (
     <Txt size={13} color={C.recText}>

@@ -13,6 +13,7 @@ import type { Captured } from '@/engine/types';
 import { Bars, Card, Chip, Eyebrow, Pulse, Foot, Meter, Muted, NavLink, Screen, StopButton, Txt, s, type Bar } from '@/ui/kit';
 import { success, thump } from '@/ui/haptics';
 import { useOnScreen, useRecordingGuard } from '@/ui/hooks';
+import { BackButton } from '@/ui/nav';
 import { C, clock, db, meterPct, rateLabel } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
@@ -111,6 +112,8 @@ export default function Record() {
   const status = (
     <View style={s.topbar}>
       <View style={[s.row, { gap: 10 }]}>
+        {/* Back is there while it is only armed. Once sound is being captured the way out is the stop button, which keeps it. */}
+        {!recording && !saving && !failed && <BackButton to="/capture" style={{ marginRight: -6 }} />}
         <Pulse size={10} color={recording ? C.rec : C.accent} on={recording && !saving} />
         <Eyebrow size={13} color={recording ? C.recText : C.accent}>
           {saving ? 'Saving' : recording ? 'Recording' : 'Armed'}

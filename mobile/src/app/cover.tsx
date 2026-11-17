@@ -153,7 +153,7 @@ function Cover() {
   const working = task.busy;
 
   const recent = [...new Set(others.map((p) => p.artist?.trim()).filter((n): n is string => !!n && n !== project.artist?.trim()))].slice(0, 4);
-  const top = <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to={project.takeId ? '/playback' : '/master'} back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />;
+  const top = <TopBar back left={finishing ? 'Finish song' : 'Cover art'} />;
 
   const fields = (
     <>

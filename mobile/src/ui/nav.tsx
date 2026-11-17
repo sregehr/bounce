@@ -207,7 +207,7 @@ export function BackButton({ to = '/', onPress, onBack, label, disc, style }: { 
       style={({ pressed }) => [
         { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.55 : 1 },
         // On a page the glyph lines up with the edge of the text below it; on a disc it sits in the middle.
-        disc ? { backgroundColor: 'rgba(18,18,18,0.82)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.28)' } : { marginLeft: -10 },
+        disc ? { backgroundColor: 'rgba(18,18,18,0.82)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.28)' } : { marginLeft: -14 },
         style,
       ]}
     >

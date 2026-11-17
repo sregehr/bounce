@@ -636,12 +636,18 @@ async function finish() {
     }
     await tap('WAV, 16-bit');
   }
-  await tap('Back');
-  await expectText('Prod. Lowkey', 'Back returns to the player');
+  // Share is a sheet over the player: it has the one close button every sheet has, and Escape closes it too.
+  log(await state(() => !!document.querySelector('[role=dialog]')), 'Share opens as a sheet over the player');
+  await tap('Close');
+  await expectText('Prod. Lowkey', 'closing the sheet returns to the player');
+  await tap('Share');
+  await expectText('Keep as mastered', 'the sheet opens again');
+  await page.keyboard.press('Escape');
+  await expectText('Prod. Lowkey', 'and Escape closes it');
   // The wide player always shows the lyrics; the phone keeps them behind a button.
   await tap('Lyrics', { optional: WIDE });
   await expectText('Every red light is a breath I use', 'the lyrics written on the song came with it');
-  await tap('Done', { optional: WIDE });
+  await tap('Hide lyrics', { optional: WIDE });
   await tap('Pause', { optional: true });
 
   await tap('Snippet');
@@ -687,10 +693,8 @@ async function finish() {
     await tap('More for Night bus');
     await tap('Edit image');
     await expectText('Cover art', 'Edit image opens the cover screen for that song', 10000);
-    await tap('Skip');
-    await expectText('Prod. Lowkey', 'and leaving it returns to the song', 15000);
-    await tap('Close the player');
-    await expectText(IN_VAULT, 'then back to the Vault');
+    await tap('Close');
+    await expectText(IN_VAULT, 'and closing it returns to the Vault', 15000);
   }
   await type('Search your songs', 'red light');
   await expectText('Has lyrics', 'search finds a word in the lyrics');

@@ -720,7 +720,24 @@ async function finish() {
     await tap('Strongest stretch');
     await expectText('Strongest stretch picked', 'and put back on the strongest stretch', 5000);
   }
-  log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
+  // With lyrics on the song, the words on the video are its lines, each timed to where the voice is.
+  await expectText('Line timing', 'a song with lyrics shows them in time on its snippet');
+  const lineLabels = () => state(() => [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).map((n) => n.getAttribute('aria-label') ?? '').filter((l) => l.startsWith('Play from line ')));
+  let timedLines = [];
+  for (let i = 0; i < 40 && !timedLines.length; i++) (timedLines = await lineLabels()).length || (await sleep(250));
+  const startOf = (label) => Number(/at ([\d.]+) s/.exec(label ?? '')?.[1] ?? NaN);
+  log(timedLines.length >= 1 && timedLines.every((l, i) => i === 0 || startOf(l) > startOf(timedLines[i - 1])), 'the lyric lines in this stretch are listed in order, each with when it shows', timedLines.join(' | '));
+  const onCard = await state(() => document.querySelector('[data-testid=snippet-line]')?.innerText.trim() ?? '');
+  log(['Night bus rolling, city on mute', 'Every red light is a breath I use'].includes(onCard), 'and the card shows a lyric line where the caption was', onCard);
+  // A line that comes in early or late is moved a quarter of a second at a time, and put back.
+  const lineNo = /line (\d+)/.exec(timedLines[timedLines.length - 1] ?? '')?.[1] ?? '1';
+  const wasAt = startOf(timedLines[timedLines.length - 1]);
+  await tap(`Line ${lineNo} earlier`);
+  let nowAt = startOf((await lineLabels()).pop());
+  log(Math.abs(wasAt - nowAt - 0.25) < 0.011 || nowAt < wasAt, 'a line can be nudged earlier', `${wasAt} s -> ${nowAt} s`);
+  await tap('Reset timing');
+  nowAt = startOf((await lineLabels()).pop());
+  log(nowAt === wasAt, 'and Reset timing puts it back', `${nowAt} s`);
   await shot('21-snippet');
   // The snippet is made first; saving or sharing it is then one more tap.
   await tap('Make snippet');
@@ -729,6 +746,10 @@ async function finish() {
   await sleep(500);
   await tap('Save snippet');
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
+  // One caption line is still there for the asking, written on the card itself.
+  await tap('One line');
+  log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
+  log(!/Line timing/.test(await text()), 'and the line timing is put away with it');
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');
   // The same snippet in the square shape for feeds: picking a shape asks for it to be made again.

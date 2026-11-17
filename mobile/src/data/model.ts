@@ -56,7 +56,21 @@ export type Cover = {
 
 export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format: 'wav24' | 'wav16' | 'm4a'; instrumental: boolean; vocals: boolean };
 /** `startSec` is where the snippet begins when the user moved it; without one the strongest stretch is used. */
-export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean; startSec?: number | null; shape?: 'tall' | 'square' | 'wide' };
+export type SnippetChoice = {
+  lengthSec: 15 | 20 | 30;
+  captions: boolean;
+  credit: boolean;
+  caption: string;
+  made: boolean;
+  startSec?: number | null;
+  shape?: 'tall' | 'square' | 'wide';
+  /** What the words on screen are: the lyric lines in time with the vocal, or the one caption line. Timed when the song has lyrics, unless set. */
+  words?: 'timed' | 'line';
+  /** The lyric line the snippet opens on when picked by hand, by its place in the lyrics. */
+  lineFirst?: number | null;
+  /** Lines moved earlier or later by hand, in seconds, by their place in the lyrics. */
+  lineShift?: Record<string, number>;
+};
 
 /** One person's part in a song. `share` is their percentage of it. */
 export type Credit = { name: string; role: 'Writer' | 'Producer' | 'Performer'; share: number };

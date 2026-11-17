@@ -2,8 +2,11 @@
 // The browser records it in real time, so a 20-second snippet takes 20 seconds to make.
 import { C, F } from '@/ui/theme';
 
+import { lineAt, type TimedLine } from './lyricTiming';
+
 export type SnippetVideo = { blob: Blob; extension: 'mp4' | 'webm' };
-export type SnippetCard = { title: string; artist: string; caption: string | null; credit: string | null; peaks: number[]; coverUrl: string | null };
+/** `lines` are the song's lyric lines with the moment each shows; when there are any they take the caption's place. */
+export type SnippetCard = { title: string; artist: string; caption: string | null; credit: string | null; peaks: number[]; coverUrl: string | null; lines?: TimedLine[] | null };
 
 export type SnippetShape = 'tall' | 'square' | 'wide';
 
@@ -67,7 +70,32 @@ export const SCRIM: [number, number][] = [
   [1, 0.88],
 ];
 
-function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageElement | null, progress: number, shape: SnippetShape) {
+/** How long a lyric line takes to come up. */
+const LINE_IN_SEC = 0.18;
+
+/**
+ * Fits words into the space the caption has: at most `lines` lines of the frame's width. A line
+ * too long for that at full size is set smaller, and only cut short, with an ellipsis, if it
+ * still does not fit. So the words never run down into the part of a tall frame that an app's
+ * own buttons cover.
+ */
+function fitWords(g: CanvasRenderingContext2D, text: string, max: number, lines: number): { size: number; rows: string[] } {
+  for (const size of [44, 38, 32]) {
+    g.font = `${size}px ${F.display}, sans-serif`;
+    const rows = wrap(g, text, max, lines + 1);
+    if (rows.length <= lines) return { size, rows };
+    if (size === 32) {
+      const kept = rows.slice(0, lines);
+      let last = kept[lines - 1];
+      while (last.length > 1 && g.measureText(`${last}…`).width > max) last = last.slice(0, -1);
+      kept[lines - 1] = `${last.trimEnd()}…`;
+      return { size, rows: kept };
+    }
+  }
+  return { size: 32, rows: [] };
+}
+
+function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageElement | null, progress: number, shape: SnippetShape, seconds = 0) {
   const f = SHAPES[shape];
   const W = f.w, H = f.h;
   const pad = 56;
@@ -113,12 +141,29 @@ function draw(g: CanvasRenderingContext2D, card: SnippetCard, cover: HTMLImageEl
     g.fillText(card.credit.toUpperCase(), pad, bottom - 26);
     bottom -= 60;
   }
-  if (card.caption) {
-    g.font = `44px ${F.display}, sans-serif`;
-    const lines = wrap(g, card.caption, W - pad * 2, f.captionLines);
-    bottom -= lines.length * 54;
-    lines.forEach((line, i) => g.fillText(line, pad, bottom + i * 54));
+  // The lyric line being sung, or else the one caption, in the same place: above the credit and clear of the foot of the frame.
+  const line = card.lines?.length ? lineAt(card.lines, seconds) : null;
+  const words = card.lines?.length ? (line?.text ?? null) : card.caption;
+  if (words) {
+    const { size, rows } = fitWords(g, words, W - pad * 2, f.captionLines);
+    const box = wordsBox(shape, rows.length, size, !!card.credit);
+    // A new line eases in rather than snapping on.
+    if (line) g.globalAlpha = Math.max(0, Math.min(1, (seconds - line.at) / LINE_IN_SEC));
+    rows.forEach((row, i) => g.fillText(row, pad, box.top + i * box.step));
+    g.globalAlpha = 1;
   }
+}
+
+/**
+ * Where the words (a lyric line or the caption) sit in a frame: `rows` rows of `size`-pixel type,
+ * stacked up from just above the credit. `safeBottom` is the lowest the words may reach: in the
+ * tall shape everything under it is covered by the buttons and captions of the app it is posted to.
+ */
+export function wordsBox(shape: SnippetShape, rows: number, size: number, credit: boolean) {
+  const f = SHAPES[shape];
+  const step = Math.round(size * 1.23);
+  const bottom = f.h - f.foot - (credit ? 60 : 0);
+  return { top: bottom - rows * step, bottom, step, safeBottom: f.h - f.foot, wave: f.wave + f.waveTall, maxRows: f.captionLines };
 }
 
 /** Records the card with its audio. `onProgress` is called with the seconds left. */
@@ -164,7 +209,7 @@ export async function makeSnippetVideo(audio: { channels: Float32Array[]; sample
     // A timer rather than animation frames, so it keeps going if the tab is in the background.
     timer = setInterval(() => {
       const t = Math.max(0, ctx.currentTime - began);
-      draw(g, card, cover, Math.min(1, t / duration), shape);
+      draw(g, card, cover, Math.min(1, t / duration), shape, t);
       onProgress(Math.max(0, Math.ceil(duration - t)));
     }, 33);
     await Promise.race([played, new Promise((r) => setTimeout(r, duration * 1000 + 15000))]);

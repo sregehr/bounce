@@ -1,11 +1,13 @@
 // The parts of the newer features that are plain sums: where a slider's bubble sits, what undo
-// puts back, and how an artist's profile reaches a song.
+// puts back, how an artist's profile reaches a song, and when each lyric line shows on a snippet.
 import { DEFAULT_POLISH } from '../src/dsp/presets';
 import { artistNamed, namesWithoutProfile, withArtist } from '../src/data/artists';
 import { blobs, kv } from '../src/data/db';
 import type { Project, Take } from '../src/data/model';
 import { addTake, createProject, deleteProject, deleteTake, getLibrary, getProject, loadLibrary, redoSong, removeArtist, renameArtist, saveArtist, setArtistSound, setCompBar, setLayers, setLyrics, setSession, undoSong, update } from '../src/data/store';
 import { artistOf } from '../src/data/songs';
+import { lineAt, lyricLines, timeLines, voicedStretches } from '../src/snippet/lyricTiming';
+import { wordsBox } from '../src/snippet/video.web';
 import { BUBBLE_HEIGHT, BUBBLE_MARGIN, bubblePlace } from '../src/ui/bubble';
 
 let failed = 0;
@@ -198,7 +200,63 @@ async function artistTests() {
   setSession(null);
 }
 
+// ---------- Lyric lines in time on a snippet ----------
+function lyricTests() {
+  check('blank lines in the lyrics are not lines', lyricLines('One\n\n  Two  \n').join('|') === 'One|Two');
+
+  // A take in slices of 50 ms: room noise throughout, a voice from 2 s to 6 s with a breath in it, and again from 10 s to 14 s.
+  const bin = 0.05;
+  const level = (t: number) => ((t >= 2 && t < 3.9) || (t >= 4.1 && t < 6) || (t >= 10 && t < 14) ? 0.6 + 0.3 * Math.sin(t * 40) ** 2 : t >= 8 && t < 8.1 ? 0.9 : 0.02);
+  const peaks = Array.from({ length: Math.round(16 / bin) }, (_, i) => level(i * bin));
+  const voice = voicedStretches(peaks, bin);
+  const near = (a: number, b: number, by = 0.11) => Math.abs(a - b) <= by;
+  check('the voice is found where it is, across a breath', voice.length === 2 && near(voice[0].from, 2) && near(voice[0].to, 6) && near(voice[1].from, 10) && near(voice[1].to, 14), JSON.stringify(voice));
+  check('silence has no voice in it', voicedStretches(new Array(200).fill(0), bin).length === 0);
+  check('steady noise with nothing over it is not a voice', voicedStretches(new Array(200).fill(0.3), bin).length <= 1);
+
+  // Four lines of about the same length over eight seconds of singing: two to each stretch.
+  const lines = ['Night bus rolling city on mute', 'Every red light is a breath I use', 'Window seat and the world goes by', 'Counting every stop until its mine'];
+  const whole = timeLines(lines, voice, 16, 0, 16);
+  check('every line gets a place, in order', whole.length === 4 && whole.every((l, i) => l.index === i && (i === 0 || l.at > whole[i - 1].at)), JSON.stringify(whole.map((l) => l.at)));
+  check('the first line starts with the voice, not with the snippet', near(whole[0].at, 2));
+  check('lines are laid along the singing, skipping the gap', whole[1].at > 3 && whole[1].at < 5.5 && near(whole[2].at, 10, 0.6) && whole[3].at > 11 && whole[3].at < 13.5, JSON.stringify(whole.map((l) => l.at)));
+  check('a line clears a moment after its singing stops, not at the next line', whole[1].until < 7.5 && whole[1].until >= 6, `${whole[1].until}`);
+  check('no two lines show at once', whole.every((l, i) => i === 0 || whole[i - 1].until <= l.at + 1e-9));
+  check('between the two stretches nothing shows', lineAt(whole, 8.5) === null && lineAt(whole, 2.5)?.index === 0);
+
+  // A snippet from the middle opens on the line the song has reached, timed from the snippet's own start.
+  const late = timeLines(lines, voice, 16, 9, 6);
+  check('a snippet from later in the song opens on a later line', late[0].index === 2 && near(late[0].at, 1), JSON.stringify(late));
+  check('and times are counted from the start of the snippet, inside it', late.every((l) => l.at >= 0 && l.until <= 6 + 1e-9 && l.at < l.until));
+  const mid = timeLines(lines, voice, 16, 3, 5);
+  check('a line already under way when the snippet starts is up from the first frame', mid[0].at === 0 && mid[0].index <= 1, JSON.stringify(mid));
+
+  // Putting it right by hand.
+  const opened = timeLines(lines, voice, 16, 9, 6, { first: 0 });
+  check('another line can be chosen to open on', opened[0].index === 0 && near(opened[0].at, 1));
+  const nudged = timeLines(lines, voice, 16, 0, 16, { shift: { '1': 0.5, '2': -0.25 } });
+  check('a line can be moved later or earlier by itself', near(nudged[1].at - whole[1].at, 0.5, 0.001) && near(nudged[2].at - whole[2].at, -0.25, 0.001) && nudged[0].at === whole[0].at && nudged[3].at === whole[3].at);
+  const far = timeLines(lines, voice, 16, 0, 16, { shift: { '0': -99, '3': 99 } });
+  check('a line cannot be moved out of the snippet or past its neighbours', far[0].at === 0 && far[3].at <= 16 - 0.3 + 1e-9 && far.every((l, i) => i === 0 || l.at > far[i - 1].at));
+
+  // No voice to go by: an instrumental's lines are spread evenly.
+  const even = timeLines(lines, [], 16, 0, 16);
+  check('with no voice the lines are spread evenly', even.length === 4 && near(even[1].at - even[0].at, 4, 0.8) && near(even[3].at - even[2].at, 4, 0.8), JSON.stringify(even.map((l) => l.at)));
+  // More lyrics than singing: lines keep a readable length, and the ones there is no time for are left out.
+  const many = timeLines(Array.from({ length: 30 }, (_, i) => `Line number ${i + 1} of the song`), [{ from: 0, to: 6 }], 6, 0, 6);
+  check('a short take with long lyrics shows a few readable lines, not thirty flashes', many.length >= 2 && many.length <= 6 && many.every((l) => l.until - l.at >= 0.9 || l === many[many.length - 1]), `${many.length}`);
+  check('no lyrics, no lines', timeLines([], voice, 16, 0, 16).length === 0);
+
+  // The words keep to the safe area of every shape, however many rows a line wraps to.
+  for (const shape of ['tall', 'square', 'wide'] as const) {
+    const box = wordsBox(shape, wordsBox(shape, 0, 44, true).maxRows, 44, true);
+    check(`in the ${shape} shape the words stay above the foot of the frame and below the waveform`, box.bottom <= box.safeBottom && box.top >= box.wave, `${box.top}–${box.bottom}, wave ends ${box.wave}, safe to ${box.safeBottom}`);
+  }
+  check('the tall shape keeps the words clear of the bottom 210 pixels', wordsBox('tall', 3, 44, false).bottom === 1280 - 210);
+}
+
 async function main() {
+  lyricTests();
   await undoTests();
   await artistTests();
   console.log(failed ? `\n${failed} FAILED` : '\nall passed');

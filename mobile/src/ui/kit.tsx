@@ -332,10 +332,11 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
   );
 }
 
-export function Chip({ label, on, onPress, square, style }: { label: string; on?: boolean; onPress?: () => void; square?: boolean; style?: StyleProp<ViewStyle> }) {
+export function Chip({ label, on, onPress, square, style, hint }: { label: string; on?: boolean; onPress?: () => void; square?: boolean; style?: StyleProp<ViewStyle>; /** What the chip is read out as, when its label alone would not say: "Line 2 later". */ hint?: string }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={hint}
       accessibilityState={{ selected: !!on }}
       onPress={onPress}
       style={[s.chip, square && { borderRadius: 12, paddingHorizontal: 0, flex: 1 }, on && { backgroundColor: C.text, borderColor: C.text }, style]}

@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { DEFAULT_MASTER, DEFAULT_POLISH } from '@/dsp/presets';
 
 import { blobs, kv, persist } from './db';
-import { emptyLibrary, newId, type Beat, type Library, type Profile, type Project, type Settings, type Take } from './model';
+import { emptyLibrary, newId, type Beat, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
 import { carryOver, makeSong } from './songs';
 
 let library: Library = emptyLibrary();
@@ -91,7 +91,64 @@ export function useProject(): Project | null {
 
 export const getProject = (id: string | null) => library.projects.find((p) => p.id === id) ?? null;
 
+// ---------- Undo for the mix ----------
+
+const mixOf = (p: Project): MixSettings => ({ polish: p.polish, master: p.master, overrides: p.overrides, space: p.space });
+const MIX_KEYS = ['polish', 'master', 'overrides', 'space'] as const;
+type History = { past: MixSettings[]; future: MixSettings[]; at: number };
+// Kept for this session only: undo is for the last few moves, not a record of the song.
+const histories = new Map<string, History>();
+const historyOf = (id: string) => histories.get(id) ?? (histories.set(id, { past: [], future: [], at: 0 }), histories.get(id)!);
+let replaying = false;
+
+/** Notes the mix as it is before a change to it, so the change can be undone. */
+function remember(project: Project, patch: Partial<Project>) {
+  if (replaying || !MIX_KEYS.some((k) => k in patch)) return;
+  const h = historyOf(project.id);
+  const now = Date.now();
+  // Changes in quick succession, such as nudging one control, undo as one step.
+  if (now - h.at > 700 || h.past.length === 0) h.past.push(mixOf(project));
+  if (h.past.length > 50) h.past.shift();
+  h.at = now;
+  h.future = [];
+}
+
+function step(id: string, from: 'past' | 'future') {
+  const project = getProject(id);
+  const h = histories.get(id);
+  const to = h?.[from].pop();
+  if (!project || !h || !to) return false;
+  h[from === 'past' ? 'future' : 'past'].push(mixOf(project));
+  h.at = 0;
+  replaying = true;
+  patchProject(id, { ...to });
+  replaying = false;
+  return true;
+}
+
+export const undoMix = (id: string) => step(id, 'past');
+export const redoMix = (id: string) => step(id, 'future');
+
+/** Whether there is a mix change to undo or redo for a project. */
+export function useMixHistory(id: string | null) {
+  const key = useSyncExternalStore(subscribe, () => `${histories.get(id ?? '')?.past.length ?? 0}/${histories.get(id ?? '')?.future.length ?? 0}`, () => '0/0');
+  const [past, future] = key.split('/').map(Number);
+  return { canUndo: past > 0, canRedo: future > 0 };
+}
+
+/**
+ * Switches between two mixes of the same song. The first switch to B starts it as a copy of A,
+ * so the two can then be taken in different directions and compared.
+ */
+export function switchMix(id: string, side: 'A' | 'B') {
+  const project = getProject(id);
+  if (!project || (project.mixSide ?? 'A') === side) return;
+  patchProject(id, { ...(project.mixAlt ?? mixOf(project)), mixAlt: mixOf(project), mixSide: side });
+}
+
 export function patchProject(id: string, patch: Partial<Project> | ((p: Project) => Partial<Project>), touch = true) {
+  const before = getProject(id);
+  if (before) remember(before, typeof patch === 'function' ? patch(before) : patch);
   update((l) => ({
     ...l,
     projects: l.projects.map((p) => (p.id === id ? { ...p, ...(typeof patch === 'function' ? patch(p) : patch), ...(touch ? { updatedAt: Date.now() } : null) } : p)),

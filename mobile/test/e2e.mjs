@@ -308,6 +308,26 @@ async function song() {
   await expectText('Double track, nudged and panned');
   await slide('Vocal level', 0.9);
   await expectText(/Polished\s/, 'vocal level change renders', 30000);
+  // Undo steps back through changes to the mix, and Redo forward again.
+  const levelSet = await trackAt('Vocal level');
+  await tap('Undo');
+  await sleep(300);
+  const levelUndone = await trackAt('Vocal level');
+  log(levelUndone !== levelSet, 'Undo puts the vocal level back', `${levelSet} -> ${levelUndone}`);
+  await tap('Redo');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet, 'and Redo sets it again', `${await trackAt('Vocal level')}`);
+  // Mix B starts as a copy of A; each then keeps its own settings.
+  await tap('Mix B');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet, 'Mix B starts as a copy of Mix A');
+  await slide('Vocal level', 0.3);
+  await sleep(300);
+  const levelB = await trackAt('Vocal level');
+  await tap('Mix A');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet && levelB !== levelSet, 'Mix A still has its own level', `A ${await trackAt('Vocal level')}, B ${levelB}`);
+  await expectText(/Polished\s/, 'and renders again', 30000);
   await shot('10-playback-tweak');
 
   // A second take, then punch in over it.

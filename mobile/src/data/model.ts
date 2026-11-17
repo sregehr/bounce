@@ -56,6 +56,9 @@ export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format
 /** `startSec` is where the snippet begins when the user moved it; without one the strongest stretch is used. */
 export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean; startSec?: number | null; shape?: 'tall' | 'square' | 'wide' };
 
+/** Everything that shapes the sound of a mix: what undo steps through, and what Mix A and Mix B each hold. */
+export type MixSettings = { polish: Polish; master: MasterSettings; overrides: { vocal?: Chain; beat?: Chain; master?: Chain }; space?: Space };
+
 export type Project = {
   id: string;
   name: string;
@@ -72,6 +75,9 @@ export type Project = {
   overrides: { vocal?: Chain; beat?: Chain; master?: Chain };
   /** Reverb and echo set by hand on the Mix page. */
   space?: Space;
+  /** The other of two mixes being compared, and which of the two is the one in use now. */
+  mixAlt?: MixSettings;
+  mixSide?: 'A' | 'B';
   exporting: ExportChoice;
   snippet: SnippetChoice;
   cover: Cover;

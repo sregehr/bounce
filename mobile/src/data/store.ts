@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { DEFAULT_MASTER, DEFAULT_POLISH } from '@/dsp/presets';
 
 import { blobs, kv, persist } from './db';
-import { emptyLibrary, newId, type Beat, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
+import { LAYER_START, emptyLibrary, newId, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
 import { carryOver, makeSong } from './songs';
 
 let library: Library = emptyLibrary();
@@ -213,8 +213,27 @@ export function finishSong(projectId: string, title: string): Project | null {
   return song;
 }
 
-export function addTake(projectId: string, take: Take) {
-  patchProject(projectId, (p) => ({ takes: [...p.takes, take], takeId: take.id }));
+export function addTake(projectId: string, take: Take, layer?: Layer['role']) {
+  // A take recorded as a layer joins the stack on the picked take instead of replacing it.
+  if (layer) patchProject(projectId, (p) => ({ takes: [...p.takes, take], layers: [...(p.layers ?? []), { takeId: take.id, role: layer, ...LAYER_START[layer] }] }));
+  else patchProject(projectId, (p) => ({ takes: [...p.takes, take], takeId: take.id }));
+}
+
+/** Whether a take lines up with the picked one bar for bar, so it can be layered on it or stand in for some of its bars. */
+export const stacks = (lead: Take | null, other: Take) => !!lead && other.id !== lead.id && lead.phaseSec < 0.001 && other.phaseSec < 0.001 && other.loop.bars === lead.loop.bars && other.loop.startBar === lead.loop.startBar;
+
+export function setLayers(projectId: string, change: (layers: Layer[]) => Layer[]) {
+  patchProject(projectId, (p) => ({ layers: change(p.layers ?? []) }));
+}
+
+/** Has one bar of the picked take play from another take, or from the picked take again when `takeId` is null. */
+export function setCompBar(projectId: string, bar: number, takeId: string | null) {
+  patchProject(projectId, (p) => {
+    const comp = { ...(p.comp ?? {}) };
+    if (takeId) comp[String(bar)] = takeId;
+    else delete comp[String(bar)];
+    return { comp };
+  });
 }
 
 export async function deleteTake(projectId: string, takeId: string) {
@@ -222,7 +241,10 @@ export async function deleteTake(projectId: string, takeId: string) {
   if (!take) return;
   patchProject(projectId, (p) => {
     const takes = p.takes.filter((t) => t.id !== takeId);
-    return { takes, takeId: p.takeId === takeId ? (takes[takes.length - 1]?.id ?? null) : p.takeId };
+    // Nothing keeps pointing at a take that is gone.
+    const layers = (p.layers ?? []).filter((l) => l.takeId !== takeId);
+    const comp = Object.fromEntries(Object.entries(p.comp ?? {}).filter(([, id]) => id !== takeId));
+    return { takes, layers, comp, takeId: p.takeId === takeId ? (takes[takes.length - 1]?.id ?? null) : p.takeId };
   });
   await dropBlob(take.key);
 }

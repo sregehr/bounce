@@ -369,6 +369,26 @@ async function song() {
   for (const until = Date.now() + 30000; Date.now() < until && !(started = await transportPlaying()); ) await sleep(200);
   log(started, 'and plays it once it is ready');
   await shot('10b-song');
+  // Layers: another take stacked on the picked one, with its own level and pan.
+  await tap('Pause', { optional: true });
+  await tap('Layer take 2');
+  await expectText('Take 2 level', 'a take can be stacked on the picked one as a layer');
+  await expectText(/Polishing take 1…/, 'adding a layer renders the song again', 8000);
+  await expectText('Take 1, polished over the beat', 'and it finishes with the layer in', 30000);
+  await tap('Ad-lib');
+  log((await trackAt('Take 2 pan')) === 40, 'an ad-lib starts off to the right', `pan ${await trackAt('Take 2 pan')}`);
+  // Best bars: one bar of the picked take played from another take.
+  await tap('Bar 2, from take 1');
+  log(await enabled('Bar 2, from take 2'), 'tapping a bar has it play from the next take');
+  await expectText('Take 1, polished over the beat', 'and the song renders with that bar swapped', 30000);
+  await shot('10c-layers');
+  // Each tap moves the bar on to the next take that has it, and round to the picked take again.
+  for (let i = 0; i < 4 && !(await enabled('Bar 2, from take 1')); i++) await tap(/^Bar 2, from take \d$/.test('') ? '' : (await page.evaluate(() => [...document.querySelectorAll('[role=button]')].map((n) => n.getAttribute('aria-label') ?? '').find((l) => l.startsWith('Bar 2, from take')) ?? 'Bar 2')));
+  log(await enabled('Bar 2, from take 1'), 'tapping round again puts the bar back');
+  await tap('Remove');
+  await sleep(300);
+  log(!/Take 2 level/.test(await text()), 'a layer can be removed again');
+  await expectText('Take 1, polished over the beat', 'and the song is as it was', 30000);
   await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
   await tap('Pause', { optional: true });
   await tap('Mix take 1');

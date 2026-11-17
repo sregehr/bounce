@@ -6,7 +6,7 @@ import type { LoopChoice } from '@/data/model';
 import { activeTake, patchProject, setSettings, useLibrary, useProject } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
-import { barSeconds, barsIn, loadPcm, loopSeconds, saveTake } from '@/data/studio';
+import { barSeconds, barsIn, getMix, loadPcm, loopSeconds, saveTake } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
 import { engineState, inputAllowed, openInput, startTake, stopTake, useEngine, wake } from '@/engine/engine';
 import type { RecordedTake } from '@/engine/types';
@@ -26,7 +26,7 @@ type Length = (typeof LENGTHS)[number];
 const toBars = (l: Length): LoopChoice['bars'] => (l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0);
 const toLength = (b: LoopChoice['bars']): Length => (b === 8 ? '8 bars' : b === 16 ? '16 bars' : 'Whole beat');
 /** A recording on its way into the song, with what is needed to store it. */
-type Pending = { recorded: RecordedTake; origin: 'kept' | 'recorded'; punchAtSec?: number };
+type Pending = { recorded: RecordedTake; origin: 'kept' | 'recorded'; punchAtSec?: number; layer?: boolean };
 
 export default function Vocals() {
   const project = useProject();
@@ -35,6 +35,8 @@ export default function Vocals() {
   const take = useEngine((e) => e.take);
   const task = useTask();
   const [punch, setPunch] = useState(false);
+  // Recording on top of the picked take: it plays along with the beat, and the new take joins it as a layer.
+  const [layering, setLayering] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   // What was being held when a beat played through to its end while listening: still there to keep.
   const [parked, setParked] = useState<RecordedTake | null>(null);
@@ -70,6 +72,8 @@ export default function Vocals() {
   const cells = loop ? loop.bars : 16;
   const canPunch = !!loop && !!bar && !!previous && previous.phaseSec < 0.001 && previous.loop.bars === project?.loop.bars && previous.loop.startBar === project?.loop.startBar;
   const punchBar = loop ? Math.floor(loop.bars / 2) : 0;
+  // A layer has to line up with the picked take bar for bar, so it is recorded over the same stretch.
+  const canLayer = !!previous && previous.phaseSec < 0.001 && previous.loop.bars === project?.loop.bars && previous.loop.startBar === project?.loop.startBar;
   const timing = useTiming();
   const latencyMs = timing.ms;
   // One bar of clicks before recording, at the beat's tempo when it is known.
@@ -85,7 +89,7 @@ export default function Vocals() {
     if (!project) return;
     let made;
     try {
-      made = await saveTake(project.id, pending.recorded, { latencyMs, origin: pending.origin, punchAtSec: pending.punchAtSec });
+      made = await saveTake(project.id, pending.recorded, { latencyMs, origin: pending.origin, punchAtSec: pending.punchAtSec, layer: pending.layer ? 'adlib' : undefined });
     } catch {
       setUnsaved(pending);
       throw new Error('That take could not be saved. Storage on this device may be full. It is still here.');
@@ -93,7 +97,7 @@ export default function Vocals() {
     setUnsaved(null);
     if (!made) throw new Error('That take was too short to keep.');
     success();
-    setSaved(`Take ${made.number} saved · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
+    setSaved(`Take ${made.number} saved${pending.layer ? ' as a layer' : ''} · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
     setPunch(false);
     then?.();
   };
@@ -110,7 +114,9 @@ export default function Vocals() {
     await task.run(async () => {
       if (!recorded) throw new Error('Nothing was recorded. Check the microphone level and try again.');
       if (recorded.peak < 0.003) throw new Error('That take was silent. Check that the right microphone is picked under Microphone and timing, then try again.');
-      await store({ recorded, origin: wasListening ? 'kept' : 'recorded', punchAtSec: !wasListening && punch && canPunch && bar ? punchBar * bar : undefined }, then);
+      const layer = !wasListening && layering && canLayer;
+      await store({ recorded, origin: wasListening ? 'kept' : 'recorded', punchAtSec: !wasListening && !layer && punch && canPunch && bar ? punchBar * bar : undefined, layer }, layer ? () => router.push('/song') : then);
+      setLayering(false);
     });
     finishing.current = false;
   };
@@ -155,8 +161,10 @@ export default function Vocals() {
       setSaved(null);
       setParked(null);
       if (mode !== 'idle') stopTake(false);
-      const beat = await loadPcm(project.beat.key);
-      await startTake(next, beat, loop ? { start: loop.start, end: loop.end } : null, next === 'recording' && countIn ? { beats: 4, beatSec } : undefined);
+      const stacking = next === 'recording' && layering && canLayer;
+      // For a layer the picked take plays too, mixed as it is now, once through from its start.
+      const beat = stacking ? await getMix(project) : await loadPcm(project.beat.key);
+      await startTake(next, beat, loop && !stacking ? { start: loop.start, end: loop.end } : null, next === 'recording' && countIn ? { beats: 4, beatSec } : undefined);
     });
 
   press.current = () => {
@@ -240,7 +248,18 @@ export default function Vocals() {
           label={`Punch in at bar ${first + punchBar}`}
           sub={`Keeps bars ${first}–${first + punchBar - 1} from take ${previous?.number}`}
           checked={punch}
-          onChange={(v) => !active && setPunch(v)}
+          onChange={(v) => !active && (setPunch(v), v && setLayering(false))}
+          divided
+          minHeight={56}
+        />
+      );
+
+  const layerOption = live && canLayer && (
+        <Option
+          label={`Record as a layer on take ${previous?.number}`}
+          sub="That take plays along. The new one is stacked on it, for doubles and ad-libs."
+          checked={layering}
+          onChange={(v) => !active && (setLayering(v), v && setPunch(false))}
           divided
           minHeight={56}
         />
@@ -383,6 +402,7 @@ export default function Vocals() {
               {empty}
               {loopCard}
               {punchIn}
+              {layerOption}
               {countInOption}
               {listening}
               {meter}
@@ -429,6 +449,8 @@ export default function Vocals() {
       {lyrics}
 
       {punchIn}
+
+      {layerOption}
 
       {countInOption}
 

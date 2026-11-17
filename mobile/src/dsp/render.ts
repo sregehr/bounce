@@ -11,6 +11,11 @@ export type RenderInput = {
   loop: { start: number; end: number } | null;
   /** The vocal, already lined up with the beat. `phase` is how far into the loop it starts, in frames. */
   take: { mono: Float32Array; phase: number } | null;
+  /**
+   * More vocals stacked on the lead: doubles, ad-libs, a hook. Each is lined up like the lead,
+   * with its own level (68 is balanced against the beat, as for the lead) and pan (-100 left to 100 right).
+   */
+  layers?: { mono: Float32Array; level: number; pan: number }[];
   polish: Polish;
   master: MasterSettings;
   /** Chains the user has edited by hand; anything missing is worked out automatically. */
@@ -31,7 +36,7 @@ export type RenderInput = {
   stageKeys?: { vocal: string; beat: string };
 };
 
-type VocalStage = { bus: Stereo; chain: Chain; voice: VoiceStats; noiseReduced: boolean; body: number };
+type VocalStage = { bus: Stereo; chain: Chain; voice: VoiceStats; noiseReduced: boolean; body: number; layers: { bus: Stereo; body: number; level: number; pan: number }[] };
 type BeatStage = { bus: Stereo; chain: Chain; level: number };
 export type StageCache = { vocalKey?: string; vocal?: VocalStage; beatKey?: string; beat?: BeatStage };
 
@@ -51,16 +56,17 @@ export type RenderOutput = {
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** How long the song runs, in frames. */
-export function songLength(input: Pick<RenderInput, 'beat' | 'loop' | 'take' | 'barFrames' | 'sampleRate'>): number {
+export function songLength(input: Pick<RenderInput, 'beat' | 'loop' | 'take' | 'layers' | 'barFrames' | 'sampleRate'>): number {
   const beatLength = input.beat[0]?.length ?? 0;
   if (!input.take || !input.loop) return beatLength;
   const bar = input.barFrames && input.barFrames > 0 ? input.barFrames : Math.round(input.sampleRate * 0.5);
-  // Run to the end of the bar the vocal finishes in, and never less than one bar.
-  return Math.max(1, Math.ceil(input.take.mono.length / bar)) * bar;
+  // Run to the end of the bar the longest vocal finishes in, and never less than one bar.
+  const longest = Math.max(input.take.mono.length, ...(input.layers ?? []).map((l) => l.mono.length));
+  return Math.max(1, Math.ceil(longest / bar)) * bar;
 }
 
 /** Lays the beat out for the length of the song: once through, or the loop region repeated. */
-export function arrangeBeat(input: Pick<RenderInput, 'beat' | 'loop' | 'take' | 'barFrames' | 'sampleRate'>): Stereo {
+export function arrangeBeat(input: Pick<RenderInput, 'beat' | 'loop' | 'take' | 'layers' | 'barFrames' | 'sampleRate'>): Stereo {
   const length = songLength(input);
   const left = input.beat[0];
   const right = input.beat[1] ?? input.beat[0];
@@ -182,7 +188,22 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
       if (input.polish.double) addInto(bus, doubleTrack(mono, sr));
       // The style sets the reverb unless it has been set by hand; echo is only ever added by hand.
       addSpace(bus, mono, { reverb: input.space?.vocal?.reverb ?? styleReverb(input.polish.style), echo: input.space?.vocal?.echo }, input, false);
-      vocal = { bus, chain, voice, noiseReduced, body: measureVoice([bus[0]], sr).bodyDb };
+      // Layers get the lead's clean-up and chain, so the stack sounds like one voice, but no
+      // double of their own: they are the doubles.
+      const layers: VocalStage['layers'] = [];
+      for (const layer of input.layers ?? []) {
+        onStage?.('Stacking the layers');
+        const part = [fitted(layer.mono, length)];
+        highpass(part, sr, 80);
+        if (roomCut > 0) reduceNoise(part, sr, (24 * roomCut) / 100);
+        runChain(part, sr, chain);
+        saturate(part, extras.saturation);
+        const wet: Stereo = [part[0].slice(), part[0].slice()];
+        addSpace(wet, part[0], { reverb: input.space?.vocal?.reverb ?? styleReverb(input.polish.style), echo: input.space?.vocal?.echo }, input, false);
+        layers.push({ bus: wet, body: measureVoice([wet[0]], sr).bodyDb, level: layer.level, pan: layer.pan });
+        await tick();
+      }
+      vocal = { bus, chain, voice, noiseReduced, body: measureVoice([bus[0]], sr).bodyDb, layers };
       if (cache && keys) {
         cache.vocalKey = keys.vocal;
         cache.vocal = vocal;
@@ -225,7 +246,22 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   // ----- Mix -----
   // The stages above may be shared with later renders, so everything from here works on copies.
   const full: Stereo = [beatBus[0].slice(), beatBus[1].slice()];
-  if (vocal) addInto(full, vocal.bus, vocalGain);
+  // Each layer is balanced against the beat the way the lead is, set by its own level, and
+  // placed left or right at equal power. The lead's level slider does not move them.
+  const stack: Stereo = [new Float32Array(length), new Float32Array(length)];
+  if (vocal) addInto(stack, vocal.bus, vocalGain);
+  for (const layer of vocal?.layers ?? []) {
+    const at = clamp(layer.level, 0, 100);
+    if (at <= 0 || layer.body <= -70) continue;
+    const gain = fromDb(clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - layer.body, -24, 24) + 40 * Math.log10(at / 68));
+    const angle = ((clamp(layer.pan, -100, 100) + 100) / 200) * (Math.PI / 2);
+    const left = gain * Math.cos(angle) * Math.SQRT2, right = gain * Math.sin(angle) * Math.SQRT2;
+    for (let i = 0; i < length; i++) {
+      stack[0][i] += layer.bus[0][i] * left;
+      stack[1][i] += layer.bus[1][i] * right;
+    }
+  }
+  if (vocal) addInto(full, stack);
   addSpace(full, monoOf(full), input.space?.master, input, true);
   const measured = { balance: tonalBalance(full, sr), lufs: integratedLufs(full, sr) };
   const plan: MasterPlan = masterPlan(input.master, measured);
@@ -235,7 +271,7 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   let out: Float32Array[];
   if (include === 'vocals') {
     out = [new Float32Array(length), new Float32Array(length)];
-    if (vocal) addInto(out as Stereo, vocal.bus, vocalGain);
+    if (vocal) addInto(out as Stereo, stack);
   } else if (include === 'instrumental') {
     out = [beatBus[0].slice(), beatBus[1].slice()];
     addSpace(out as Stereo, monoOf(out as Stereo), input.space?.master, input, true);

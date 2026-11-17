@@ -56,6 +56,10 @@ export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format
 /** `startSec` is where the snippet begins when the user moved it; without one the strongest stretch is used. */
 export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean; startSec?: number | null; shape?: 'tall' | 'square' | 'wide' };
 
+/** One more vocal on top of the lead. Level 68 is balanced against the beat, as it is for the lead; pan runs -100 (left) to 100 (right). */
+export type Layer = { takeId: string; role: 'double' | 'adlib' | 'hook'; level: number; pan: number };
+export const LAYER_START: Record<Layer['role'], { level: number; pan: number }> = { double: { level: 44, pan: -35 }, adlib: { level: 50, pan: 40 }, hook: { level: 60, pan: 0 } };
+
 /** Everything that shapes the sound of a mix: what undo steps through, and what Mix A and Mix B each hold. */
 export type MixSettings = { polish: Polish; master: MasterSettings; overrides: { vocal?: Chain; beat?: Chain; master?: Chain }; space?: Space };
 
@@ -75,6 +79,10 @@ export type Project = {
   overrides: { vocal?: Chain; beat?: Chain; master?: Chain };
   /** Reverb and echo set by hand on the Mix page. */
   space?: Space;
+  /** Vocals stacked on the picked take: doubles, ad-libs, a hook. */
+  layers?: Layer[];
+  /** Bars of the picked take that play from another take instead, by bar number from 0. */
+  comp?: Record<string, string>;
   /** The other of two mixes being compared, and which of the two is the one in use now. */
   mixAlt?: MixSettings;
   mixSide?: 'A' | 'B';

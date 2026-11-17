@@ -41,8 +41,12 @@ export function canShareFiles() {
   }
 }
 
-/** Opens the share sheet, or saves when there is none. Returns what happened. */
-export async function shareFiles(files: OutFile[], title: string): Promise<'shared' | 'saved' | 'cancelled'> {
+/**
+ * Opens the share sheet, or saves when there is none. Returns what happened. `blocked` means the
+ * browser refused because too long had passed since the tap (a render ran in between): the files
+ * are ready, and calling this again straight from a tap will work.
+ */
+export async function shareFiles(files: OutFile[], title: string): Promise<'shared' | 'saved' | 'cancelled' | 'blocked'> {
   const list = files.map(asFile);
   if (typeof navigator.canShare === 'function' && navigator.canShare({ files: list })) {
     try {
@@ -50,6 +54,7 @@ export async function shareFiles(files: OutFile[], title: string): Promise<'shar
       return 'shared';
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled';
+      if (e instanceof DOMException && e.name === 'NotAllowedError') return 'blocked';
     }
   }
   await saveFiles(files, title);

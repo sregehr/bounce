@@ -5,6 +5,7 @@ import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
+import { tick } from './haptics';
 import { useArmed } from './hooks';
 import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
@@ -229,6 +230,7 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
   const [sure, askSure, notSure] = useArmed(4000);
   const settle = (show: boolean) => {
     if (!show) notSure();
+    else if (!open) tick();
     setOpen(show);
     from.current = show ? -DELETE_WIDTH : 0;
     Animated.spring(x, { toValue: from.current, useNativeDriver: false, bounciness: 0, speed: 20 }).start();

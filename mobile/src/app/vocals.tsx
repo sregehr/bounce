@@ -11,9 +11,10 @@ import { encodeWav } from '@/dsp/wav';
 import { engineState, inputAllowed, openInput, startTake, stopTake, useEngine, wake } from '@/engine/engine';
 import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
-import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Screen, Segmented, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Pulse, Screen, Segmented, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
 import { useTiming } from '@/ui/timing';
+import { success, thump } from '@/ui/haptics';
 import { useArmed, useOnScreen, useRecordingGuard, useTask } from '@/ui/hooks';
 import { askForMic, setRecordControl } from '@/ui/recordControl';
 import { SongHeader } from '@/ui/SongHeader';
@@ -91,6 +92,7 @@ export default function Vocals() {
     }
     setUnsaved(null);
     if (!made) throw new Error('That take was too short to keep.');
+    success();
     setSaved(`Take ${made.number} saved · ${clock(made.durationSec)}${made.clipped ? ' · the mic clipped, back off a little' : ''}`);
     setPunch(false);
     then?.();
@@ -101,6 +103,7 @@ export default function Vocals() {
     // Stopped during the count-in: nothing has been recorded yet, so it is simply called off.
     if (counting) return void stopTake(false);
     finishing.current = true;
+    if (mode === 'recording') thump();
     const wasListening = mode !== 'recording';
     const recorded = mode === 'idle' ? parked : stopTake(true);
     setParked(null);
@@ -148,6 +151,7 @@ export default function Vocals() {
   const begin = (next: 'listening' | 'recording') =>
     task.run(async () => {
       wake();
+      if (next === 'recording') thump();
       setSaved(null);
       setParked(null);
       if (mode !== 'idle') stopTake(false);
@@ -352,7 +356,7 @@ export default function Vocals() {
           <View style={[s.row, { gap: 24 }]}>
             {mode === 'recording' && (
               <View style={[s.row, { gap: 12 }]}>
-                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: C.rec }} />
+                <Pulse size={12} color={C.rec} on={!counting} />
                 <Txt size={44} w="display" lh={1} style={{ fontVariant: ['tabular-nums'] }}>
                   {counting ? count : clock(take.elapsed)}
                 </Txt>

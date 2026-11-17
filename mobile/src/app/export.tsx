@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { Redirect } from 'expo-router';
 
 import { exportFiles, LOUDNESS } from '@/data/exporting';
-import { canShareFiles, saveFiles, shareFiles } from '@/data/files';
+import { canShareFiles, saveFiles, shareFiles, type OutFile } from '@/data/files';
 import type { ExportChoice } from '@/data/model';
 import { activeTake, patchProject, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
@@ -22,6 +22,8 @@ export default function Export() {
   const task = useTask();
   const [stage, setStage] = useState('');
   const [done, setDone] = useState<string | null>(null);
+  // Files that are rendered and waiting for a tap: the share sheet only opens straight from one.
+  const [ready, setReady] = useState<OutFile[] | null>(null);
   const wide = useWide();
   useStopOnLeave();
   // Whether this browser can make the small format, at this beat's sample rate.
@@ -35,19 +37,22 @@ export default function Export() {
 
   if (!project || !choice) return <Redirect href="/" />;
 
-  const set = (patch: Partial<ExportChoice>) => (setDone(null), patchProject(project.id, { exporting: { ...choice, ...patch } }, false));
+  const set = (patch: Partial<ExportChoice>) => (setDone(null), setReady(null), patchProject(project.id, { exporting: { ...choice, ...patch } }, false));
   const count = (take ? 1 : 0) + (!take || choice.instrumental ? 1 : 0) + (take && choice.vocals ? 1 : 0);
   const run = (how: 'share' | 'save') =>
     task.run(async () => {
       setDone(null);
       song.pause();
-      const files = await exportFiles(project, setStage);
+      const files = ready ?? (await exportFiles(project, setStage));
       setStage('');
       if (how === 'save') {
         const saved = await saveFiles(files, project.name);
         setDone(files.length === 1 ? `Saved ${saved} to your downloads.` : `${plural(files.length, 'file')} saved to your downloads as ${saved}.`);
       } else {
         const result = await shareFiles(files, project.name);
+        // A long render outlasts the moment a browser allows a share after a tap. The files are kept, and the next tap sends them at once.
+        setReady(result === 'blocked' || result === 'cancelled' ? files : null);
+        if (result === 'blocked') return setDone(`${files.length === 1 ? 'Your file is' : 'Your files are'} ready. Tap Share now to send.`);
         setDone(result === 'shared' ? 'Shared.' : result === 'saved' ? `This browser has no share sheet for audio, so ${files.length === 1 ? 'the file was' : 'a ZIP of the files was'} saved to your downloads instead.` : null);
       }
     });
@@ -109,16 +114,13 @@ export default function Export() {
             {task.error ?? (task.busy ? `${stage || 'Working'}…` : done)}
           </Txt>
         )}
-        <Btn label={canShareFiles() ? 'Share' : `Save ${plural(count, 'file')}`} busy={task.busy} onPress={() => run(canShareFiles() ? 'share' : 'save')} />
+        <Btn label={canShareFiles() ? (ready ? 'Share now' : 'Share') : `Save ${plural(count, 'file')}`} busy={task.busy} onPress={() => run(canShareFiles() ? 'share' : 'save')} />
         {canShareFiles() && <Btn kind="outline" label="Save to Files" size={16} disabled={task.busy} onPress={() => run('save')} style={{ flex: 0 }} />}
         {project.saved && (
           <NavLink to="/cover" center>
             Change the cover art
           </NavLink>
         )}
-        <Muted size={12} center>
-          M4A export comes with the phone app; browsers cannot encode it reliably.
-        </Muted>
       </Foot>
   );
 

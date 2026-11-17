@@ -4,7 +4,7 @@ export async function saveFiles(_files: OutFile[], _bundle?: string): Promise<st
   return '';
 }
 export const canShareFiles = () => false;
-export async function shareFiles(_files: OutFile[], _title: string): Promise<'shared' | 'saved' | 'cancelled'> {
+export async function shareFiles(_files: OutFile[], _title: string): Promise<'shared' | 'saved' | 'cancelled' | 'blocked'> {
   return 'cancelled';
 }
 export async function storageEstimate(): Promise<{ used: number; quota: number } | null> {

@@ -170,7 +170,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
 
   /** A slider bound to one value in the chain. */
   const row = (label: string, value: number, min: number, max: number, step: number, display: string, apply: (c: Chain, v: number) => Chain) =>
-    chain && <SliderRow key={`${tab}-${label}`} label={label} value={value} min={min} max={max} step={step} display={display} onChange={(v) => setDraft(apply(chain, v))} onCommit={(v) => commit(apply(chain, v))} />;
+    chain && <SliderRow key={`${tab}-${label}`} label={label} value={value} min={min} max={max} step={step} reset={min < 0 && max > 0 ? 0 : undefined} display={display} onChange={(v) => setDraft(apply(chain, v))} onCommit={(v) => commit(apply(chain, v))} />;
   const setBandAt = (c: Chain, i: number, patch: Partial<Band>): Chain => ({ ...c, eq: c.eq.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
   const setBandValue = (c: Chain, patch: Partial<Band>): Chain => setBandAt(c, band, patch);
   const sums = chain ? summarise(chain) : null;

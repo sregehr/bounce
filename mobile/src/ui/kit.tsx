@@ -1,5 +1,8 @@
-import { useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import {
+  Easing,
+  Animated,
+  AccessibilityInfo,
   ActivityIndicator,
   Platform,
   Pressable,
@@ -17,6 +20,7 @@ import { router, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
+import { tick } from './haptics';
 import { TAB_BAR_HEIGHT, TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { RAIL_WIDTH, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
@@ -53,6 +57,8 @@ export function Txt({
   const display = w === 'display' || w === 'displayMedium';
   return (
     <Text
+      // Larger text sizes from the system are honoured up to a point; past it, fixed rows and bars stop fitting.
+      maxFontSizeMultiplier={1.4}
       numberOfLines={numberOfLines}
       style={[
         {
@@ -137,6 +143,10 @@ export function Screen({
       style={{ flex: 1, backgroundColor: C.bg }}
       contentContainerStyle={[content, style]}
       keyboardShouldPersistTaps="handled"
+      // On the phone the keyboard pushes the page up so the field being typed in stays in view,
+      // and dragging the page down puts the keyboard away.
+      automaticallyAdjustKeyboardInsets
+      keyboardDismissMode="interactive"
       showsVerticalScrollIndicator={false}
     >
       {children}
@@ -275,7 +285,7 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
             key={o}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
-            onPress={() => onChange(o)}
+            onPress={() => (o !== value && tick(), onChange(o))}
             style={[s.segment, { borderRadius: inset ? 9 : 10 }, on && { backgroundColor: C.text }]}
           >
             <Txt size={variant ? 14 : 15} w="semi" color={on ? C.bg : C.muted}>
@@ -454,6 +464,34 @@ export function Meter({ label, pct, height = 6, accent }: { label?: string; pct:
   );
 }
 
+// ---------- Motion ----------
+
+/**
+ * A dot that breathes while something is live, such as recording. It holds still for anyone who
+ * has asked the system for less motion.
+ */
+export function Pulse({ size = 10, color, on = true }: { size?: number; color: string; on?: boolean }) {
+  const glow = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!on) return void glow.setValue(1);
+    let loop: Animated.CompositeAnimation | null = null;
+    let over = false;
+    void AccessibilityInfo.isReduceMotionEnabled()
+      .catch(() => false)
+      .then((still) => {
+        if (over || still) return;
+        const step = (toValue: number) => Animated.timing(glow, { toValue, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: Platform.OS !== 'web' });
+        loop = Animated.loop(Animated.sequence([step(0.35), step(1)]));
+        loop.start();
+      });
+    return () => {
+      over = true;
+      loop?.stop();
+    };
+  }, [on, glow]);
+  return <Animated.View accessible={false} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: glow }} />;
+}
+
 // ---------- Slider ----------
 
 /** How far a finger travels, in points, before a touch counts as a drag or a scroll. */
@@ -466,6 +504,7 @@ export function Slider({
   step = 1,
   onChange,
   onCommit,
+  reset,
   height = 40,
   label,
   disabled,
@@ -478,6 +517,8 @@ export function Slider({
   onChange: (v: number) => void;
   /** Called once when the drag ends, for work too heavy to run on every move. */
   onCommit?: (v: number) => void;
+  /** Where a double tap puts the slider back to, for controls with a natural rest such as 0 dB. */
+  reset?: number;
   height?: number;
   label?: string;
   disabled?: boolean;
@@ -485,10 +526,11 @@ export function Slider({
 }) {
   const ref = useRef<ComponentRef<typeof View>>(null);
   const box = useRef({ left: 0, width: 1 });
+  const lastTap = useRef(0);
   const latest = useRef(value);
   latest.current = value;
   // The touch in progress: where it began, the value then, and whether it has turned out to be a drag or a scroll.
-  const touch = useRef<{ x: number; y: number; mode: 'wait' | 'drag' | 'scroll'; from: number } | null>(null);
+  const touch = useRef<{ x: number; y: number; mode: 'wait' | 'drag' | 'scroll'; from: number; lastX: number } | null>(null);
 
   const snap = (v: number) => {
     const stepped = Math.round((v - min) / step) * step + min;
@@ -546,7 +588,7 @@ export function Slider({
       // Until the finger has clearly gone sideways the page may take the touch back to scroll.
       onResponderTerminationRequest={() => touch.current?.mode !== 'drag'}
       onResponderGrant={(e) => {
-        touch.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, mode: 'wait', from: latest.current };
+        touch.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, mode: 'wait', from: latest.current, lastX: e.nativeEvent.pageX };
         measure();
       }}
       onResponderMove={(e) => {
@@ -560,13 +602,35 @@ export function Slider({
           if (dy > SLOP && dy > dx) g.mode = 'scroll';
           else if (dx > SLOP) g.mode = 'drag';
         }
-        if (g.mode === 'drag') setFromPage(e.nativeEvent.pageX);
+        if (g.mode === 'drag') {
+          // Sliding the finger away from the track, up or down, slows the thumb for fine settings,
+          // the way scrubbing does in the system's own players.
+          const fine = dy > 120 ? 0.25 : dy > 50 ? 0.5 : 1;
+          if (fine === 1) setFromPage(e.nativeEvent.pageX);
+          else {
+            const next = snap(latest.current + ((e.nativeEvent.pageX - g.lastX) / box.current.width) * (max - min) * fine);
+            if (next !== latest.current) {
+              latest.current = next;
+              onChange(next);
+              g.lastX = e.nativeEvent.pageX;
+            }
+          }
+          if (fine === 1) g.lastX = e.nativeEvent.pageX;
+        }
       }}
       onResponderRelease={() => {
         const g = touch.current;
         touch.current = null;
-        // A tap that never moved sets the value where it landed.
-        if (g?.mode === 'wait') setFromPage(g.x);
+        // A tap that never moved sets the value where it landed; a second tap straight after puts it back to rest.
+        if (g?.mode === 'wait') {
+          const now = Date.now();
+          if (reset !== undefined && now - lastTap.current < 320) {
+            latest.current = snap(reset);
+            tick();
+            onChange(latest.current);
+          } else setFromPage(g.x);
+          lastTap.current = now;
+        }
         if (g && g.mode !== 'scroll' && latest.current !== g.from) onCommit?.(latest.current);
       }}
       onResponderTerminate={() => {
@@ -592,6 +656,7 @@ export function SliderRow({
   display,
   onChange,
   onCommit,
+  reset,
   min = 0,
   max = 100,
   step = 1,
@@ -605,6 +670,7 @@ export function SliderRow({
   display?: string;
   onChange: (v: number) => void;
   onCommit?: (v: number) => void;
+  reset?: number;
   min?: number;
   max?: number;
   step?: number;
@@ -618,7 +684,7 @@ export function SliderRow({
       <Txt size={fontSize} style={{ width: labelWidth }}>
         {label}
       </Txt>
-      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} height={minHeight} style={{ flex: 1 }} />
+      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
       {display !== undefined && (
         <Txt size={13} color={C.muted} right style={{ width: valueWidth }}>
           {display}
@@ -731,6 +797,7 @@ export function Field(props: TextInputProps & { label?: string }) {
   const { label, style, ...rest } = props;
   return (
     <TextInput
+      maxFontSizeMultiplier={1.4}
       accessibilityLabel={label}
       placeholderTextColor={C.muted}
       selectionColor={C.accent}

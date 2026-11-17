@@ -4,6 +4,8 @@ import { useFocusEffect } from 'expo-router';
 
 import { stopTransport, useEngine } from '@/engine/engine';
 
+import { fail, warn } from './haptics';
+
 /** Playback state for one named thing; reads as stopped when something else is loaded. */
 export function useTransport(id: string) {
   const t = useEngine((s) => s.transport);
@@ -33,6 +35,7 @@ export function useArmed(ms = 3000): [boolean, () => void, () => void] {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
   const arm = () => {
+    warn();
     setArmed(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setArmed(false), ms);
@@ -52,6 +55,7 @@ export function useTask() {
     try {
       await work();
     } catch (e) {
+      fail();
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (alive.current) setBusy(false);

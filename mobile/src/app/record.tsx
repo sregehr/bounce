@@ -10,7 +10,8 @@ import { toDb } from '@/dsp/core';
 import { encodeWav } from '@/dsp/wav';
 import { armCapture, cancelCapture, startCaptureNow, stopCapture, takeSalvaged, useEngine } from '@/engine/engine';
 import type { Captured } from '@/engine/types';
-import { Bars, Card, Chip, Eyebrow, Foot, Meter, Muted, NavLink, Screen, StopButton, Txt, s, type Bar } from '@/ui/kit';
+import { Bars, Card, Chip, Eyebrow, Pulse, Foot, Meter, Muted, NavLink, Screen, StopButton, Txt, s, type Bar } from '@/ui/kit';
+import { success, thump } from '@/ui/haptics';
 import { useOnScreen, useRecordingGuard } from '@/ui/hooks';
 import { C, clock, db, meterPct, rateLabel } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -30,6 +31,10 @@ export default function Record() {
   const [failed, setFailed] = useState<Captured | null>(null);
   const recording = cap.status === 'recording';
   useRecordingGuard(recording || saving || !!failed);
+  // The capture starting by itself at the first sound, and stopping, can each be felt.
+  useEffect(() => {
+    if (cap.status !== 'armed') thump();
+  }, [cap.status]);
   const wide = useWide();
 
   useOnScreen(() => {
@@ -43,6 +48,7 @@ export default function Record() {
     setNotice(null);
     try {
       await addBeat({ channels: captured.channels, sampleRate: captured.sampleRate }, { source: 'capture', label: captured.label, name: nextBeatName(), clipped: captured.clipped });
+      success();
       router.replace('/song');
     } catch (e) {
       setSaving(false);
@@ -105,7 +111,7 @@ export default function Record() {
   const status = (
     <View style={s.topbar}>
       <View style={[s.row, { gap: 10 }]}>
-        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: recording ? C.rec : C.accent }} />
+        <Pulse size={10} color={recording ? C.rec : C.accent} on={recording && !saving} />
         <Eyebrow size={13} color={recording ? C.recText : C.accent}>
           {saving ? 'Saving' : recording ? 'Recording' : 'Armed'}
         </Eyebrow>

@@ -12,6 +12,8 @@ import type * as ai from "../ai.js";
 import type * as auth from "../auth.js";
 import type * as backup from "../backup.js";
 import type * as beats from "../beats.js";
+import type * as cleanup from "../cleanup.js";
+import type * as crons from "../crons.js";
 import type * as entitlements from "../entitlements.js";
 import type * as http from "../http.js";
 import type * as shares from "../shares.js";
@@ -29,6 +31,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   backup: typeof backup;
   beats: typeof beats;
+  cleanup: typeof cleanup;
+  crons: typeof crons;
   entitlements: typeof entitlements;
   http: typeof http;
   shares: typeof shares;

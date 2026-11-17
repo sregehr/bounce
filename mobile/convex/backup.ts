@@ -29,8 +29,40 @@ export async function requireOwner(ctx: MutationCtx, deviceId: string, secret: s
   if (deviceId.length < 16 || deviceId.length > 128 || secret.length < 32 || secret.length > 128) throw new Error("Not allowed.");
   const hash = await hashOf(secret);
   const row = await secretRow(ctx, deviceId);
-  if (!row) await ctx.db.insert("deviceSecrets", { deviceId, hash });
-  else if (row.hash !== hash) throw new Error("Not allowed.");
+  if (!row) {
+    await countNewDevice(ctx);
+    await ctx.db.insert("deviceSecrets", { deviceId, hash });
+  } else if (row.hash !== hash) throw new Error("Not allowed.");
+}
+
+// How often. Set NEW_DEVICES_PER_HOUR or UPLOADS_PER_HOUR on the server to change them.
+const HOUR = 60 * 60 * 1000;
+const perHour = (name: string, fallback: number) => (Number(process.env[name]) > 0 ? Number(process.env[name]) : fallback);
+
+/**
+ * Each new device gets its own allowance, so the number that may register in an hour is capped
+ * across everyone. The server cannot tell callers apart any other way: it sees no address.
+ */
+async function countNewDevice(ctx: MutationCtx) {
+  const now = Date.now();
+  const row = await ctx.db
+    .query("rateLimits")
+    .withIndex("by_name", (q) => q.eq("name", "newDevices"))
+    .unique();
+  if (!row) await ctx.db.insert("rateLimits", { name: "newDevices", hourAt: now, count: 1 });
+  else if (now - row.hourAt >= HOUR) await ctx.db.patch(row._id, { hourAt: now, count: 1 });
+  else if (row.count >= perHour("NEW_DEVICES_PER_HOUR", 120)) throw new Error("Too many new devices just now. Backup will try again shortly.");
+  else await ctx.db.patch(row._id, { count: row.count + 1 });
+}
+
+/** Caps how many upload addresses one device may ask for in an hour. */
+async function countUpload(ctx: MutationCtx, deviceId: string) {
+  const now = Date.now();
+  const row = await secretRow(ctx, deviceId);
+  if (!row) return;
+  if (row.hourAt === undefined || now - row.hourAt >= HOUR) await ctx.db.patch(row._id, { hourAt: now, uploads: 1 });
+  else if ((row.uploads ?? 0) >= perHour("UPLOADS_PER_HOUR", 1000)) throw new Error("Too many uploads this hour. Backup will carry on later.");
+  else await ctx.db.patch(row._id, { uploads: (row.uploads ?? 0) + 1 });
 }
 
 // How much one device may keep here. Set BACKUP_MAX_MB, BACKUP_MAX_FILE_MB or SHARE_MAX_FILE_MB on the server to change them.
@@ -85,6 +117,7 @@ export const uploadUrl = mutation({
   returns: v.string(),
   handler: async (ctx, { deviceId, secret }) => {
     await requireOwner(ctx, deviceId, secret);
+    await countUpload(ctx, deviceId);
     return await ctx.storage.generateUploadUrl();
   },
 });

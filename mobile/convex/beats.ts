@@ -1,11 +1,19 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+// These endpoints, and the ones in takes.ts, are the early prototype behind the /spike screen.
+// They have no owner and take uploads from anyone, so they answer only where ALLOW_SPIKE is set
+// to 1 on the server, which a shared deployment should not do.
+export function spikeOnly() {
+  if (process.env.ALLOW_SPIKE !== "1") throw new Error("The prototype library is switched off on this server.");
+}
+
 /** A short-lived address the app uploads an audio file to. */
 export const generateUploadUrl = mutation({
   args: {},
   returns: v.string(),
   handler: async (ctx) => {
+    spikeOnly();
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -22,6 +30,7 @@ export const create = mutation({
   },
   returns: v.id("beats"),
   handler: async (ctx, args) => {
+    spikeOnly();
     return await ctx.db.insert("beats", args);
   },
 });
@@ -74,6 +83,7 @@ export const remove = mutation({
   args: { beatId: v.id("beats") },
   returns: v.null(),
   handler: async (ctx, { beatId }) => {
+    spikeOnly();
     const beat = await ctx.db.get(beatId);
     if (!beat) return null;
     const takes = await ctx.db

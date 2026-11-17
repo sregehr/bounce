@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { spikeOnly } from "./beats";
 
 export const create = mutation({
   args: {
@@ -10,6 +11,7 @@ export const create = mutation({
   },
   returns: v.id("takes"),
   handler: async (ctx, args) => {
+    spikeOnly();
     if (!(await ctx.db.get(args.beatId))) {
       throw new Error("That beat no longer exists.");
     }

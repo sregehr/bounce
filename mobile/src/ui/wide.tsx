@@ -1,13 +1,11 @@
 import type { ReactNode } from 'react';
 import { View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 
-/** Width of the navigation rail down the left edge of the wide layout. */
-export const RAIL_WIDTH = 96;
 /** The widest the wide layout grows on a big display; beyond it the app sits centred. */
 export const WIDE_MAX = 1440;
 
 /**
- * Whether there is room for the wide layout: a tablet on its side, or a desktop browser window.
+ * Whether there is room for the wide, two-pane layout: a tablet on its side, or a desktop browser window.
  * A phone, a tablet held upright, and a narrow Split View keep the single column; see `useRoomy`.
  */
 export function useWide() {
@@ -32,8 +30,19 @@ export function Columns({ left, right, side, gap = 40, inner = 16, style }: { le
 const ROOMY_FROM = 600;
 /** The widest the single column of content grows; a line of text much longer than this is hard to read. */
 export const READ_WIDTH = 640;
-/** The widest the floating bottom bar grows, so its tabs stay within a thumb's reach of each other. */
-export const BAR_MAX = 520;
+
+/**
+ * The measurements of the floating bottom bar. A tablet is held further from the eye and has the
+ * room, so its bar is a size up from the phone's: taller, with larger icons, labels and mic.
+ * `max` is the widest the capsule grows, so its tabs stay within reach of each other, and `room`
+ * is what the bar takes up with the gap around it, not counting the home-indicator inset below.
+ */
+export function useBar() {
+  const { width } = useWindowDimensions();
+  return width >= ROOMY_FROM
+    ? { height: 76, mic: 76, glyph: 31, label: 12.5, max: 620, lift: 18, room: 100 }
+    : { height: 64, mic: 64, glyph: 26, label: 10.5, max: 520, lift: 12, room: 84 };
+}
 
 /**
  * A single column with room around it: a tablet held upright, a wide Split View, or a tall

@@ -185,16 +185,13 @@ export default function Vocals() {
 
   const header = <SongHeader project={project} locked={active || !!unsaved} />;
 
-  // The same empty state as Mix: what is missing, and one button that starts it.
+  // What is missing, and where to start it: the mic in the bar below is this screen's record button.
   const empty = !active && project.takes.length === 0 && (
-        <View style={{ gap: 12 }}>
-          <View style={{ gap: 4 }}>
-            <Txt size={17} w="semi">
-              No takes yet
-            </Txt>
-            <Muted size={15}>Record one over this beat and it opens in the mix.</Muted>
-          </View>
-          <Btn label="Record a take" disabled={task.busy} onPress={() => press.current()} />
+        <View style={{ gap: 4 }}>
+          <Txt size={17} w="semi">
+            No takes yet
+          </Txt>
+          <Muted size={15}>Tap the mic below to record one over this beat, and it opens in the mix.</Muted>
         </View>
       );
 
@@ -366,7 +363,7 @@ export default function Vocals() {
   const canHear = !unsaved && (mode === 'recording' || project.takes.length > 0);
   const hear = () => (mode === 'recording' ? finish(() => router.push('/playback')) : (stopTake(false), router.push('/playback')));
 
-  // Wide: the loop and the mic on the left, the bars to rap on the right, and hearing it back in the header. Recording is the mic in the rail.
+  // Wide: the loop and the mic on the left, the bars to rap on the right, and hearing it back in the header. Recording is the mic in the bar below.
   if (wide)
     return (
       <Screen gap={24}>

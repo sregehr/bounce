@@ -11,7 +11,7 @@ import { Backend } from '@/auth/Provider';
 import { startBackup } from '@/data/backup';
 import { loadLibrary, useLibrary, useLoadError, useReady } from '@/data/store';
 import { closeInput, useEngine } from '@/engine/engine';
-import { Rail, TabBar, TopNav } from '@/ui/TabBar';
+import { TabBar, TopNav } from '@/ui/TabBar';
 import { Btn, Muted, Txt } from '@/ui/kit';
 import { C } from '@/ui/theme';
 import { WIDE_MAX, useRoomy, useWide } from '@/ui/wide';
@@ -40,7 +40,7 @@ export default function Layout() {
     if (!LISTENING.includes(pathname)) closeInput();
   }, [pathname]);
 
-  // A tablet on its side, or a wide browser window, gets the two-pane layout with a rail down the left.
+  // A tablet on its side, or a wide browser window, gets the two-pane layout.
   const wide = useWide();
   // A tablet held upright, or a window about that size, uses its whole width with the content in a column down the middle.
   const roomy = useRoomy();
@@ -80,14 +80,8 @@ export default function Layout() {
                 {/* The player rises over the Vault and can be swiped back down. */}
                 <Stack.Screen name="player" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
               </Stack>
-              {wide ? (
-                <Rail />
-              ) : (
-                <>
-                  <TopNav />
-                  <TabBar />
-                </>
-              )}
+              <TopNav />
+              <TabBar />
             </>
           )}
         </View>

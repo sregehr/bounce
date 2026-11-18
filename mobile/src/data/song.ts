@@ -7,11 +7,12 @@ import type { Stereo } from '@/dsp/core';
 import { pause, play, seek, setSide, toggle } from '@/engine/engine';
 import { useTransport } from '@/ui/hooks';
 
-import type { Project } from './model';
+import { matchKey, matchTrim } from './match';
+import type { Loudness, Project } from './model';
 import { activeTake } from './store';
-import { getRaw, useMix, type MixOptions } from './studio';
+import { getRaw, mixSignature, useMix, type MixOptions } from './studio';
 
-export function useSong(project: Project | null, options: { autoplay?: boolean; compare?: boolean; repeat?: boolean; mix?: MixOptions } = {}) {
+export function useSong(project: Project | null, options: { autoplay?: boolean; compare?: boolean; repeat?: boolean; mix?: MixOptions; /** Another mix of this song to match the level of, so neither sounds better for being louder. */ match?: Loudness } = {}) {
   const id = `song:${project?.id}`;
   const state = useMix(project, options.mix);
   const t = useTransport(id);
@@ -24,6 +25,15 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
   const wanted = useRef(false);
   const take = activeTake(project);
   const rawKey = project && options.compare ? `${project.id}:${project.beat.key}:${take?.id}:${JSON.stringify(take?.loop)}:${project.beat.bpm}` : '';
+
+  // How far the mix in hand is turned down to meet the one it is compared with: null when there is none, or it has not been measured.
+  // Right after a switch between two mixes the one in hand is still the one being left, until the new one
+  // has rendered; its level is held as it was until then, rather than worked out against itself.
+  const signature = project ? mixSignature(project, options.mix) : '';
+  const heard = useRef<{ mix: unknown; signature: string; trimDb: number | null }>({ mix: null, signature: '', trimDb: null });
+  if (heard.current.mix !== state.mix) heard.current = { mix: state.mix, signature, trimDb: null };
+  if (project && state.mix && heard.current.signature === signature) heard.current.trimDb = matchTrim(state.mix.lufs, options.match, matchKey(project));
+  const trimDb = state.mix ? heard.current.trimDb : null;
 
   useEffect(() => {
     if (state.busy) started.current = Date.now();
@@ -60,7 +70,7 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     first.current = false;
     load(autoplay);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.mix, raw, id, focused, options.repeat]);
+  }, [state.mix, raw, id, focused, options.repeat, trimDb]);
 
   /** Puts the mix on the transport. Something else may have taken it over since, such as a take being previewed. */
   function load(autoplay?: boolean) {
@@ -69,6 +79,7 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     play(id, {
       a: { channels: mix.channels, sampleRate: mix.sampleRate },
       b: options.compare && raw ? { channels: raw, sampleRate: mix.sampleRate } : undefined,
+      trimDb: trimDb ?? 0,
       // Asked to play, it starts from the top; otherwise a re-render carries on from where it was.
       keepPosition: autoplay !== true,
       autoplay,
@@ -77,5 +88,5 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     }).catch((e) => setError(e instanceof Error ? e.message : 'Could not play.'));
   }
 
-  return { ...state, error: state.error ?? error, t, took, id, toggle: () => (t.loaded ? toggle() : load(true)), playWhenReady: () => void (wanted.current = true), pause, seek, setSide };
+  return { ...state, error: state.error ?? error, t, took, id, trimDb, toggle: () => (t.loaded ? toggle() : load(true)), playWhenReady: () => void (wanted.current = true), pause, seek, setSide };
 }

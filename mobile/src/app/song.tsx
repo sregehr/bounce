@@ -11,7 +11,7 @@ import { useSong } from '@/data/song';
 import { NoSong } from '@/ui/AddBeat';
 import { BeatCard } from '@/ui/BeatDetails';
 import { Btn, Chip, Eyebrow, Muted, NavLink, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
-import { useStopOnLeave } from '@/ui/hooks';
+import { useStopOnLeave, useTwoFingerUndo } from '@/ui/hooks';
 import { SongUndo, Status, SwipeRow, UndoToast } from '@/ui/parts';
 import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
@@ -55,6 +55,8 @@ export default function Song() {
     return () => window.removeEventListener('keydown', onKey);
   }, [projectId]);
   useStopOnLeave();
+  // A tap with two fingers takes back the last edit to the song.
+  useTwoFingerUndo(() => !!projectId && undoSong(projectId));
 
   // Mastering the beat alone sets the take aside. Back here, the song has its newest take again.
   const newest = project && !project.saved && !take ? project.takes[project.takes.length - 1] : undefined;

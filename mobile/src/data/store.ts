@@ -4,8 +4,9 @@ import { DEFAULT_MASTER, DEFAULT_POLISH, type Chain, type VocalStyle } from '@/d
 
 import { adopts, artistNamed, artistsIn, sessionArtist, withArtist } from './artists';
 import { blobs, kv, persist } from './db';
-import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
-import { carryOver, makeSong } from './songs';
+import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type Loudness, type MixSettings, type MixSnapshot, type Profile, type Project, type Settings, type Take } from './model';
+import { matchKey, soundKey } from './match';
+import { carryOver, makeSong, mendSongs } from './songs';
 
 let library: Library = emptyLibrary();
 let ready = false;
@@ -31,10 +32,13 @@ export async function loadLibrary() {
     loadError = null;
     if (saved && saved.version === 1) library = { ...emptyLibrary(), ...saved, settings: { ...emptyLibrary().settings, ...saved.settings } };
     if (!library.vault) update(carryOver);
+    // Finished songs that lost their layered takes get them back from their beat, where it still has them.
+    if (mendSongs(library) !== library) update(mendSongs);
     // A library from before backups were locked to their device gets its secret now, and keeps it.
     if (saved && !saved.settings?.deviceSecret) update((l) => ({ ...l }));
     void persist();
     void emptyBin();
+    void loadHistories();
     ready = true;
   } catch (e) {
     loadError = e instanceof Error && e.message ? e.message : 'Storage is not available.';
@@ -95,8 +99,8 @@ export async function flushLibrary() {
 
 // A change made in the last moment before the tab is closed, reloaded or put away is still saved.
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  window.addEventListener('pagehide', () => void flushLibrary());
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void flushLibrary());
+  window.addEventListener('pagehide', () => void (flushLibrary(), flushHistories()));
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void (flushLibrary(), flushHistories()));
 }
 
 export const setProfile = (patch: Partial<Profile>) => update((l) => ({ ...l, profile: { ...l.profile, ...patch } }));
@@ -161,10 +165,47 @@ export const getProject = (id: string | null) => library.projects.find((p) => p.
 const mixOf = (p: Project): MixSettings => ({ polish: p.polish, master: p.master, overrides: p.overrides, space: p.space });
 const MIX_KEYS = ['polish', 'master', 'overrides', 'space'] as const;
 type History = { past: MixSettings[]; future: MixSettings[]; at: number };
-// Kept for this session only: undo is for the last few moves, not a record of the song.
+// Undo is for the last few moves, not a record of the song: each song keeps its last steps, and
+// they are written down so a reload does not lose them.
 const histories = new Map<string, History>();
 const historyOf = (id: string) => histories.get(id) ?? (histories.set(id, { past: [], future: [], at: 0 }), histories.get(id)!);
 let replaying = false;
+/** The most steps kept for one song, back or forward. */
+export const UNDO_STEPS = 50;
+const UNDO_KEY = 'undo:mix';
+let undoTimer: ReturnType<typeof setTimeout> | null = null;
+let undoLoaded = false;
+
+const savedHistories = () => Object.fromEntries([...histories].filter(([, h]) => h.past.length || h.future.length).map(([id, h]) => [id, { past: h.past, future: h.future }]));
+
+/** Writes the undo steps down a moment after they change. A failure only costs the steps, so it is not reported. */
+function keepHistories() {
+  if (!undoLoaded || loadError) return;
+  if (undoTimer) clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => {
+    undoTimer = null;
+    void kv.set(UNDO_KEY, savedHistories()).catch(() => {});
+  }, 400);
+}
+
+/** Writes any undo steps still waiting, now. */
+export async function flushHistories() {
+  if (!undoTimer) return;
+  clearTimeout(undoTimer);
+  undoTimer = null;
+  await kv.set(UNDO_KEY, savedHistories()).catch(() => {});
+}
+
+/** Brings back the undo steps kept from last time, for the songs that are still here. */
+async function loadHistories() {
+  const saved = await kv.get<Record<string, { past: MixSettings[]; future: MixSettings[] }>>(UNDO_KEY).catch(() => undefined);
+  for (const [id, h] of Object.entries(saved ?? {})) {
+    if (!getProject(id) || histories.has(id) || !Array.isArray(h?.past) || !Array.isArray(h?.future)) continue;
+    histories.set(id, { past: h.past.slice(-UNDO_STEPS), future: h.future.slice(-UNDO_STEPS), at: 0 });
+  }
+  undoLoaded = true;
+  notify();
+}
 
 /** Notes the mix as it is before a change to it, so the change can be undone. */
 function remember(project: Project, patch: Partial<Project>) {
@@ -173,9 +214,10 @@ function remember(project: Project, patch: Partial<Project>) {
   const now = Date.now();
   // Changes in quick succession, such as nudging one control, undo as one step.
   if (now - h.at > 700 || h.past.length === 0) h.past.push(mixOf(project));
-  if (h.past.length > 50) h.past.shift();
+  if (h.past.length > UNDO_STEPS) h.past.shift();
   h.at = now;
   h.future = [];
+  keepHistories();
 }
 
 function step(id: string, from: 'past' | 'future') {
@@ -188,6 +230,7 @@ function step(id: string, from: 'past' | 'future') {
   replaying = true;
   patchProject(id, { ...to });
   replaying = false;
+  keepHistories();
   return true;
 }
 
@@ -308,7 +351,58 @@ async function emptyBin() {
 export function switchMix(id: string, side: 'A' | 'B') {
   const project = getProject(id);
   if (!project || (project.mixSide ?? 'A') === side) return;
-  patchProject(id, { ...(project.mixAlt ?? mixOf(project)), mixAlt: mixOf(project), mixSide: side });
+  // How loud the mix being left measured goes with it, so the two can be matched while comparing.
+  patchProject(id, { ...(project.mixAlt ?? mixOf(project)), mixAlt: mixOf(project), mixAltLoud: loudnessOf(project), mixSide: side });
+}
+
+/** How loud a song's mix measured, if it has been rendered as it is now. */
+export function loudnessOf(project: Project): Loudness | undefined {
+  return project.stats && project.statsOf === soundKey(project) ? { lufs: project.stats.lufs, ctx: matchKey(project) } : undefined;
+}
+
+// ---------- Saved mixes ----------
+
+/** The most mixes kept by name on one song. */
+export const SNAPSHOT_LIMIT = 20;
+
+/** The next free "Mix N" on a song. */
+function nextMixName(project: Project) {
+  const used = new Set((project.snapshots ?? []).map((m) => m.name));
+  for (let n = (project.snapshots?.length ?? 0) + 1; ; n++) if (!used.has(`Mix ${n}`)) return `Mix ${n}`;
+}
+
+/** Keeps the mix as it is now under a name. Returns it, or null when the song already holds as many as it can. */
+export function saveSnapshot(id: string, name?: string): MixSnapshot | null {
+  const project = getProject(id);
+  if (!project || (project.snapshots?.length ?? 0) >= SNAPSHOT_LIMIT) return null;
+  const snapshot: MixSnapshot = { id: newId(), name: name?.trim().slice(0, 40) || nextMixName(project), at: Date.now(), mix: mixOf(project), loud: loudnessOf(project) };
+  // Newest first, as they are listed.
+  patchProject(id, (p) => ({ snapshots: [snapshot, ...(p.snapshots ?? [])] }));
+  return snapshot;
+}
+
+export function renameSnapshot(id: string, snapshotId: string, name: string) {
+  const trimmed = name.trim().slice(0, 40);
+  if (trimmed) patchProject(id, (p) => ({ snapshots: (p.snapshots ?? []).map((m) => (m.id === snapshotId ? { ...m, name: trimmed } : m)) }));
+}
+
+export function deleteSnapshot(id: string, snapshotId: string) {
+  patchProject(id, (p) => ({ snapshots: (p.snapshots ?? []).filter((m) => m.id !== snapshotId) }));
+}
+
+/** Makes a saved mix the mix in use. It is a change to the mix like any other, so Undo takes it back. */
+export function restoreSnapshot(id: string, snapshotId: string) {
+  const snapshot = getProject(id)?.snapshots?.find((m) => m.id === snapshotId);
+  if (!snapshot) return;
+  // Its own step to undo, even right after a nudge of a control.
+  historyOf(id).at = 0;
+  patchProject(id, { ...snapshot.mix });
+}
+
+/** Puts a saved mix on the other side of Mix A and Mix B, to flip to and compare with the mix in use. */
+export function compareSnapshot(id: string, snapshotId: string) {
+  const snapshot = getProject(id)?.snapshots?.find((m) => m.id === snapshotId);
+  if (snapshot) patchProject(id, { mixAlt: snapshot.mix, mixAltLoud: snapshot.loud });
 }
 
 export function patchProject(id: string, patch: Partial<Project> | ((p: Project) => Partial<Project>), touch = true) {
@@ -362,7 +456,7 @@ export async function deleteProject(id: string) {
   // A beat that is gone takes its undo steps with it, and the takes they were holding on to.
   const held = songHistories.get(id);
   songHistories.delete(id);
-  histories.delete(id);
+  if (histories.delete(id)) keepHistories();
   update((l) => ({ ...l, projects: l.projects.filter((p) => p.id !== id), currentId: l.currentId === id ? null : l.currentId, songId: l.songId === id ? null : l.songId }));
   await Promise.all([...projectKeys(project), ...[...(held?.past ?? []), ...(held?.future ?? [])].flatMap((e) => e.holds ?? [])].map(dropBlob));
 }

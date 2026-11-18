@@ -5,7 +5,8 @@ import { useFocusEffect, useIsFocused, usePreventRemove } from 'expo-router';
 import { stopTransport, useEngine } from '@/engine/engine';
 
 import { leavesOnPurpose, setGuard } from './guard';
-import { fail, warn } from './haptics';
+import { fail, tick, warn } from './haptics';
+import { twoFingerTap } from './twoFingerTap';
 
 /** Playback state for one named thing; reads as stopped when something else is loaded. */
 export function useTransport(id: string) {
@@ -107,4 +108,28 @@ export function useRecordingGuard(active: boolean) {
       void lock?.release().catch(() => {});
     };
   }, [active]);
+}
+
+/**
+ * Undoes with a tap of two fingers anywhere on the screen, while it is the one on show. In a
+ * browser only: the native app will use the system's own gestures. Text fields are left alone.
+ */
+export function useTwoFingerUndo(undo: () => unknown) {
+  const latest = useRef(undo);
+  latest.current = undo;
+  const focused = useIsFocused();
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined' || !focused) return;
+    const feed = twoFingerTap();
+    const on = (type: 'start' | 'move' | 'end' | 'cancel') => (e: TouchEvent) => {
+      const typing = !!(e.target as HTMLElement | null)?.closest?.('input,textarea');
+      const tapped = feed(type, [...e.touches].map((t) => ({ id: t.identifier, x: t.clientX, y: t.clientY })), e.timeStamp);
+      if (tapped && !typing && latest.current()) tick();
+    };
+    const handlers = { touchstart: on('start'), touchmove: on('move'), touchend: on('end'), touchcancel: on('cancel') };
+    for (const [name, fn] of Object.entries(handlers)) document.addEventListener(name, fn as EventListener, { passive: true });
+    return () => {
+      for (const [name, fn] of Object.entries(handlers)) document.removeEventListener(name, fn as EventListener);
+    };
+  }, [focused]);
 }

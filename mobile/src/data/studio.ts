@@ -308,6 +308,17 @@ export function keepOnlyMix(project: Project, options: MixOptions = {}) {
   mixes.keepOnly([mixSignature(project, options)]);
 }
 
+/**
+ * Lets go of the processed vocal, the processed beat, or both. Each is a whole song long, and is
+ * only kept to make the next render quick; the next render that needs one makes it again.
+ */
+export function dropStages(which: ('vocal' | 'beat')[] = ['vocal', 'beat']) {
+  for (const stage of which) {
+    stages[stage] = undefined;
+    stages[`${stage}Key`] = undefined;
+  }
+}
+
 export async function getRaw(project: Project): Promise<Stereo> {
   return renderRaw(await renderInput(project));
 }

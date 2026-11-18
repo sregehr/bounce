@@ -91,7 +91,7 @@ export default function Song() {
             {[...project.takes].reverse().map((k) => {
               const on = k.id === take.id;
               return (
-                <SwipeRow key={k.id} label={`Delete take ${k.number}`} onDelete={() => deleteTake(project.id, k.id)}>
+                <SwipeRow key={k.id} once label={`Delete take ${k.number}`} onDelete={() => deleteTake(project.id, k.id)}>
                 <Pressable accessibilityRole="radio" accessibilityLabel={`Take ${k.number}`} accessibilityState={{ checked: on }} onPress={() => pick(k)} style={[s.row, s.between, { minHeight: 48 }, s.divided]}>
                   <Txt size={15} w="semi" color={on ? C.accent : C.text}>
                     Take {k.number}

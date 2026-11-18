@@ -7,10 +7,14 @@ import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
+import { pastThreshold } from './feel';
 import { tick } from './haptics';
+import { Collapse, NATIVE, reduceMotion } from './motion';
 import { useArmed } from './hooks';
 import { Check, Chip, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
+import { positionText } from './spoken';
 import { C, meterPct, rateLabel } from './theme';
+import { useTextScale } from './type';
 import { useBar, useGutter } from './wide';
 
 export function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
@@ -49,8 +53,8 @@ export function Picker<T extends string>({ label, value, options, onChange, fall
           {open ? 'Close' : 'Change'}
         </Txt>
       </Pressable>
-      {open &&
-        options.map((o) => (
+      <Collapse open={open}>
+        {options.map((o) => (
           <Pressable
             key={o.value}
             accessibilityRole="radio"
@@ -67,6 +71,7 @@ export function Picker<T extends string>({ label, value, options, onChange, fall
             </Txt>
           </Pressable>
         ))}
+      </Collapse>
     </View>
   );
 }
@@ -110,6 +115,7 @@ export function InputPanel({ input, onPick, onPair }: { input: EngineState['inpu
 /** Play button, a seek bar and the time, for screens where the song plays while you adjust it. */
 export function MiniTransport({ playing, position, duration, onToggle, onSeek, busy }: { playing: boolean; position: number; duration: number; onToggle: () => void; onSeek: (seconds: number) => void; busy?: boolean }) {
   const [drag, setDrag] = useState<number | null>(null);
+  const scale = useTextScale();
   const shown = drag ?? position;
   const mm = (v: number) => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
   return (
@@ -119,6 +125,8 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
         <SliderLazy
           label="Position in track"
           display={mm(shown)}
+          text={positionText(shown, duration)}
+          flick={5}
           value={Math.min(shown, duration)}
           min={0}
           max={Math.max(1, duration)}
@@ -132,7 +140,7 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
           }}
         />
       </View>
-      <Txt size={13} color={C.muted} right style={{ width: 82, fontVariant: ['tabular-nums'] }}>
+      <Txt size={13} color={C.muted} right style={{ width: Math.round(82 * scale), fontVariant: ['tabular-nums'] }}>
         {busy ? 'Updating…' : `${mm(shown)} / ${mm(duration)}`}
       </Txt>
     </View>
@@ -232,22 +240,34 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
   // the row's content takes no pointer events, so that click lands on the wrapper and opens nothing.
   const [dragging, setDragging] = useState(false);
   const [sure, askSure, notSure] = useArmed(4000);
+  // Whether the drag in progress is past the point where letting go shows Delete. Crossing it is
+  // felt, once each way, so the finger knows before it lifts.
+  const past = useRef(false);
   const settle = (show: boolean) => {
     if (!show) notSure();
-    else if (!open) tick();
     setOpen(show);
     from.current = show ? -DELETE_WIDTH : 0;
-    Animated.spring(x, { toValue: from.current, useNativeDriver: false, bounciness: 0, speed: 20 }).start();
+    // The row is only ever moved sideways, so it can run on the native driver.
+    if (reduceMotion()) x.setValue(from.current);
+    else Animated.spring(x, { toValue: from.current, useNativeDriver: NATIVE, bounciness: 0, speed: 20 }).start();
   };
   const pan = useRef(
     PanResponder.create({
       // Only a sideways drag is taken, so the page still scrolls and a tap still reaches the row.
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
       onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-      onPanResponderGrant: () => setDragging(true),
-      onPanResponderMove: (_, g) => x.setValue(Math.max(-DELETE_WIDTH - 24, Math.min(0, from.current + g.dx))),
+      onPanResponderGrant: () => {
+        past.current = from.current < 0;
+        setDragging(true);
+      },
+      onPanResponderMove: (_, g) => {
+        const now = pastThreshold(past.current, from.current + g.dx, -DELETE_WIDTH / 2);
+        if (now !== past.current) tick();
+        past.current = now;
+        x.setValue(Math.max(-DELETE_WIDTH - 24, Math.min(0, from.current + g.dx)));
+      },
       onPanResponderRelease: (_, g) => {
-        settle(from.current + g.dx < -DELETE_WIDTH / 2);
+        settle(pastThreshold(past.current, from.current + g.dx, -DELETE_WIDTH / 2));
         setTimeout(() => setDragging(false), 80);
       },
       onPanResponderTerminate: () => {

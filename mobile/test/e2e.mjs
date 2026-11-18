@@ -26,6 +26,8 @@ const WIDE = viewWidth >= 1000 && viewWidth > viewHeight;
 // Something only the Vault says: the phone labels its search field, the wide layout does not need to.
 const IN_VAULT = WIDE ? 'Removing a song here' : 'Search your songs';
 await page.setViewport({ width: viewWidth, height: viewHeight, deviceScaleFactor: 2 });
+// TEXT=22.4px runs everything at a larger text size (16px is the usual; 22.4px is the largest the app follows), for looking over the screenshots.
+if (process.env.TEXT) await page.evaluateOnNewDocument((size) => document.documentElement.style.setProperty('font-size', size), process.env.TEXT);
 const problems = [];
 const chatter = new Set();
 page.on('console', (m) => {
@@ -273,6 +275,8 @@ const asksBeforeLeaving = () =>
     return leaving.defaultPrevented;
   });
 const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
+/** What a slider (found by the start of its label) reads out to a screen reader. */
+const valueText = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label')?.startsWith(label)).pop()?.getAttribute('aria-valuetext') ?? '', label);
 async function tapTrack(label, fraction) {
   const box = await page.evaluate((label) => {
     const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
@@ -378,7 +382,11 @@ async function song() {
   await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass after the count-in', 12000);
   await sleep(2500);
   await shot('08-vocals-recording');
-  await sleep(4000);
+  // Going back mid-take would drop it, so the browser's Back button is held while one runs.
+  await page.goBack().catch(() => {});
+  await sleep(600);
+  log(new URL(page.url()).pathname === '/vocals' && /Bar \d+ · pass \d/.test(await text()), 'Back does not leave the mic screen while a take is running', page.url());
+  await sleep(3400);
   await tap('Done, hear it back');
   await expectText('Take 1', 'playback opens on the new take', 10000);
   await expectText(/Polished\s/, 'polish finishes', 30000);
@@ -539,6 +547,17 @@ async function song() {
   await shot('11-advanced');
   await slide('Gain', 0.9);
   await expectText('Set by hand', 'editing a band marks the chain as set by hand', 5000);
+  // Adjustable controls say their value in real units, and move without a drag.
+  let spoken = await valueText('Gain');
+  log(/^[−+]?\d+\.\d dB$/.test(spoken), 'the gain slider reads out in dB', spoken);
+  spoken = await valueText('Position in take');
+  log(/^\d:\d\d of \d:\d\d$/.test(spoken), 'the seek bar reads out as a time', spoken);
+  const point = await valueText('Curve point 2');
+  await page.evaluate(() => [...document.querySelectorAll('[role=slider]')].find((n) => n.getAttribute('aria-label')?.startsWith('Curve point 2'))?.focus());
+  await page.keyboard.press('ArrowDown');
+  await sleep(400);
+  spoken = await valueText('Curve point 2');
+  log(/Hz, [−+]?\d+\.\d dB$/.test(spoken) && spoken !== point, 'an EQ point says where it is and moves from the keyboard', `${point} -> ${spoken}`);
   await tap('Compressor', { exact: false, optional: WIDE });
   await slide('Threshold', 0.3);
   await tap('Save as my preset');
@@ -585,6 +604,22 @@ async function song() {
     log(Math.abs(top - 320) < 40, 'Mix is still scrolled to where it was left', `scrollTop ${top}, before ${before}, after ${await page.evaluate(`(() => { const n = (${scroller})(); return n ? [n.scrollTop, n.scrollHeight, n.clientHeight].join('/') : 'none'; })()`)}`);
   }
   await shot('13-mix-master');
+
+  // Larger text. A browser has no Dynamic Type, so the app follows the browser's own font size:
+  // turned up to the most the app allows, a slider's label and value move above its track,
+  // which then has the whole width, and nothing spills off the side of the page.
+  const sliderWidth = () => state(() => [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Vocal level').pop()?.getBoundingClientRect().width ?? 0);
+  const textSize = (px) => state(`document.documentElement.style.fontSize = '${px}'; window.dispatchEvent(new Event('resize'))`);
+  const beside = await sliderWidth();
+  await textSize('22.4px');
+  await sleep(500);
+  const above = await sliderWidth();
+  log(above > beside + 80, 'with large text a slider row stacks its label and value above the track', `track ${Math.round(beside)} -> ${Math.round(above)} px wide`);
+  log(await state(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'and the page does not spill sideways');
+  await shot('13b-large-text');
+  await textSize('');
+  await sleep(300);
+  log(Math.abs((await sliderWidth()) - beside) < 2, 'and goes back beside it at the usual size');
 }
 
 const DOWNLOADS = path.join(SHOTS, 'downloads-' + Date.now());
@@ -763,12 +798,18 @@ async function finish() {
     }
     await tap('WAV, 16-bit');
   }
-  await tap('Back');
-  await expectText('Prod. Lowkey', 'Back returns to the player');
+  // Share is a sheet over the player: it has the one close button every sheet has, and Escape closes it too.
+  log(await state(() => !!document.querySelector('[role=dialog]')), 'Share opens as a sheet over the player');
+  await tap('Close');
+  await expectText('Prod. Lowkey', 'closing the sheet returns to the player');
+  await tap('Share');
+  await expectText('Keep as mastered', 'the sheet opens again');
+  await page.keyboard.press('Escape');
+  await expectText('Prod. Lowkey', 'and Escape closes it');
   // The wide player always shows the lyrics; the phone keeps them behind a button.
   await tap('Lyrics', { optional: WIDE });
   await expectText('Every red light is a breath I use', 'the lyrics written on the song came with it');
-  await tap('Done', { optional: WIDE });
+  await tap('Hide lyrics', { optional: WIDE });
   await tap('Pause', { optional: true });
 
   await tap('Snippet');
@@ -777,6 +818,8 @@ async function finish() {
   if (await state(() => !![...document.querySelectorAll('[role=slider]')].find((n) => n.getAttribute('aria-label') === 'Snippet position'))) {
     await tapTrack('Snippet position', 0.2);
     await expectText('Your pick', 'the snippet can be moved to another part of the song', 5000);
+    const stretch = await valueText('Snippet position');
+    log(/^\d:\d\d to \d:\d\d$/.test(stretch), 'the snippet window reads out as the stretch it covers', stretch);
     await tap('Strongest stretch');
     await expectText('Strongest stretch picked', 'and put back on the strongest stretch', 5000);
   }
@@ -835,10 +878,8 @@ async function finish() {
     await tap('More for Night bus');
     await tap('Edit image');
     await expectText('Cover art', 'Edit image opens the cover screen for that song', 10000);
-    await tap('Skip');
-    await expectText('Prod. Lowkey', 'and leaving it returns to the song', 15000);
-    await tap('Close the player');
-    await expectText(IN_VAULT, 'then back to the Vault');
+    await tap('Close');
+    await expectText(IN_VAULT, 'and closing it returns to the Vault', 15000);
   }
   await type('Search your songs', 'red light');
   await expectText('Has lyrics', 'search finds a word in the lyrics');
@@ -885,7 +926,11 @@ async function library() {
   await expectText('Add a beat', 'home offers the ways to add a beat');
   await tap('Add a demo song');
   await expectText('Ready-made beats', 'and leads into the demo songs');
-  await tap('Home');
+  // The demo songs are a sheet over Home, with no tabs around it; closing it shows Home again.
+  log(await state(() => !!document.querySelector('[role=dialog]') && ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0)), 'as a sheet, with the tab bar out of the way');
+  await tap('Close');
+  await sleep(500);
+  log(await state(() => !document.querySelector('[role=dialog]')), 'closing the sheet puts it away');
   await expectText('Add a beat');
   await tap('Open Night bus');
   await expectText('Beat details', 'a beat opens its song', 10000);
@@ -936,6 +981,10 @@ async function library() {
   await expectText('Recording', 'recording starts at the first sound', 8000);
   await sleep(4500);
   await shot('25-record');
+  // The same goes for a beat being captured.
+  await page.goBack().catch(() => {});
+  await sleep(600);
+  log(new URL(page.url()).pathname === '/record' && /Recording/i.test(await text()), 'Back does not leave a capture that is running', page.url());
   await tap('Stop recording');
   await expectText('Not in the Vault yet', 'a captured beat opens on the Song tab', 20000);
   // Its details, where it is named and mastered alone, open in place.

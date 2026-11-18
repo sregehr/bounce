@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, ScrollView, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,38 +8,55 @@ import { useProject } from '@/data/store';
 import { spectrum, setNowPlaying } from '@/engine/engine';
 import { Btn, Eyebrow, NavLink, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
+import { NATIVE, useReduceMotion } from '@/ui/motion';
+import { BackButton, asSheet } from '@/ui/nav';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
 const BARS = 34;
 
-/** Bars that follow the sound of whatever is playing. `tall` is the wide layout's, spread along the bottom of the cover. */
+/** The player rises over the Vault, and closing it returns there, however it was opened. */
+const close = () => {
+  if (router.canDismiss()) router.dismissAll();
+  router.push('/vault');
+};
+
+/** How often the bars are given new heights to glide to. */
+const BEAT_MS = 90;
+
+/**
+ * Bars that follow the sound of whatever is playing. `tall` is the wide layout's, spread along the bottom of the cover.
+ * Each bar is drawn once at full height and scaled, on the native driver: the sound is read a
+ * few times a second and the bars glide between readings, with no re-render in between.
+ * With less motion asked for they rest.
+ */
 function Visualiser({ playing, tall }: { playing: boolean; tall?: boolean }) {
-  const [levels, setLevels] = useState<number[]>(() => new Array(BARS).fill(0.08));
+  const still = useReduceMotion();
+  const levels = useRef(Array.from({ length: BARS }, () => new Animated.Value(0.08))).current;
   useEffect(() => {
+    if (still) return levels.forEach((level) => level.setValue(0.08));
     if (!playing) return;
-    let frame = 0, last = 0;
-    const step = (now: number) => {
-      if (now - last > 45) {
-        last = now;
-        setLevels(spectrum(BARS));
-      }
-      frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [playing]);
+    const timer = setInterval(() => {
+      const heard = spectrum(BARS);
+      Animated.parallel(
+        levels.map((level, i) => Animated.timing(level, { toValue: Math.max(0.06, Math.min(1, (heard[i] ?? 0) * 1.15)), duration: BEAT_MS, easing: Easing.linear, useNativeDriver: NATIVE })),
+        { stopTogether: false },
+      ).start();
+    }, BEAT_MS);
+    return () => clearInterval(timer);
+  }, [playing, still, levels]);
+  const full = tall ? 96 : 72;
   return (
     <View accessible={false} style={[{ height: 88, flexDirection: 'row', alignItems: 'flex-end', gap: 4, paddingHorizontal: 24, paddingTop: 16, overflow: 'hidden' }, tall && { height: 112, gap: 6, paddingHorizontal: 28, pointerEvents: 'none' }]}>
-      {levels.map((v, i) => (
-        <View key={i} style={{ flex: 1, maxWidth: tall ? undefined : 6, height: Math.max(4, Math.round((tall ? 96 : 72) * Math.min(1, v * 1.15))), borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: i % 5 === 0 ? C.text : C.accent }} />
+      {levels.map((level, i) => (
+        <Animated.View key={i} style={{ flex: 1, maxWidth: tall ? undefined : 6, height: full, borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: i % 5 === 0 ? C.text : C.accent, transformOrigin: 'bottom', transform: [{ scaleY: level }] }} />
       ))}
     </View>
   );
 }
 
-export default function Player() {
+function Player() {
   const project = useProject();
   const now = useNowPlaying(project);
   const [lyrics, setLyrics] = useState(false);
@@ -60,11 +77,6 @@ export default function Player() {
   const { song, credit, hasLyrics, beat } = now;
   const t = song.t;
   const pill = { backgroundColor: C.bg } as const;
-  /** The player is full screen, opened from the Vault; closing it returns there. */
-  const close = () => {
-    if (router.canDismiss()) router.dismissAll();
-    router.push('/vault');
-  };
 
   const mastering = (
         <Pressable accessibilityRole="link" accessibilityLabel="Mastering settings" onPress={() => router.push('/master')} style={[pill, { borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12 }, wide && { minHeight: 44, borderRadius: 22, paddingHorizontal: 14, justifyContent: 'center' }]}>
@@ -74,13 +86,8 @@ export default function Player() {
         </Pressable>
   );
 
-  const shut = (
-        <Pressable accessibilityRole="button" accessibilityLabel="Close the player" onPress={close} hitSlop={8} style={[pill, { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }, wide && { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: C.borderStrong }]}>
-          <Txt size={18} w="semi" color={C.text}>
-            ✕
-          </Txt>
-        </Pressable>
-  );
+  // The same close button as every sheet, in the same corner, on a disc so it reads over any cover.
+  const shut = <BackButton disc label="Close the player" />;
 
   const again = beat && (
           <NavLink center size={14} onPress={now.again}>
@@ -96,7 +103,10 @@ export default function Player() {
           <Pressable accessibilityRole="link" accessibilityLabel="Change cover art" onPress={() => router.push('/cover')} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
             <CoverImage project={project} fill />
           </Pressable>
-          <View style={{ alignItems: 'flex-start', paddingTop: Math.max(28, insets.top + 12), paddingLeft: Math.max(28, insets.left + 12), pointerEvents: 'box-none' }}>{mastering}</View>
+          <View style={[s.row, { gap: 10, paddingTop: Math.max(28, insets.top + 12), paddingLeft: Math.max(28, insets.left + 12), pointerEvents: 'box-none' }]}>
+            {shut}
+            {mastering}
+          </View>
           <Visualiser playing={t.playing} tall />
         </View>
 
@@ -110,7 +120,6 @@ export default function Player() {
                 {song.error ?? credit}
               </Txt>
             </View>
-            {shut}
           </View>
 
           <Scrubber now={now} height={32} />
@@ -146,8 +155,8 @@ export default function Player() {
       </View>
 
       <View style={[s.topbar, { paddingHorizontal: 16, paddingTop: Math.max(20, insets.top + 8) }]}>
-        {mastering}
         {shut}
+        {mastering}
       </View>
 
       <View style={{ flexGrow: 1 }} />
@@ -184,7 +193,7 @@ export default function Player() {
 
         <View style={[s.row, { gap: 10 }]}>
           <Btn kind="outline" label="Snippet" to="/snippet" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
-          {hasLyrics && <Btn kind="outline" label={lyrics ? 'Done' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />}
+          {hasLyrics && <Btn kind="outline" label={lyrics ? 'Hide lyrics' : 'Lyrics'} onPress={() => setLyrics(!lyrics)} style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />}
           {/* Sharing opens the choices first (loudness, format, stems), then the share sheet or a saved file. */}
           <Btn kind="outline" label="Share" to="/export" style={{ flex: 1, borderRadius: 14, minHeight: 48 }} />
         </View>
@@ -193,3 +202,6 @@ export default function Player() {
     </View>
   );
 }
+
+// Swiped down to close: by the system on the phone, where it covers the screen, and by the sheet the browser build draws.
+export default asSheet(Player, { swipe: 'anywhere', cover: true, onClose: close });

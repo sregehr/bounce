@@ -6,7 +6,6 @@ const TABS: Record<string, Tab> = {
   '/': 'home',
   '/capture': 'home',
   '/record': 'home',
-  '/demos': 'home',
   // Recording over it: the mic button in the middle.
   '/vocals': 'mic',
   // The song being worked on: its takes and lyrics.
@@ -19,13 +18,14 @@ const TABS: Record<string, Tab> = {
   '/settings': 'settings',
 };
 
-// These work on a beat on its way to the Vault, and on a finished song opened from it.
-// The player itself is full screen, with no navigation around it.
-const EITHER = ['/master', '/cover', '/export', '/snippet'];
+// Mastering works on a beat on its way to the Vault, and on a finished song opened from it.
+// The player, the cover, sharing, the snippet and the demo songs are sheets over whichever
+// screen opened them (see `SHEETS` in `nav.tsx`), with no navigation around them.
+const EITHER = ['/master'];
 
 /**
- * True on the finishing steps. Each has its own way back in the top corner, so the bottom bar
- * steps aside rather than float over their buttons.
+ * True on mastering. It has its own way back in the top corner, so the bottom bar steps aside
+ * rather than float over its buttons.
  */
 export const hidesTabBar = (pathname: string) => EITHER.includes(pathname);
 

@@ -17,6 +17,9 @@ import { NUDGE_SEC, lineAt, lyricLines, timeLines, voicedStretches, type Stretch
 import { SCRIM, makeSnippetVideo, videoSupported } from '@/snippet/video';
 import { Btn, Chip, Eyebrow, Foot, Muted, NavLink, Option, RoundPlay, Screen, SeekTrack, Segmented, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
+import { stretchText } from '@/ui/spoken';
+import { MAX_TEXT_SCALE, useDrawScale, useTextScale } from '@/ui/type';
 import { WindowTrack } from '@/ui/WindowTrack';
 import { C, F, clock } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -33,7 +36,7 @@ const WORDS = ['Lyrics in time', 'One line'] as const;
 /** The take's level is read in slices this long to find where the voice is. */
 const VOICE_BIN_SEC = 0.05;
 
-export default function Snippet() {
+function Snippet() {
   const project = useProject();
   const profile = useLibrary((l) => l.profile);
   const take = activeTake(project);
@@ -49,6 +52,8 @@ export default function Snippet() {
   // The snippet once it has been made, and what it was made from, so a change makes it again.
   const [ready, setReady] = useState<{ recipe: string; files: OutFile[] } | null>(null);
   const wide = useWide();
+  const scale = useTextScale();
+  const drawn = useDrawScale();
   useStopOnLeave();
 
   // Where the voice is in the take, read from its waveform. A take starts where the mix does, so the two share a clock.
@@ -193,7 +198,7 @@ export default function Snippet() {
             {artist}
           </Txt>
         </View>
-        <SeekTrack peaks={clip?.peaks ?? []} height={wide ? 140 : 96} progress={t.duration > 0 ? t.position / t.duration : 0} played={ink} rest={t.loaded && t.position > 0 ? faint : ink} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
+        <SeekTrack peaks={clip?.peaks ?? []} height={wide ? 140 : 96} progress={t.duration > 0 ? t.position / t.duration : 0} played={ink} rest={t.loaded && t.position > 0 ? faint : ink} disabled={!t.loaded || t.duration <= 0} duration={t.duration} onSeek={(f) => seek(f * t.duration)} label="Position in snippet" />
         <View style={{ gap: wide ? 10 : 8, minHeight: 52, justifyContent: 'flex-end' }}>
           {inTime && (
             // The same size and place as the caption, so the card is a fair picture of the video.
@@ -206,6 +211,7 @@ export default function Snippet() {
           {choice.captions && !inTime && (
             <TextInput
               accessibilityLabel="Caption line"
+              maxFontSizeMultiplier={MAX_TEXT_SCALE}
               multiline
               numberOfLines={2}
               submitBehavior="blurAndSubmit"
@@ -219,7 +225,8 @@ export default function Snippet() {
               placeholderTextColor={coverUrl ? 'rgba(242,240,234,0.6)' : 'rgba(18,18,18,0.5)'}
               selectionColor={ink}
               maxLength={80}
-              style={[{ fontFamily: F.display, fontSize: 22, lineHeight: 26, height: 54, color: ink, padding: 0 }, wide && { fontSize: 28, lineHeight: 34, height: 70 }]}
+              // The box grows with the text size, so two lines of a larger caption are not cut off.
+              style={[{ fontFamily: F.display, fontSize: 22 * drawn, lineHeight: Math.round(26 * drawn), height: Math.round(54 * scale), color: ink, padding: 0 }, wide && { fontSize: 28 * drawn, lineHeight: Math.round(34 * drawn), height: Math.round(70 * scale) }]}
             />
           )}
           {choice.credit && credit && (
@@ -250,6 +257,7 @@ export default function Snippet() {
           <View style={{ gap: 4 }}>
             <WindowTrack
               label="Snippet position"
+              say={(f) => stretchText(f * mix.durationSec, length)}
               peaks={whole}
               height={wide ? 84 : 56}
               from={start / mix.durationSec}
@@ -358,6 +366,8 @@ export default function Snippet() {
           center
           onPress={() => {
             set({ made: true });
+            // The sheet, and the player under it, are closed first: the Vault is not pushed on top of them.
+            if (router.canDismiss()) router.dismissAll();
             router.push('/vault');
           }}
         >
@@ -373,7 +383,7 @@ export default function Snippet() {
         <View style={{ flex: 1, flexDirection: 'row', gap: 48, minHeight: 0 }}>
           <View style={{ width: 430 }}>{card}</View>
           <View style={{ flex: 1, minWidth: 0, gap: 16 }}>
-            <TopBar left="Snippet" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />
+            <TopBar back left="Snippet" />
             {pick}
             {options}
             {timing}
@@ -393,7 +403,7 @@ export default function Snippet() {
 
   return (
     <Screen>
-      <TopBar left="Snippet" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />
+      <TopBar back left="Snippet" />
 
       {card}
 
@@ -413,3 +423,6 @@ export default function Snippet() {
     </Screen>
   );
 }
+
+// A sheet over the player or the mix.
+export default asSheet(Snippet, { fallback: '/vault' });

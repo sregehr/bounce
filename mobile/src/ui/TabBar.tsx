@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Platform, Pressable, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -10,6 +10,7 @@ import { openInput, useEngine } from '@/engine/engine';
 
 import { Btn, MicIcon, Muted, Txt } from './kit';
 import { Logo } from './Logo';
+import { Halo, Pop, useGlide } from './motion';
 import { PersonalMenu } from './PersonalMenu';
 import { useArtistViewOpen } from './artistViewOpen';
 import { askForMic, useAskingForMic, useRecordControl } from './recordControl';
@@ -181,6 +182,8 @@ const REST = 'rgb(30,30,32)';
 function MicButton({ nav, style }: { nav: ReturnType<typeof useMic>; style?: ViewStyle }) {
   const { path, record, mic, beat, recording, is, lit } = nav;
   const { mic: MIC } = useBar();
+  // The mic turns into the stop square, and back, instead of swapping.
+  const at = useGlide(!!recording);
   return (
     <Pressable
       accessibilityRole="button"
@@ -205,7 +208,11 @@ function MicButton({ nav, style }: { nav: ReturnType<typeof useMic>; style?: Vie
         ...style,
       })}
     >
-      {recording ? <View style={{ width: MIC * 0.34, height: MIC * 0.34, borderRadius: 5, backgroundColor: C.text }} /> : <MicIcon size={Math.round(MIC * 0.44)} color={lit ? C.bg : C.accent} />}
+      <Halo on={!!recording} size={MIC} color={C.rec} />
+      <Animated.View style={{ position: 'absolute', opacity: at.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] }) }] }}>
+        <MicIcon size={Math.round(MIC * 0.44)} color={lit ? C.bg : C.accent} />
+      </Animated.View>
+      <Animated.View style={{ width: MIC * 0.34, height: MIC * 0.34, borderRadius: 5, backgroundColor: C.text, opacity: at, transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) }] }} />
     </Pressable>
   );
 }
@@ -216,13 +223,15 @@ function MicPrompt({ nav, style, cover }: { nav: ReturnType<typeof useMic>; styl
   return (
     <>
       <Pressable accessibilityLabel="Close" onPress={() => askForMic(false)} style={[{ position: 'absolute' }, cover]} />
-      <View accessibilityRole="alert" style={[{ position: 'absolute', borderRadius: 20, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: 18, gap: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }, style]}>
+      <Pop from="bottom" style={[{ position: 'absolute' }, style]}>
+      <View accessibilityRole="alert" style={{ borderRadius: 20, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: 18, gap: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
         <Txt size={17} w="display" ls={0}>
           No microphone yet
         </Txt>
         <Muted size={14}>{input.error ?? 'Bounce needs a microphone to record your take. It only listens while this screen is open.'}</Muted>
         <Btn label="Connect a microphone" busy={input.status === 'opening'} onPress={() => void openInput(library.settings.inputId, 'mic')} />
       </View>
+      </Pop>
     </>
   );
 }

@@ -68,7 +68,7 @@ export function Transport({ project, take, song, compare }: { project: Project; 
     <View style={{ gap: 8 }}>
       <View style={[s.row, { gap: 8 }]}>
         <RoundPlay playing={t.playing} onPress={song.toggle} disabled={!mix} />
-        <SeekTrack peaks={take.wave} height={44} progress={t.duration > 0 ? t.position / t.duration : 0} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" style={{ flex: 1 }} />
+        <SeekTrack peaks={take.wave} height={44} progress={t.duration > 0 ? t.position / t.duration : 0} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" duration={t.duration} style={{ flex: 1 }} />
         {compare && <Pill label="Raw" name="Compare with raw" on={raw} solid onPress={() => song.setSide(raw ? 'a' : 'b')} />}
       </View>
       <View style={[s.row, { gap: 8 }]}>

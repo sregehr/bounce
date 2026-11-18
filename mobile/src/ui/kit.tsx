@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from '
 import {
   Easing,
   Animated,
-  AccessibilityInfo,
   ActivityIndicator,
   Platform,
   Pressable,
@@ -17,16 +16,21 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { router, usePathname, type Href } from 'expo-router';
+import { router, useIsFocused, usePathname, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { getLibrary } from '@/data/store';
 import { BUBBLE_HEIGHT, bubblePlace } from './bubble';
+import { reachedDetent } from './feel';
+import { Collapse, Halo, NATIVE, useGlide, useReduceMotion } from './motion';
 import { tick } from './haptics';
+import { BackButton, SHEET_TOP, useSheet } from './nav';
+import { actionDir, percentText, positionText, stepFraction } from './spoken';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { useBar, useWide, useGutter } from './wide';
 import { C, F, type Weight } from './theme';
+import { MAX_TEXT_SCALE, useDrawScale, useLargeText, useTextScale } from './type';
 
 // ---------- Text ----------
 
@@ -58,18 +62,20 @@ export function Txt({
   numberOfLines?: number;
 }) {
   const display = w === 'display' || w === 'displayMedium';
+  // The phone enlarges the text itself; in a browser it is done here (see `type.ts`).
+  const drawn = size * useDrawScale();
   return (
     <Text
       // Larger text sizes from the system are honoured up to a point; past it, fixed rows and bars stop fitting.
-      maxFontSizeMultiplier={1.4}
+      maxFontSizeMultiplier={MAX_TEXT_SCALE}
       numberOfLines={numberOfLines}
       style={[
         {
           fontFamily: F[w],
-          fontSize: size,
+          fontSize: drawn,
           color,
-          letterSpacing: (ls ?? (w === 'display' ? -0.02 : 0)) * size,
-          lineHeight: Math.round(size * (lh ?? (display ? 1.15 : 1.35))),
+          letterSpacing: (ls ?? (w === 'display' ? -0.02 : 0)) * drawn,
+          lineHeight: Math.round(drawn * (lh ?? (display ? 1.15 : 1.35))),
           textAlign: center ? 'center' : right ? 'right' : undefined,
           textTransform: upper ? 'uppercase' : undefined,
         },
@@ -121,23 +127,33 @@ export function Screen({
 }) {
   const insets = useSafeAreaInsets();
   // On tabbed screens the content runs under the floating bar, so it ends clear of it.
-  const pathname = usePathname();
+  // The path is this screen's own: while a sheet is open over it, the screen underneath is still
+  // on show behind the sheet and must not lay itself out again for the sheet's path.
+  const at = usePathname();
+  const held = useRef(at);
+  if (useIsFocused()) held.current = at;
+  const pathname = held.current;
   const tabbed = tabFor(pathname) !== null;
-  const top = Math.max(60, insets.top + 16);
+  // A sheet has no status bar above it, only its grabber.
+  const sheet = useSheet();
+  const top = sheet ? SHEET_TOP + 4 : Math.max(60, insets.top + 16);
+  const { width } = useWindowDimensions();
   // The wide layout has the same bars above and below, with wider margins either side of its two panes.
   const wide = useWide();
   const bar = useBar();
   const padTop = tabbed ? insets.top + TOP_NAV_HEIGHT + 16 : top;
   const padEnd = tabbed && !hidesTabBar(pathname) ? bar.room + insets.bottom + 16 : (padBottom ?? Math.max(28, insets.bottom + 12));
   // With room to spare the column is centred rather than stretched.
-  const gutter = useGutter(padX);
+  const column = useGutter(padX);
+  // A sheet floating on a bigger screen is its own column, with margins to suit its width, not the window's.
+  const gutter = sheet ? (Platform.OS === 'web' && width >= 600 ? 40 : padX) : column;
   const content: ViewStyle = wide
     ? {
         flexGrow: 1,
         gap,
-        paddingLeft: insets.left + 40,
-        paddingRight: insets.right + 40,
-        paddingTop: tabbed ? padTop + 8 : Math.max(36, insets.top + 16),
+        paddingLeft: sheet ? 36 : insets.left + 40,
+        paddingRight: sheet ? 36 : insets.right + 40,
+        paddingTop: tabbed ? padTop + 8 : sheet ? SHEET_TOP + 10 : Math.max(36, insets.top + 16),
         paddingBottom: tabbed && !hidesTabBar(pathname) ? padEnd : Math.max(28, insets.bottom + 12),
       }
     : {
@@ -188,11 +204,16 @@ export function Screen({
   );
 }
 
-export function TopBar({ left, right }: { left: ReactNode; right?: ReactNode }) {
+/**
+ * The title row at the top of a screen. `back` puts the one way out in the top-left corner
+ * before the title: a chevron on a pushed screen, a cross on a sheet. Tabs have none.
+ */
+export function TopBar({ left, right, back }: { left: ReactNode; right?: ReactNode; back?: true | Parameters<typeof BackButton>[0] }) {
   return (
-    <View style={s.topbar}>
+    <View style={[s.topbar, back ? { justifyContent: 'flex-start', gap: 2 } : null]}>
+      {back ? <BackButton {...(back === true ? {} : back)} /> : null}
       {typeof left === 'string' ? (
-        <Txt size={26} w="display" style={{ flexShrink: 1 }}>
+        <Txt size={26} w="display" style={{ flexShrink: 1, flexGrow: back ? 1 : 0 }}>
           {left}
         </Txt>
       ) : (
@@ -322,7 +343,7 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
             onPress={() => (o !== value && tick(), onChange(o))}
             style={[s.segment, { borderRadius: inset ? 9 : 10 }, on && { backgroundColor: C.text }]}
           >
-            <Txt size={variant ? 14 : 15} w="semi" color={on ? C.bg : C.muted}>
+            <Txt size={variant ? 14 : 15} w="semi" center color={on ? C.bg : C.muted}>
               {o}
             </Txt>
           </Pressable>
@@ -384,6 +405,7 @@ export function SeekTrack({
   played = C.accent,
   rest = C.waveDim,
   label = 'Position in track',
+  duration,
   disabled,
   style,
 }: {
@@ -396,6 +418,8 @@ export function SeekTrack({
   played?: string;
   rest?: string;
   label?: string;
+  /** The length of the track in seconds, so the position is read out as a time. */
+  duration?: number;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -414,6 +438,8 @@ export function SeekTrack({
   const count = Math.max(8, Math.floor((width + 2) / 5));
   const bars = width > 0 ? waveBars(peaks, count, height, (i) => ((i + 0.5) / count <= shown ? played : rest)) : [];
 
+  // Read out as a time when the length is known: "0:42 of 3:10".
+  const spoken = duration && duration > 0 ? positionText(shown * duration, duration) : percentText(shown);
   const web =
     Platform.OS === 'web'
       ? {
@@ -421,10 +447,11 @@ export function SeekTrack({
           'aria-valuemin': 0,
           'aria-valuemax': 100,
           'aria-valuenow': Math.round(shown * 100),
+          'aria-valuetext': spoken,
           onKeyDown: (e: { key: string; preventDefault: () => void }) => {
             if (disabled) return;
-            if (e.key === 'ArrowRight') (e.preventDefault(), onSeek(Math.min(1, progress + 0.05)));
-            if (e.key === 'ArrowLeft') (e.preventDefault(), onSeek(Math.max(0, progress - 0.05)));
+            if (e.key === 'ArrowRight') (e.preventDefault(), onSeek(stepFraction(progress, 1)));
+            if (e.key === 'ArrowLeft') (e.preventDefault(), onSeek(stepFraction(progress, -1)));
           },
         }
       : {};
@@ -436,8 +463,14 @@ export function SeekTrack({
       accessible
       accessibilityRole="adjustable"
       accessibilityLabel={label}
-      accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100) }}
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100), text: spoken }}
       accessibilityState={{ disabled: !!disabled }}
+      // A flick up or down with VoiceOver moves a twentieth of the track.
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(e) => {
+        const dir = actionDir(e.nativeEvent.actionName);
+        if (dir && !disabled) onSeek(stepFraction(progress, dir));
+      }}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
       onStartShouldSetResponder={() => !disabled}
       onMoveShouldSetResponder={() => !disabled}
@@ -507,23 +540,14 @@ export function Meter({ label, pct, height = 6, accent }: { label?: string; pct:
  */
 export function Pulse({ size = 10, color, on = true }: { size?: number; color: string; on?: boolean }) {
   const glow = useRef(new Animated.Value(1)).current;
+  const still = useReduceMotion();
   useEffect(() => {
-    if (!on) return void glow.setValue(1);
-    let loop: Animated.CompositeAnimation | null = null;
-    let over = false;
-    void AccessibilityInfo.isReduceMotionEnabled()
-      .catch(() => false)
-      .then((still) => {
-        if (over || still) return;
-        const step = (toValue: number) => Animated.timing(glow, { toValue, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: Platform.OS !== 'web' });
-        loop = Animated.loop(Animated.sequence([step(0.35), step(1)]));
-        loop.start();
-      });
-    return () => {
-      over = true;
-      loop?.stop();
-    };
-  }, [on, glow]);
+    if (!on || still) return void glow.setValue(1);
+    const step = (toValue: number) => Animated.timing(glow, { toValue, duration: 650, easing: Easing.inOut(Easing.quad), useNativeDriver: NATIVE });
+    const loop = Animated.loop(Animated.sequence([step(0.35), step(1)]));
+    loop.start();
+    return () => loop.stop();
+  }, [on, still, glow]);
   return <Animated.View accessible={false} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: glow }} />;
 }
 
@@ -540,6 +564,9 @@ export function Slider({
   onChange,
   onCommit,
   reset,
+  detents,
+  text,
+  flick,
   height = 40,
   label,
   display,
@@ -557,6 +584,12 @@ export function Slider({
   onCommit?: (v: number) => void;
   /** Where a double tap puts the slider back to, for controls with a natural rest such as 0 dB. */
   reset?: number;
+  /** Values that are felt as the thumb arrives at them. The resting point is one already. */
+  detents?: readonly number[];
+  /** The value as it is read aloud, in its own units: "−3.5 dB", "0:42 of 3:10". */
+  text?: string;
+  /** How far one flick of VoiceOver, or one arrow key, moves it, when a single step is too small to be useful. */
+  flick?: number;
   height?: number;
   label?: string;
   disabled?: boolean;
@@ -565,6 +598,13 @@ export function Slider({
   const ref = useRef<ComponentRef<typeof View>>(null);
   const box = useRef({ left: 0, width: 1 });
   const lastTap = useRef(0);
+  // A light tap as the thumb reaches the centre or the resting point: once on arriving, not on every move.
+  const stops = detents ?? (reset !== undefined ? [reset] : []);
+  const move = (next: number) => {
+    if (stops.length && reachedDetent(latest.current, next, stops)) tick();
+    latest.current = next;
+    onChange(next);
+  };
   const latest = useRef(value);
   latest.current = value;
   // The touch in progress: where it began, the value then, and whether it has turned out to be a drag or a scroll.
@@ -581,10 +621,7 @@ export function Slider({
   const setFromPage = (pageX: number) => {
     const t = Math.max(0, Math.min(1, (pageX - box.current.left) / box.current.width));
     const next = snap(min + t * (max - min));
-    if (next !== latest.current) {
-      latest.current = next;
-      onChange(next);
-    }
+    if (next !== latest.current) move(next);
   };
   const measure = (then?: () => void) =>
     ref.current?.measureInWindow((x, _y, width) => {
@@ -592,9 +629,8 @@ export function Slider({
       then?.();
     });
   const nudge = (dir: number, big?: boolean) => {
-    const next = snap(latest.current + dir * step * (big ? 10 : 1));
-    latest.current = next;
-    onChange(next);
+    const next = snap(latest.current + dir * (flick ?? step) * (big ? 10 : 1));
+    move(next);
     onCommit?.(next);
   };
 
@@ -606,7 +642,9 @@ export function Slider({
           'aria-valuemin': min,
           'aria-valuemax': max,
           'aria-valuenow': value,
+          'aria-valuetext': text,
           onKeyDown: (e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+            if (disabled) return;
             if (e.key === 'ArrowRight' || e.key === 'ArrowUp') (e.preventDefault(), nudge(1, e.shiftKey));
             if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') (e.preventDefault(), nudge(-1, e.shiftKey));
           },
@@ -621,9 +659,13 @@ export function Slider({
       accessibilityRole="adjustable"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}
-      accessibilityValue={{ min, max, now: value }}
+      // VoiceOver reads `text` when it is given, so a level is heard as "−3.5 dB", not as a bare number.
+      accessibilityValue={text === undefined ? { min, max, now: value } : { min, max, now: value, text }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-      onAccessibilityAction={(e) => nudge(e.nativeEvent.actionName === 'increment' ? 1 : -1)}
+      onAccessibilityAction={(e) => {
+        const dir = actionDir(e.nativeEvent.actionName);
+        if (dir && !disabled) nudge(dir);
+      }}
       onLayout={() => measure()}
       onStartShouldSetResponder={() => !disabled}
       onMoveShouldSetResponder={() => !disabled}
@@ -655,8 +697,7 @@ export function Slider({
           else {
             const next = snap(latest.current + ((e.nativeEvent.pageX - g.lastX) / box.current.width) * (max - min) * fine);
             if (next !== latest.current) {
-              latest.current = next;
-              onChange(next);
+              move(next);
               g.lastX = e.nativeEvent.pageX;
             }
           }
@@ -745,14 +786,33 @@ export function SliderRow({
   minHeight?: number;
   fontSize?: number;
 }) {
+  const scale = useTextScale();
+  // At the largest text sizes the label and the value no longer fit beside the track: they go
+  // above it on a line of their own, and the track gets the full width.
+  if (useLargeText())
+    return (
+      <View style={{ paddingTop: 6 }}>
+        <View style={[s.row, s.between]}>
+          <Txt size={fontSize} style={{ flexShrink: 1 }}>
+            {label}
+          </Txt>
+          {display !== undefined && (
+            <Txt size={13} color={C.muted} right>
+              {display}
+            </Txt>
+          )}
+        </View>
+        <Slider label={label} text={display} value={value} min={min} max={max} step={step} display={display} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} />
+      </View>
+    );
   return (
     <View style={[s.row, { minHeight }]}>
-      <Txt size={fontSize} style={{ width: labelWidth }}>
+      <Txt size={fontSize} style={{ width: Math.round(labelWidth * scale) }}>
         {label}
       </Txt>
-      <Slider label={label} value={value} min={min} max={max} step={step} display={display} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
+      <Slider label={label} text={display} value={value} min={min} max={max} step={step} display={display} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
       {display !== undefined && (
-        <Txt size={13} color={C.muted} right style={{ width: valueWidth }}>
+        <Txt size={13} color={C.muted} right style={{ width: Math.round(valueWidth * scale) }}>
           {display}
         </Txt>
       )}
@@ -811,13 +871,15 @@ export function Option({
   w?: Weight;
 }) {
   const box = <Check checked={checked} round={radio} size={radio ? 20 : 22} />;
+  // With large text the hint goes under the label instead of squeezing it from the right.
+  const large = useLargeText();
   return (
     <Pressable
       accessibilityRole={radio ? 'radio' : 'checkbox'}
       accessibilityState={{ checked }}
       accessibilityLabel={label}
       onPress={() => onChange(radio ? true : !checked)}
-      style={[s.row, { minHeight, gap: boxFirst ? 12 : 14 }, divided && s.divided]}
+      style={[s.row, { minHeight, gap: boxFirst ? 12 : 14 }, large && { paddingVertical: 8 }, divided && s.divided]}
     >
       {boxFirst && box}
       <View style={{ flex: 1, gap: 2 }}>
@@ -825,8 +887,9 @@ export function Option({
           {label}
         </Txt>
         {sub ? <Txt size={13} color={C.muted}>{sub}</Txt> : null}
+        {hint && large ? <Txt size={13} color={C.muted}>{hint}</Txt> : null}
       </View>
-      {hint ? (
+      {hint && !large ? (
         <Txt size={13} color={C.muted}>
           {hint}
         </Txt>
@@ -837,22 +900,24 @@ export function Option({
 }
 
 export function Disclosure({ title, summary, open, onToggle, last, children, size = 16 }: { title: string; summary: string; open: boolean; onToggle: () => void; last?: boolean; children?: ReactNode; size?: number }) {
+  // With large text the summary goes under the title, in full, instead of being cut short beside it.
+  const large = useLargeText();
   return (
     <>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         onPress={onToggle}
-        style={[s.row, { minHeight: 48, justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.line }, last && !open && s.divided]}
+        style={[s.row, { minHeight: 48, justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.line }, large && { flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 2, paddingVertical: 10 }, last && !open && s.divided]}
       >
         <Txt size={size} w="semi">
           {title}
         </Txt>
-        <Txt size={13} color={C.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
+        <Txt size={13} color={C.muted} numberOfLines={large ? undefined : 1} style={{ flexShrink: 1 }}>
           {summary}
         </Txt>
       </Pressable>
-      {open && children}
+      <Collapse open={open}>{children}</Collapse>
     </>
   );
 }
@@ -861,14 +926,15 @@ export function Disclosure({ title, summary, open, onToggle, last, children, siz
 
 export function Field(props: TextInputProps & { label?: string }) {
   const { label, style, ...rest } = props;
+  const drawn = useDrawScale();
   return (
     <TextInput
-      maxFontSizeMultiplier={1.4}
+      maxFontSizeMultiplier={MAX_TEXT_SCALE}
       accessibilityLabel={label}
       placeholderTextColor={C.muted}
       selectionColor={C.accent}
       {...rest}
-      style={[s.field, Platform.OS === 'web' && ({ outlineColor: C.accent } as object), style]}
+      style={[s.field, drawn !== 1 && { fontSize: 16 * drawn }, Platform.OS === 'web' && ({ outlineColor: C.accent } as object), style]}
     />
   );
 }
@@ -928,13 +994,18 @@ export function SkipIcon({ size = 26, color = C.text, back }: { size?: number; c
 }
 
 /** The record/stop control: a ring with a red square (stop) or red disc (record). */
-export function StopButton({ size = 96, recording = true, onPress, halo, label, disabled }: { size?: number; recording?: boolean; onPress?: () => void; halo?: boolean; label: string; disabled?: boolean }) {
+export function StopButton({ size = 96, recording = true, live, onPress, halo, label, disabled }: { size?: number; recording?: boolean; /** Sound is being recorded right now: a ring spreads from the button. */ live?: boolean; onPress?: () => void; halo?: boolean; label: string; disabled?: boolean }) {
   const inner = Math.round(size * 0.35);
+  const disc = inner * 1.5;
+  // The red disc shrinks into the stop square, and back, instead of swapping.
+  const at = useGlide(recording);
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ opacity: disabled ? 0.35 : pressed ? 0.8 : 1 })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ opacity: disabled ? 0.35 : pressed ? 0.8 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] })}>
       <View style={[halo && { padding: 10, borderRadius: size, backgroundColor: C.recHalo }]}>
         <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: size > 110 ? 4 : 3, borderColor: C.text, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: recording ? inner : inner * 1.5, height: recording ? inner : inner * 1.5, borderRadius: recording ? Math.round(inner * 0.23) : inner, backgroundColor: C.rec }} />
+          <Halo on={!!live && !disabled} size={size} color={C.rec} />
+          <Animated.View style={{ position: 'absolute', width: disc, height: disc, borderRadius: disc / 2, backgroundColor: C.rec, opacity: at.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [1, inner / disc] }) }] }} />
+          <Animated.View style={{ width: inner, height: inner, borderRadius: Math.round(inner * 0.23), backgroundColor: C.rec, opacity: at, transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [disc / inner, 1] }) }] }} />
         </View>
       </View>
     </Pressable>
@@ -951,7 +1022,7 @@ export const s = StyleSheet.create({
   card: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 20, padding: 20, gap: 14 },
   btn: { alignItems: 'center', justifyContent: 'center', borderRadius: 16, minHeight: 56, paddingHorizontal: 16 },
   segmented: { flexDirection: 'row', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 4, gap: 4 },
-  segment: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  segment: { flex: 1, minHeight: 44, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center' },
   chip: { minHeight: 44, paddingHorizontal: 14, borderRadius: 22, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   field: { minHeight: 48, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, color: C.text, fontFamily: F.regular, fontSize: 16 },
 });

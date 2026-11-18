@@ -10,6 +10,7 @@ import type { useSong } from '@/data/song';
 import { biquad, responseDb } from '@/dsp/core';
 import { DEFAULT_ROOM_CUT, MASTER_STYLES, styleReverb, summarise, type Band, type Chain, type MasterSettings, type Send } from '@/dsp/presets';
 import { Btn, Chip, Disclosure, Muted, NavLink, Segmented, SliderRow, Txt, s } from './kit';
+import { actionDir, stepFrequency, stepValue } from './spoken';
 import { C, db } from './theme';
 import { useWide } from './wide';
 
@@ -65,6 +66,13 @@ function Curve({ bands, selected, height = 92, onSelect, onMove, onDone }: { ban
     drag.current = null;
     if (g?.to) onDone(g.i, g.to);
   };
+  // Without a finger on the point: VoiceOver's flick up and down changes the gain by half a dB,
+  // and its actions move the frequency a third of an octave. A keyboard's arrows do the same.
+  const nudge = (i: number, by: { gain?: 1 | -1; freq?: 1 | -1 }) => {
+    const band = bands[i];
+    onSelect(i);
+    onDone(i, { freq: by.freq ? stepFrequency(band.freq, by.freq) : band.freq, gain: by.gain ? stepValue(band.gain, by.gain, 0.5, -GAIN, GAIN) : band.gain });
+  };
 
   return (
     <View style={{ height: H }} onLayout={(e) => e.nativeEvent.layout.width > 0 && setW(e.nativeEvent.layout.width)}>
@@ -80,8 +88,28 @@ function Curve({ bands, selected, height = 92, onSelect, onMove, onDone }: { ban
           key={i}
           accessible
           accessibilityRole="adjustable"
-          accessibilityLabel={`Curve point ${i + 1}`}
+          accessibilityLabel={`Curve point ${i + 1} of ${bands.length}`}
+          accessibilityHint="Swipe up or down to change the gain. The actions move the frequency."
           accessibilityValue={{ text: `${hz(bands[i].freq)}, ${db(bands[i].gain, 1)}` }}
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }, { name: 'higher', label: 'Higher frequency' }, { name: 'lower', label: 'Lower frequency' }, { name: 'activate' }]}
+          onAccessibilityAction={(e) => {
+            const name = e.nativeEvent.actionName;
+            const dir = actionDir(name);
+            if (dir) nudge(i, { gain: dir });
+            else if (name === 'higher' || name === 'lower') nudge(i, { freq: name === 'higher' ? 1 : -1 });
+            else onSelect(i);
+          }}
+          {...((Platform.OS === 'web'
+            ? {
+                tabIndex: 0,
+                'aria-valuetext': `${hz(bands[i].freq)}, ${db(bands[i].gain, 1)}`,
+                onFocus: () => onSelect(i),
+                onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+                  const move = ({ ArrowUp: { gain: 1 }, ArrowDown: { gain: -1 }, ArrowRight: { freq: 1 }, ArrowLeft: { freq: -1 } } as const)[e.key as 'ArrowUp'];
+                  if (move) (e.preventDefault(), nudge(i, move));
+                },
+              }
+            : {}) as object)}
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
           onResponderTerminationRequest={() => false}

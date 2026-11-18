@@ -5,7 +5,7 @@ import { Redirect } from 'expo-router';
 import { activeTake, patchProject, useProject } from '@/data/store';
 import { useSong } from '@/data/song';
 import { MASTER_STYLES, type MasterSettings } from '@/dsp/presets';
-import { Btn, Card, Chip, Eyebrow, Foot, NavLink, Screen, Segmented, Slider, SliderRow, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Eyebrow, Foot, Screen, Segmented, Slider, SliderRow, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
 import { MiniTransport } from '@/ui/parts';
 import { C, db, lufs } from '@/ui/theme';
@@ -64,7 +64,7 @@ export default function Master() {
             {master.amount}%
           </Txt>
         </View>
-        <Slider label="Intensity" display={`${master.amount}%`} value={master.amount} min={0} max={100} step={1} height={wide ? 44 : 32} onChange={(amount) => setDraft({ ...draft, amount })} onCommit={(amount) => commit({ amount })} />
+        <Slider label="Intensity" display={`${master.amount}%`} text={`${master.amount}%`} value={master.amount} min={0} max={100} step={1} height={wide ? 44 : 32} onChange={(amount) => setDraft({ ...draft, amount })} onCommit={(amount) => commit({ amount })} />
       </View>
   );
 
@@ -106,7 +106,7 @@ export default function Master() {
   const next = project.saved ? <Btn label="Done" to="/player" back disabled={!mix} /> : <Btn label="Save to the Vault" to="/cover?finish=1" disabled={!mix} />;
 
   // Back returns to wherever mastering was opened from: the mix, the beat's details, or the player.
-  const top = <TopBar left="Master" right={<NavLink to={project.saved ? '/player' : project.takeId ? '/playback' : '/song'} back>Back</NavLink>} />;
+  const top = <TopBar back={{ to: project.saved ? '/player' : project.takeId ? '/playback' : '/song' }} left="Master" />;
 
   // Wide: listening and what the master did on the left, the controls and the last step on the right.
   if (wide)

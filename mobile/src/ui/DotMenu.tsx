@@ -3,6 +3,7 @@ import { Modal, Pressable, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { Txt } from './kit';
+import { Pop } from './motion';
 import { C } from './theme';
 
 export type MenuItem = {
@@ -48,11 +49,13 @@ export function DotMenu({ label, items }: { label: string; items: MenuItem[] }) 
           <Circle cx={19} cy={12} r={1.9} fill={C.muted} />
         </Svg>
       </Pressable>
-      <Modal visible={!!at} transparent animationType="fade" onRequestClose={close}>
+      <Modal visible={!!at} transparent animationType="none" onRequestClose={close}>
         {/* A tap anywhere else puts the menu away. */}
         <Pressable accessibilityLabel="Close menu" onPress={close} style={{ flex: 1 }}>
           {at && (
-            <View accessibilityRole="menu" style={{ position: 'absolute', top: at.top, right: at.right, minWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingVertical: 6, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
+            // It grows out of the dots that opened it.
+            <Pop style={{ position: 'absolute', top: at.top, right: at.right }}>
+            <View accessibilityRole="menu" style={{ minWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingVertical: 6, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
               {items.map((item) => (
                 <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={sure === item.label ? `Sure? ${item.label}` : item.label} onPress={() => choose(item)} style={({ pressed }) => ({ minHeight: 46, paddingHorizontal: 16, justifyContent: 'center', opacity: pressed ? 0.55 : 1 })}>
                   <Txt size={16} w="medium" color={item.confirm ? C.recText : C.text}>
@@ -61,6 +64,7 @@ export function DotMenu({ label, items }: { label: string; items: MenuItem[] }) 
                 </Pressable>
               ))}
             </View>
+            </Pop>
           )}
         </Pressable>
       </Modal>

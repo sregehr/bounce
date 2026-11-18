@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 
@@ -13,6 +13,7 @@ import type { Captured } from '@/engine/types';
 import { Bars, Card, Chip, Eyebrow, Pulse, Foot, Meter, Muted, NavLink, Screen, StopButton, Txt, s, type Bar } from '@/ui/kit';
 import { success, thump } from '@/ui/haptics';
 import { useOnScreen, useRecordingGuard } from '@/ui/hooks';
+import { BackButton } from '@/ui/nav';
 import { C, clock, db, meterPct, rateLabel } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
@@ -31,10 +32,12 @@ export default function Record() {
   const [failed, setFailed] = useState<Captured | null>(null);
   const recording = cap.status === 'recording';
   useRecordingGuard(recording || saving || !!failed);
-  // The capture starting by itself at the first sound, and stopping, can each be felt.
+  // The capture starting by itself at the first sound, and stopping, can each be felt. Arriving on the screen is neither.
+  const wasRecording = useRef(false);
   useEffect(() => {
-    if (cap.status !== 'armed') thump();
-  }, [cap.status]);
+    if (recording !== wasRecording.current) thump();
+    wasRecording.current = recording;
+  }, [recording]);
   const wide = useWide();
 
   useOnScreen(() => {
@@ -111,6 +114,8 @@ export default function Record() {
   const status = (
     <View style={s.topbar}>
       <View style={[s.row, { gap: 10 }]}>
+        {/* Back is there while it is only armed. Once sound is being captured the way out is the stop button, which keeps it. */}
+        {!recording && !saving && !failed && <BackButton to="/capture" style={{ marginRight: -6 }} />}
         <Pulse size={10} color={recording ? C.rec : C.accent} on={recording && !saving} />
         <Eyebrow size={13} color={recording ? C.recText : C.accent}>
           {saving ? 'Saving' : recording ? 'Recording' : 'Armed'}
@@ -157,7 +162,7 @@ export default function Record() {
     </Card>
   );
 
-  const stop = <StopButton size={wide ? 112 : 96} label={failed ? 'Discard capture' : recording ? 'Stop recording' : 'Cancel'} onPress={failed ? discard : finish} disabled={saving} />;
+  const stop = <StopButton size={wide ? 112 : 96} live={recording} label={failed ? 'Discard capture' : recording ? 'Stop recording' : 'Cancel'} onPress={failed ? discard : finish} disabled={saving} />;
   const hint = failed
     ? 'The round button discards this capture and listens for a new one.'
     : recording

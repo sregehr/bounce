@@ -14,6 +14,7 @@ import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Tx
 import { useStopOnLeave, useTransport } from '@/ui/hooks';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
 import { C, clock, dayLabel, lufs } from '@/ui/theme';
+import { useRowLines } from '@/ui/type';
 import { TOP_NAV_HEIGHT } from '@/ui/tabs';
 import { useBar, useWide } from '@/ui/wide';
 
@@ -108,6 +109,8 @@ export default function Vault() {
   const [query, setQuery] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
   const wide = useWide();
+  // With large text a song's name and details wrap instead of being cut short.
+  const lines = useRowLines();
   // Both panes of the wide layout scroll under the bars above and below, and end clear of them.
   const bar = useBar();
   const insets = useSafeAreaInsets();
@@ -208,10 +211,10 @@ export default function Vault() {
                       <CoverImage project={p} size={cell - 6} radius={18} />
                     </View>
                     <View style={{ gap: 3 }}>
-                      <Txt size={16} w="semi" numberOfLines={1}>
+                      <Txt size={16} w="semi" numberOfLines={lines}>
                         {p.name}
                       </Txt>
-                      <Txt size={13} color={C.muted} numberOfLines={1}>
+                      <Txt size={13} color={C.muted} numberOfLines={lines}>
                         {meta(p)}
                       </Txt>
                       <Txt size={12} w="semi" color={C.accent} numberOfLines={1}>
@@ -274,10 +277,10 @@ export default function Vault() {
                 )}
               </View>
               <View style={{ flex: 1, gap: 3 }}>
-                <Txt size={16} w="semi" numberOfLines={1}>
+                <Txt size={16} w="semi" numberOfLines={lines}>
                   {p.name}
                 </Txt>
-                <Txt size={13} color={C.muted} numberOfLines={1}>
+                <Txt size={13} color={C.muted} numberOfLines={lines}>
                   {meta(p)}
                 </Txt>
                 <Txt size={12} w="semi" color={C.accent} numberOfLines={1}>

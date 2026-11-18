@@ -12,6 +12,7 @@ import { artistNamed, artistsIn } from '@/data/artists';
 import { dropBlob, finishSong, patchProject, saveArtist, setProfile, setSongArtist, update, useLibrary, useProject } from '@/data/store';
 import { Btn, Chip, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
+import { asSheet, useSheet } from '@/ui/nav';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
@@ -20,7 +21,7 @@ const LABEL: Record<SceneId | 'ai', string> = { photo: 'As taken', studio: 'Stud
 type Picture = { blob: Blob; url: string };
 type Made = Record<SceneId, Picture>;
 
-export default function Cover() {
+function Cover() {
   const project = useProject();
   // The last step of finishing a song: name it, choose its cover, and save it to the Vault.
   const finishing = !!useLocalSearchParams<{ finish?: string }>().finish && !project?.saved;
@@ -32,6 +33,7 @@ export default function Cover() {
   // The producer is the person holding the phone, so the credit carries over to the next song.
   const producer = useLibrary((l) => l.profile.producer);
   const task = useTask();
+  const sheet = useSheet();
   const [made, setMade] = useState<Made | null>(null);
   // A scene made from a description. It is kept apart from the drawn ones, and needs no photo.
   const [ai, setAi] = useState<Picture | null>(null);
@@ -142,7 +144,8 @@ export default function Cover() {
         patchProject(project.id, (p) => ({ cover: { ...p.cover, scene, imageKey } }));
         if (old) void dropBlob(old);
       }
-      if (!finishing) return router.replace('/player');
+      // Changing a cover closes the sheet, back to the player or the Vault it was opened from.
+      if (!finishing) return sheet ? sheet.close() : router.replace('/player');
       // The finished song opens in the Player, one level above Home like any tab.
       finishSong(project.id, title);
       if (router.canDismiss()) router.dismissAll();
@@ -155,7 +158,7 @@ export default function Cover() {
   const profiles = artistsIn(library);
   const recent = [...new Set(others.map((p) => p.artist?.trim()).filter((n): n is string => !!n && n !== project.artist?.trim() && !artistNamed(library, n)))].slice(0, 4);
   const typed = project.artist?.trim() ?? '';
-  const top = <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to={project.takeId ? '/playback' : '/master'} back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />;
+  const top = <TopBar back left={finishing ? 'Finish song' : 'Cover art'} />;
 
   const fields = (
     <>
@@ -341,3 +344,6 @@ export default function Cover() {
     </Screen>
   );
 }
+
+// A sheet over the player or the Vault; as the last step of finishing a song, over the mix or the master.
+export default asSheet(Cover, { fallback: '/vault' });

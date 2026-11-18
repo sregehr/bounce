@@ -11,6 +11,12 @@ export type RecordControl = {
   press: () => void;
 };
 
+/**
+ * What the bar's mic should be. A take in progress comes before everything else: the button must
+ * always stop it, even when the microphone has dropped out from under it.
+ */
+export const recordState = (live: boolean, mode: 'idle' | 'listening' | 'recording'): RecordControl['state'] => (mode === 'recording' ? 'recording' : live ? 'ready' : 'off');
+
 let current: RecordControl | null = null;
 const listeners = new Set<() => void>();
 

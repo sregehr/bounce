@@ -10,6 +10,7 @@ import { artistOf } from '@/data/songs';
 import { linkNotes, linksAvailable, makeLink, removeLink, type Note } from '@/data/shares';
 import { useSong } from '@/data/song';
 import { aacSupported } from '@/dsp/aac';
+import { stopTransport } from '@/engine/engine';
 import { Btn, Card, Chip, Eyebrow, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
 import { C, clock, lufs, plural } from '@/ui/theme';
@@ -49,6 +50,8 @@ export default function Export() {
     task.run(async () => {
       setDone(null);
       song.pause();
+      // Rendering needs the room: the copy of the song loaded for playing here is let go, and loads again on Play.
+      if (!ready) stopTransport();
       const files = ready ?? (await exportFiles(project, setStage));
       setStage('');
       if (how === 'save') {
@@ -76,7 +79,7 @@ export default function Export() {
             {[clock(song.mix?.durationSec ?? project.stats?.durationSec ?? project.beat.durationSec), take ? 'beat and vocals' : 'beat only', project.overrides.master ? 'set by hand' : project.master.style, song.mix ? lufs(song.mix.lufs) : null].filter(Boolean).join(' · ')}
           </Txt>
         </View>
-        <RoundPlay playing={song.t.playing} onPress={song.toggle} disabled={!song.t.loaded} />
+        <RoundPlay playing={song.t.playing} onPress={song.toggle} disabled={!song.t.loaded && !song.mix} />
       </Card>
   );
 

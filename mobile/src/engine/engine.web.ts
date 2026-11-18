@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { analyseClaps, analyseClicks, clickTrainSeconds, makeClickTrain, TAPS, tapTrainSeconds, type LatencyResult } from '@/dsp/latency';
+import { decodeRate, sniffAudio, SNIFF_BYTES } from '@/dsp/sniff';
 import { parseWav } from '@/dsp/wav';
 
 import type { Captured, EngineState, InputDevice, PlayOptions, RecordedTake, ClapRun } from './types';
@@ -263,10 +264,25 @@ async function doOpen(deviceId: string | null | undefined, prefer: 'gear' | 'mic
     const track = s.getAudioTracks()[0];
     const settings = track.getSettings();
     track.onended = () => {
-      // Keep whatever was being captured when the cable came out.
+      // Keep whatever was being captured when the cable came out, and whatever a take had got to.
       salvaged = stopCapture();
+      loseTake('disconnected');
       closeInput(true);
-      set('input', { status: 'idle', error: 'The input was disconnected.', levelL: 0, levelR: 0 });
+      set('input', { status: 'idle', error: 'The input was disconnected.', levelL: 0, levelR: 0, muted: false });
+    };
+    // A muted track keeps sending blocks, all silence: a hardware mute switch, or a call taking the
+    // microphone. Brief blips are let through; a mute that lasts ends the take where it was.
+    track.onmute = () => {
+      clearTimeout(muteTimer);
+      muteTimer = setTimeout(() => {
+        if (stream?.getAudioTracks()[0] !== track || !track.muted) return;
+        set('input', { muted: true });
+        loseTake('muted');
+      }, MUTE_GRACE_MS);
+    };
+    track.onunmute = () => {
+      clearTimeout(muteTimer);
+      if (stream?.getAudioTracks()[0] === track) set('input', { muted: false });
     };
     // Match the device rate so nothing is resampled on the way in, unless something is playing.
     const idle = !state.transport.playing && state.take.mode === 'idle';
@@ -282,7 +298,9 @@ async function doOpen(deviceId: string | null | undefined, prefer: 'gear' | 'mic
       sampleRate: c.sampleRate,
       channels: settings.channelCount ?? 0,
       pair: 0,
+      muted: false,
     });
+    if (track.muted) track.onmute?.(new Event('mute'));
   } catch (e) {
     closeInput(true);
     set('input', { status: 'error', error: describe(e) });
@@ -290,6 +308,10 @@ async function doOpen(deviceId: string | null | undefined, prefer: 'gear' | 'mic
 }
 
 let salvaged: Captured | null = null;
+/** Said wherever a take cannot start, or has stopped, because the microphone is sending nothing. */
+const MUTED = 'The microphone is muted. Unmute it, or end the call that is using it, then try again.';
+let muteTimer: ReturnType<typeof setTimeout> | undefined;
+const MUTE_GRACE_MS = 1000;
 
 /** A capture that was cut short by the input disconnecting, handed over once. */
 export function takeSalvaged(): Captured | null {
@@ -301,12 +323,15 @@ export function takeSalvaged(): Captured | null {
 export function closeInput(quiet = false) {
   cancelCapture();
   detachInput();
+  clearTimeout(muteTimer);
   stream?.getTracks().forEach((t) => {
     t.onended = null;
+    t.onmute = null;
+    t.onunmute = null;
     t.stop();
   });
   stream = null;
-  if (!quiet) set('input', { status: 'idle', error: null, levelL: 0, levelR: 0 });
+  if (!quiet) set('input', { status: 'idle', error: null, levelL: 0, levelR: 0, muted: false });
 }
 
 export function setPair(pair: number) {
@@ -322,7 +347,7 @@ let frames = 0;
 let barPeak = 0;
 let barBlocks = 0;
 
-type TakeRun = { mode: 'listening' | 'recording'; startFrame: number; loopFrames: number | null; blocks: Block[]; held: number; peak: number; clipped: boolean; beat: AudioBufferSourceNode; clicks: OscillatorNode[] };
+type TakeRun = { mode: 'listening' | 'recording'; lost?: boolean; startFrame: number; loopFrames: number | null; blocks: Block[]; held: number; peak: number; clipped: boolean; beat: AudioBufferSourceNode; clicks: OscillatorNode[] };
 let run: TakeRun | null = null;
 let probe: { startFrame: number; need: number; blocks: Block[]; got: number; done: (heard: Float32Array) => void } | null = null;
 
@@ -355,6 +380,8 @@ function onBlock(msg: { peaks: Float32Array; l: Float32Array; r: Float32Array; p
   }
 
   if (run) {
+    // After the microphone has gone, what still arrives is silence; the take ends where it was.
+    if (run.lost) return;
     if (frame + l.length > run.startFrame) {
       run.blocks.push({ l, r, frame });
       run.held += l.length;
@@ -651,6 +678,7 @@ function monoFrom(blocks: Block[], startFrame: number, limit?: number): { mono: 
  */
 export async function startTake(mode: 'listening' | 'recording', beat: { channels: Float32Array[]; sampleRate: number }, loop: { start: number; end: number } | null, countIn?: { beats: number; beatSec: number }) {
   if (state.input.status !== 'ready') throw new Error('Connect a microphone first.');
+  if (state.input.muted) throw new Error(MUTED);
   endRun();
   stopTransport();
   // Run the audio clock at the beat's own rate, so the take is recorded at that rate too.
@@ -698,19 +726,19 @@ export async function startTake(mode: 'listening' | 'recording', beat: { channel
     beat: src,
     clicks,
   };
-  set('take', { mode, elapsed: 0, lead, held: 0, level: 0, clipped: false, ended: false });
+  set('take', { mode, elapsed: 0, lead, held: 0, level: 0, clipped: false, ended: false, lost: null });
 }
 
-function endRun() {
-  if (!run) return;
-  run.beat.onended = null;
+/** Stops the beat, and silences any count-in still to come. */
+function silenceRun(r: TakeRun) {
+  r.beat.onended = null;
   try {
-    run.beat.stop();
+    r.beat.stop();
   } catch {
     // Already stopped.
   }
-  run.beat.disconnect();
-  for (const click of run.clicks) {
+  r.beat.disconnect();
+  for (const click of r.clicks) {
     try {
       click.stop();
     } catch {
@@ -718,6 +746,22 @@ function endRun() {
     }
     click.disconnect();
   }
+}
+
+/**
+ * The microphone went away mid-take. The beat stops, so nobody carries on into a dead microphone,
+ * and what was recorded so far stays in hand: `stopTake` still returns it.
+ */
+function loseTake(why: 'disconnected' | 'muted') {
+  if (!run || run.lost) return;
+  run.lost = true;
+  silenceRun(run);
+  set('take', { lost: why, level: 0 });
+}
+
+function endRun() {
+  if (!run) return;
+  silenceRun(run);
   run = null;
 }
 
@@ -725,12 +769,12 @@ function endRun() {
 export function stopTake(keep = true): RecordedTake | null {
   const r = run;
   if (!r || !ctx) {
-    set('take', { mode: 'idle', ended: false, lead: 0 });
+    set('take', { mode: 'idle', ended: false, lead: 0, lost: null });
     return null;
   }
   const rate = ctx.sampleRate;
   endRun();
-  set('take', { mode: 'idle', ended: false, level: 0, lead: 0 });
+  set('take', { mode: 'idle', ended: false, level: 0, lead: 0, lost: null });
   if (!keep || r.blocks.length === 0) return null;
   const { mono, firstFrame } = monoFrom(r.blocks, r.startFrame);
   if (mono.length < rate * 0.2) return null;
@@ -811,12 +855,27 @@ export async function measureLatency(): Promise<LatencyResult> {
 
 // ---------- Decoding ----------
 
-/** Decodes any audio file the browser understands. Our own WAVs are read directly, at their own rate. */
+/**
+ * Decodes any audio file the browser understands. Our own WAVs are read directly, at their own rate.
+ * Everything else is decoded away from the live audio clock, at 44.1 or 48 kHz to suit the file:
+ * the live clock follows the microphone, and after a headset microphone it can be running at
+ * 16 or 24 kHz, which is no rate to keep a beat at.
+ */
 export async function decode(data: ArrayBuffer): Promise<{ channels: Float32Array[]; sampleRate: number }> {
   const wav = parseWav(data);
   if (wav) return { channels: wav.channels.slice(0, 2), sampleRate: wav.sampleRate };
-  const c = await context();
-  const decoded = await c.decodeAudioData(data.slice(0));
+  const bytes = new Uint8Array(data);
+  const rate = decodeRate(sniffAudio(bytes.subarray(0, SNIFF_BYTES), bytes.length, bytes.subarray(Math.max(0, bytes.length - SNIFF_BYTES))).sampleRate);
+  let c: BaseAudioContext;
+  try {
+    c = new OfflineAudioContext(2, 1, rate);
+  } catch {
+    // A browser with no offline decoder: the live clock is better than not opening the file.
+    c = await context();
+  }
+  // The decoder takes the buffer for itself, which no caller minds, and which saves a copy of the file.
+  // Older Safari only takes callbacks; newer browsers return a promise as well.
+  const decoded = await new Promise<AudioBuffer>((resolve, reject) => void c.decodeAudioData(data, resolve, reject)?.then(resolve, reject));
   const channels: Float32Array[] = [];
   for (let i = 0; i < Math.min(2, decoded.numberOfChannels); i++) channels.push(decoded.getChannelData(i).slice());
   return { channels, sampleRate: decoded.sampleRate };

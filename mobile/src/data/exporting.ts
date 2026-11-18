@@ -4,7 +4,7 @@ import { encodeWav } from '@/dsp/wav';
 import type { OutFile } from './files';
 import type { ExportChoice, Project } from './model';
 import { activeTake } from './store';
-import { getMix } from './studio';
+import { getMix, keepOnlyMix } from './studio';
 
 export const LOUDNESS: Record<ExportChoice['loudness'], number | undefined> = { streaming: -14, loud: -9, mastered: undefined };
 
@@ -19,14 +19,20 @@ export async function exportFiles(project: Project, onStage?: (stage: string) =>
   const base = fileBase(project.name);
   const take = activeTake(project);
   const out: OutFile[] = [];
+  // A long song is about 90 MB a copy, so an export makes room first and then works on one file
+  // at a time. Other mixes are let go of; the one that plays on the Export screen is the song
+  // itself at the chosen loudness, so that one stays and is not rendered twice.
+  keepOnlyMix(project, { targetLufs: target });
   const add = async (suffix: string, include: 'mix' | 'instrumental' | 'vocals', stage: string) => {
     onStage?.(stage);
     // Stems for mixing stay at their own level; everything else goes to the chosen loudness.
-    const mix = await getMix(project, { include, targetLufs: include === 'vocals' ? undefined : target });
+    // The extras are rendered for this file alone and not kept, so each is freed before the next.
+    const mix = await getMix(project, { include, targetLufs: include === 'vocals' ? undefined : target }, undefined, { keep: include === 'mix' });
+    // Each finished file is handed to the browser as a Blob straight away, which takes it out of the page's own memory.
     if (choice.format === 'm4a') {
       onStage?.(`${stage}: making it small`);
-      out.push({ name: `${base}${suffix}.m4a`, data: await encodeM4a(mix.channels, mix.sampleRate), type: 'audio/mp4' });
-    } else out.push({ name: `${base}${suffix}.wav`, data: encodeWav(mix.channels, mix.sampleRate, bits), type: 'audio/wav' });
+      out.push({ name: `${base}${suffix}.m4a`, data: new Blob([await encodeM4a(mix.channels, mix.sampleRate)], { type: 'audio/mp4' }), type: 'audio/mp4' });
+    } else out.push({ name: `${base}${suffix}.wav`, data: new Blob([encodeWav(mix.channels, mix.sampleRate, bits)], { type: 'audio/wav' }), type: 'audio/wav' });
   };
   if (take) await add('', 'mix', 'Rendering the song');
   if (!take || choice.instrumental) await add(take ? ' (instrumental)' : '', 'instrumental', 'Rendering the instrumental');

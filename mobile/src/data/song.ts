@@ -30,27 +30,32 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     else if (started.current) setTook((Date.now() - started.current) / 1000);
   }, [state.busy]);
 
+  // Screens stay alive underneath the one on show; only the one in view drives the audio.
+  const focused = useIsFocused();
+
   useEffect(() => {
     setRaw(null);
-    if (!project || !rawKey) return;
+    // A screen underneath lets go of its untouched version, which is as big as the song and quick to make again.
+    if (!project || !rawKey || !focused) return;
     let live = true;
     getRaw(project).then((r) => live && setRaw(r), () => {});
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawKey]);
+  }, [rawKey, focused]);
 
-  // Screens stay alive underneath the one on show; only the one in view drives the audio.
-  const focused = useIsFocused();
   const wasFocused = useRef(false);
+  // Coming back to the screen is remembered until the song is loaded, which may wait on the untouched version.
+  const returning = useRef(false);
   useEffect(() => {
     const mix = state.mix;
-    const returning = focused && !wasFocused.current && !first.current;
+    if (focused && !wasFocused.current && !first.current) returning.current = true;
     wasFocused.current = focused;
     if (!focused || !mix || (options.compare && !raw)) return;
     // Plays by itself the first time; coming back to the screen loads it paused.
-    const autoplay = wanted.current ? true : first.current ? options.autoplay !== false : returning ? false : undefined;
+    const autoplay = wanted.current ? true : first.current ? options.autoplay !== false : returning.current ? false : undefined;
+    returning.current = false;
     wanted.current = false;
     first.current = false;
     load(autoplay);

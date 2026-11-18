@@ -892,6 +892,8 @@ async function finish() {
   log(await state(() => ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Song')), 'the player is full screen');
   await tap('Close the player');
   await expectText(IN_VAULT, 'closing the player returns to the Vault');
+  // On a wide screen the Vault shows around the player's card, so its text is there before the card has gone.
+  log(await page.waitForFunction(() => location.pathname !== '/player', { timeout: 5000 }).then(() => true, () => false), 'and the player itself is gone');
   // The finished song is its own copy: the beat keeps all three takes.
   await tap('Song');
   await expectText('3 takes', 'Song opens the beat the finished song came from', 10000);

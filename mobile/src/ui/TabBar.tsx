@@ -11,6 +11,7 @@ import { openInput, useEngine } from '@/engine/engine';
 import { Btn, MicIcon, Muted, Txt } from './kit';
 import { Logo } from './Logo';
 import { PersonalMenu } from './PersonalMenu';
+import { useArtistViewOpen } from './artistViewOpen';
 import { askForMic, useAskingForMic, useRecordControl } from './recordControl';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor, type Tab } from './tabs';
 import { useBar, useGutter, useWide } from './wide';
@@ -125,8 +126,10 @@ function useNav() {
   const recording = useEngine((e) => e.take.mode !== 'idle' || e.capture.status !== 'idle');
   // Leaving the mic screen would drop a take that has not been saved yet, so the tabs wait for that too.
   const holding = !!useRecordControl()?.holding;
+  // The artist view has the mic screen to itself.
+  const booth = useArtistViewOpen() && path === '/vocals';
   const tab = tabFor(path, !!library.projects.find((p) => p.id === library.currentId)?.saved);
-  return { path, library, tab: recording || holding ? null : tab };
+  return { path, library, tab: recording || holding || booth ? null : tab, booth };
 }
 
 /** The logo and the personal menu, above every screen after the welcome. */
@@ -158,7 +161,7 @@ export function TopNav() {
 
 /** What the mic in the navigation is right now: a way to the mic screen, or that screen's record button. */
 function useMic() {
-  const { path, library, tab } = useNav();
+  const { path, library, tab, booth } = useNav();
   const control = useRecordControl();
   // On the mic screen the mic is the record button, and it stays up alone while a take runs.
   const record = path === '/vocals' ? control : null;
@@ -169,7 +172,7 @@ function useMic() {
   const recording = record?.state === 'recording';
   const is = (t: Tab) => tab === t;
   const lit = is('mic') || !!record;
-  return { path, library, tab, record, input, asking, mic, beat, recording, is, lit };
+  return { path, library, tab, record, input, asking, mic, beat, recording, is, lit, booth };
 }
 
 // The mic at rest: a dark disc, so the yellow is kept for when it is selected.
@@ -238,7 +241,8 @@ export function TabBar() {
   // On a wider screen the capsule stays a comfortable size in the middle instead of stretching edge to edge.
   const side = Math.max(14, Math.round((width - bar.max) / 2));
   const bottom = Math.max(bar.lift, insets.bottom);
-  if ((!tab && !record) || hidesTabBar(path)) return null;
+  // In the artist view the record button is on the screen itself, much larger.
+  if ((!tab && !record) || hidesTabBar(path) || nav.booth) return null;
 
   const button = (
     <View style={{ width: bar.mic + 12, height: bar.height, alignItems: 'center' }}>

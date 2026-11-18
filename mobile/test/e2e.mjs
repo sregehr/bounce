@@ -202,6 +202,39 @@ async function scrollOver(label) {
   await finger.end();
   await sleep(300);
 }
+/**
+ * Holds a finger on a slider (found by its label) and drags it sideways to a fraction of its width, or
+ * up the page when `scroll` is set. Reports the value bubble as it is with the finger still down, then lifts.
+ */
+async function holdSlider(label, fraction, scroll = false, picture = null) {
+  const box = await page.evaluate((label) => {
+    const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    if (!n) return null;
+    n.scrollIntoView({ block: 'center' });
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, label);
+  if (!box) return log(false, `hold "${label}"`, 'no such slider'), null;
+  const x = box.x + box.w * 0.5, y = box.y + box.h / 2;
+  const to = box.x + 9 + (box.w - 18) * fraction;
+  const finger = await page.touchscreen.touchStart(x, y);
+  for (let i = 1; i <= 8; i++) {
+    await (scroll ? finger.move(x + (i % 2), y - i * 14) : finger.move(x + ((to - x) * i) / 8, y));
+    await sleep(16);
+  }
+  await sleep(150);
+  const seen = await page.evaluate((label) => {
+    const n = document.querySelector('[data-testid=slider-bubble]');
+    const slider = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    const r = n?.getBoundingClientRect();
+    const track = slider?.getBoundingClientRect();
+    return { text: n?.innerText ?? null, left: r?.left, right: r?.right, bottom: r?.bottom, thumbTop: track ? track.top + track.height / 2 - 9 : 0, width: innerWidth, now: Number(slider?.getAttribute('aria-valuenow')) };
+  }, label);
+  if (picture) await shot(picture);
+  await finger.end();
+  await sleep(250);
+  return { ...seen, gone: await page.evaluate(() => !document.querySelector('[data-testid=slider-bubble]')) };
+}
 /** Drags a row (found by its label) to the left, as a finger would, to show its Delete button. */
 async function swipeLeft(label) {
   const box = await page.evaluate((label) => {
@@ -449,8 +482,35 @@ async function song() {
   await tap('Remove');
   await sleep(300);
   log(!/Take 2 level/.test(await text()), 'a layer can be removed again');
+  // What was just done is offered back at the foot of the screen for a few seconds.
+  await tap('Undo: Removed the layer of take 2');
+  await expectText('Take 2 level', 'Undo, offered where the layer was removed, puts it back');
+  await tap('Remove');
+  await sleep(300);
   await expectText('Take 1, polished over the beat', 'and the song is as it was', 30000);
+  // A deleted take can be brought back, and its audio comes with it.
+  await swipeLeft('Take 3');
+  await tap('Delete take 3');
+  await tap('Tap again to delete take 3');
+  await expectText('2 takes', 'a take is deleted');
+  await shot('10d-undo-delete');
+  await tap('Undo: Deleted take 3');
+  await expectText('3 takes', 'Undo brings a deleted take back');
+  await tap('Take 3');
+  await expectText('Take 3, polished over the beat', 'with its audio, which renders again', 30000);
+  await tap('Redo');
+  await expectText('2 takes', 'Redo deletes it again');
+  await tap('Undo');
+  await expectText('3 takes', 'and Undo on the song page steps back through edits');
+  await tap('Take 1');
+  await expectText('Take 1, polished over the beat', 'the first take is picked again', 30000);
   await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
+  // Typing is undone a line at a time, not a letter at a time.
+  const lyricsNow = () => state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Lyrics').pop()?.value ?? '');
+  await tap('Undo typing');
+  log((await lyricsNow()) === 'Night bus rolling, city on mute', 'Undo typing takes back the last line of lyrics', JSON.stringify(await lyricsNow()));
+  await tap('Redo');
+  log((await lyricsNow()) === 'Night bus rolling, city on mute\nEvery red light is a breath I use', 'and Redo puts it back', JSON.stringify(await lyricsNow()));
   await tap('Pause', { optional: true });
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'switching takes renders', 30000);
@@ -499,6 +559,13 @@ async function song() {
   const intensityBefore = await trackAt('Intensity');
   await scrollOver('Intensity');
   log((await trackAt('Intensity')) === intensityBefore, 'scrolling the page over a slider leaves it where it was', `${intensityBefore} -> ${await trackAt('Intensity')}`);
+  // While a slider is dragged, its value shows in a bubble above the thumb, where the finger does not hide it.
+  const scrolled = await holdSlider('Intensity', 0, true);
+  log(scrolled?.text === null, 'scrolling over a slider shows no value bubble');
+  const bubble = await holdSlider('Intensity', 1, false, '12b-slider-bubble');
+  log(bubble?.text === `${bubble?.now}%` && bubble.now === 100, 'dragging a slider shows its value in a bubble, in the words the row uses', `${bubble?.text}`);
+  log(bubble?.left >= 0 && bubble.right <= bubble.width && bubble.bottom <= bubble.thumbTop, 'the bubble sits above the thumb and inside the screen', `${Math.round(bubble?.left)}–${Math.round(bubble?.right)} of ${bubble?.width}`);
+  log(bubble?.gone === true, 'and goes when the finger lifts');
   await slide('Intensity', 1);
   await expectText('100%');
   await expectText(/Polished\s/, 'the mix renders with the master', 30000);
@@ -713,7 +780,24 @@ async function finish() {
     await tap('Strongest stretch');
     await expectText('Strongest stretch picked', 'and put back on the strongest stretch', 5000);
   }
-  log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
+  // With lyrics on the song, the words on the video are its lines, each timed to where the voice is.
+  await expectText('Line timing', 'a song with lyrics shows them in time on its snippet');
+  const lineLabels = () => state(() => [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).map((n) => n.getAttribute('aria-label') ?? '').filter((l) => l.startsWith('Play from line ')));
+  let timedLines = [];
+  for (let i = 0; i < 40 && !timedLines.length; i++) (timedLines = await lineLabels()).length || (await sleep(250));
+  const startOf = (label) => Number(/at ([\d.]+) s/.exec(label ?? '')?.[1] ?? NaN);
+  log(timedLines.length >= 1 && timedLines.every((l, i) => i === 0 || startOf(l) > startOf(timedLines[i - 1])), 'the lyric lines in this stretch are listed in order, each with when it shows', timedLines.join(' | '));
+  const onCard = await state(() => document.querySelector('[data-testid=snippet-line]')?.innerText.trim() ?? '');
+  log(['Night bus rolling, city on mute', 'Every red light is a breath I use'].includes(onCard), 'and the card shows a lyric line where the caption was', onCard);
+  // A line that comes in early or late is moved a quarter of a second at a time, and put back.
+  const lineNo = /line (\d+)/.exec(timedLines[timedLines.length - 1] ?? '')?.[1] ?? '1';
+  const wasAt = startOf(timedLines[timedLines.length - 1]);
+  await tap(`Line ${lineNo} earlier`);
+  let nowAt = startOf((await lineLabels()).pop());
+  log(Math.abs(wasAt - nowAt - 0.25) < 0.011 || nowAt < wasAt, 'a line can be nudged earlier', `${wasAt} s -> ${nowAt} s`);
+  await tap('Reset timing');
+  nowAt = startOf((await lineLabels()).pop());
+  log(nowAt === wasAt, 'and Reset timing puts it back', `${nowAt} s`);
   await shot('21-snippet');
   // The snippet is made first; saving or sharing it is then one more tap.
   await tap('Make snippet');
@@ -722,6 +806,10 @@ async function finish() {
   await sleep(500);
   await tap('Save snippet');
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
+  // One caption line is still there for the asking, written on the card itself.
+  await tap('One line');
+  log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
+  log(!/Line timing/.test(await text()), 'and the line timing is put away with it');
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');
   // The same snippet in the square shape for feeds: picking a shape asks for it to be made again.
@@ -912,6 +1000,62 @@ async function library() {
   await expectText(/Polished\s/, 'and is polished', 30000);
   log(await transportPlaying(), 'and plays');
   await shot('28-playback-48k');
+
+  // Artists: picking who is on the mic starts a session, and a song that is no one's becomes theirs.
+  await tap('Freestyle over Basement tape');
+  await expectText('On the mic: no one picked', 'the mic screen says no one has been picked yet', 10000);
+  await tap('Pick');
+  await type('New artist name', 'Jay Oh');
+  await tap('Add');
+  await expectText('On the mic: Jay Oh', 'an artist is added and picked for the session');
+  await shot('28b-on-the-mic');
+  // Their vocal sound is saved from the Mix page, next to the preset.
+  await tap('Mix');
+  await expectText(/Polished\s/, 'the mix opens', 30000);
+  await tap('Pause', { optional: true });
+  await tap('Save for Jay Oh');
+  await expectText('Saved for Jay Oh', 'the vocal chain is saved for the artist on the song');
+  await expectText("Use Jay Oh's sound", 'and can be put on a song of theirs again');
+  // The artist view: the mic screen for the person at the mic, with the navigation put away.
+  await tap('Freestyle over Basement tape');
+  await expectText('Always listening');
+  await tap('Open artist view');
+  await expectText('Exit artist view', 'the artist view opens');
+  await expectText('Tap to record', 'with one large record button');
+  log(await state(() => ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0)), 'and no navigation around it');
+  const big = await state(() => { const r = [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).find((n) => n.getAttribute('aria-label') === 'Start recording')?.getBoundingClientRect(); return r ? Math.min(r.width, r.height) : 0; });
+  log(big >= 140, 'the record button is large enough to hit from a step away', `${Math.round(big)} points`);
+  await shot('28c-artist-view');
+  await tap('Start recording');
+  await expectText('Tap to stop', 'recording starts from the artist view', 12000);
+  await sleep(1200);
+  await shot('28d-artist-view-recording');
+  await sleep(2500);
+  await tap('Stop recording');
+  await expectText('Take 2 saved', 'the take is saved and the artist view stays up', 10000);
+  await expectText('Exit artist view');
+  await tap('Hear the last take');
+  let heard = false;
+  for (let i = 0; i < 60 && !heard; i++) (heard = /Stop playing/.test(await text())) || (await sleep(500));
+  log(heard, 'the take can be heard back from the artist view');
+  await tap('Stop playing', { optional: true });
+  await tap('Exit artist view');
+  await expectText('Always listening', 'leaving it returns to the full mic screen');
+  await tap('Song');
+  await expectText('2 takes', 'the take recorded in the artist view is on the song');
+  await swipeLeft('Take 2');
+  await tap('Delete take 2');
+  await tap('Tap again to delete take 2');
+  await expectText('1 take', 'and can be deleted like any other');
+  // The artist has a profile, with their songs and their sound on it.
+  await page.goto(BASE + '/profile', { waitUntil: 'networkidle2' });
+  await expectText('Artists you record', 'Profile lists the artists recorded here', 20000);
+  await expectText(/1 song · Vocal sound saved/, 'with their songs and the vocal sound saved for them');
+  await shot('28e-artists');
+  await page.goto(BASE + '/', { waitUntil: 'networkidle2' });
+  await expectText('Basement tape', 'Home opens again', 20000);
+  await tap('Open Basement tape');
+  await expectText('1 take', 'and the song is as it was left', 20000);
 
   // Swipe to delete: a take from the song, then the beat from Home.
   await tap('Song');

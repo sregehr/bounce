@@ -1,14 +1,17 @@
 // Larger building blocks shared by several screens.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { redoSong, undoSong, useSongHistory } from '@/data/store';
 import { TAPS } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
 import { tick } from './haptics';
 import { useArmed } from './hooks';
-import { Check, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
+import { Check, Chip, Meter, Muted, NavLink, RoundPlay as RoundPlayLazy, Slider as SliderLazy, TickIcon, Txt, s } from './kit';
 import { C, meterPct, rateLabel } from './theme';
+import { useBar, useGutter } from './wide';
 
 export function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
@@ -115,6 +118,7 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
       <View style={{ flex: 1 }}>
         <SliderLazy
           label="Position in track"
+          display={mm(shown)}
           value={Math.min(shown, duration)}
           min={0}
           max={Math.max(1, duration)}
@@ -278,6 +282,59 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
         <View pointerEvents={open || dragging ? 'none' : 'auto'}>{children}</View>
         {open && <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => settle(false)} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />}
       </Animated.View>
+    </View>
+  );
+}
+
+/** How long an edit is offered back at the foot of the screen after it is made. */
+const UNDO_SHOWN_MS = 7000;
+
+/**
+ * Says what was just done to the song and offers to undo it, at the foot of the screen for a few
+ * seconds: a deleted take, a layer added or removed, a bar swapped. `lift` is how far above the
+ * bottom bar it sits, for screens with a button pinned there.
+ */
+export function UndoToast({ projectId, lift = 0 }: { projectId: string | null; lift?: number }) {
+  const { undo } = useSongHistory(projectId);
+  const insets = useSafeAreaInsets();
+  const bar = useBar();
+  const gutter = useGutter();
+  const [, again] = useState(0);
+  const left = undo && !undo.quiet ? undo.at + UNDO_SHOWN_MS - Date.now() : 0;
+  useEffect(() => {
+    if (left <= 0) return;
+    const timer = setTimeout(() => again((n) => n + 1), left + 30);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undo?.at, undo?.label]);
+  if (!projectId || !undo || left <= 0) return null;
+  return (
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: gutter, right: gutter, bottom: bar.room + insets.bottom + 8 + lift, alignItems: 'center' }}>
+      <View accessibilityRole="alert" style={[s.row, { gap: 6, maxWidth: 460, alignSelf: 'stretch', marginHorizontal: 'auto', minHeight: 52, paddingLeft: 16, paddingRight: 6, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.borderStrong, boxShadow: '0 10px 28px rgba(0,0,0,0.5)' }]}>
+        <Txt size={15} w="medium" numberOfLines={1} style={{ flex: 1 }}>
+          {undo.label}
+        </Txt>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Undo: ${undo.label}`} onPress={() => (tick(), undoSong(projectId))} hitSlop={4} style={({ pressed }) => ({ minHeight: 44, minWidth: 64, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+          <Txt size={15} w="semi" color={C.accent}>
+            Undo
+          </Txt>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** Undo and Redo for edits to the song, with what the next undo would take back. Nothing shows until there is something to step through. */
+export function SongUndo({ projectId }: { projectId: string }) {
+  const history = useSongHistory(projectId);
+  if (!history.canUndo && !history.canRedo) return null;
+  return (
+    <View style={[s.row, { gap: 8, minHeight: 44 }]}>
+      <Chip label="Undo" onPress={() => history.canUndo && undoSong(projectId)} style={{ paddingHorizontal: 14, opacity: history.canUndo ? 1 : 0.35 }} />
+      <Chip label="Redo" onPress={() => history.canRedo && redoSong(projectId)} style={{ paddingHorizontal: 14, opacity: history.canRedo ? 1 : 0.35 }} />
+      <Muted size={13} style={{ flex: 1 }}>
+        {history.undo ? `Last: ${history.undo.label.charAt(0).toLowerCase()}${history.undo.label.slice(1)}` : `Undone: ${(history.redo ?? '').charAt(0).toLowerCase()}${(history.redo ?? '').slice(1)}`}
+      </Muted>
     </View>
   );
 }

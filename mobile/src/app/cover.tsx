@@ -8,7 +8,8 @@ import { AiScene, Sparkle } from '@/cover/AiScene';
 import { composeScene, coverSupported, cutOut, normalisePhoto } from '@/cover/compose';
 import { blobUrl, blobs } from '@/data/db';
 import { newId, SCENES, type SceneId } from '@/data/model';
-import { dropBlob, finishSong, patchProject, setProfile, update, useLibrary, useProject } from '@/data/store';
+import { artistNamed, artistsIn } from '@/data/artists';
+import { dropBlob, finishSong, patchProject, saveArtist, setProfile, setSongArtist, update, useLibrary, useProject } from '@/data/store';
 import { Btn, Chip, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
 import { C } from '@/ui/theme';
@@ -27,6 +28,7 @@ export default function Cover() {
   const lastPhoto = useLibrary((l) => l.coverPhotoKey);
   const ownName = useLibrary((l) => l.profile.artist);
   const others = useLibrary((l) => l.projects);
+  const library = useLibrary((l) => l);
   // The producer is the person holding the phone, so the credit carries over to the next song.
   const producer = useLibrary((l) => l.profile.producer);
   const task = useTask();
@@ -149,7 +151,10 @@ export default function Cover() {
 
   const working = task.busy;
 
-  const recent = [...new Set(others.map((p) => p.artist?.trim()).filter((n): n is string => !!n && n !== project.artist?.trim()))].slice(0, 4);
+  // Artists with a profile come first; a name that is only on older songs is still one tap away.
+  const profiles = artistsIn(library);
+  const recent = [...new Set(others.map((p) => p.artist?.trim()).filter((n): n is string => !!n && n !== project.artist?.trim() && !artistNamed(library, n)))].slice(0, 4);
+  const typed = project.artist?.trim() ?? '';
   const top = <TopBar left={finishing ? 'Finish song' : 'Cover art'} right={finishing ? <NavLink to={project.takeId ? '/playback' : '/master'} back>Back</NavLink> : <NavLink to="/player" replace>Skip</NavLink>} />;
 
   const fields = (
@@ -167,14 +172,23 @@ export default function Cover() {
         <Txt size={12} color={C.muted}>
           Artist on this song
         </Txt>
-        <Field label="Artist on this song" value={project.artist ?? ''} onChangeText={(name) => patchProject(project.id, { artist: name }, false)} placeholder={ownName || 'Who is on the mic?'} maxLength={40} autoCapitalize="words" returnKeyType="done" />
+        <Field label="Artist on this song" value={project.artist ?? ''} onChangeText={(name) => patchProject(project.id, { artist: name, artistId: artistNamed(library, name)?.id }, false)} placeholder={ownName || 'Who is on the mic?'} maxLength={40} autoCapitalize="words" returnKeyType="done" />
         {/* People who have been on other songs here are one tap away. */}
-        {recent.length > 0 && (
+        {profiles.length + recent.length > 0 && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {profiles.map((a) => (
+              <Chip key={a.id} label={a.name} on={project.artistId === a.id} onPress={() => setSongArtist(project.id, a)} style={{ paddingHorizontal: 12 }} />
+            ))}
             {recent.map((name) => (
-              <Chip key={name} label={name} on={project.artist === name} onPress={() => patchProject(project.id, { artist: name }, false)} style={{ paddingHorizontal: 12 }} />
+              <Chip key={name} label={name} on={project.artist === name} onPress={() => patchProject(project.id, { artist: name, artistId: undefined }, false)} style={{ paddingHorizontal: 12 }} />
             ))}
           </View>
+        )}
+        {/* A name typed for the first time can be kept, so their sound can be saved for next time. */}
+        {typed.length > 1 && !project.artistId && !artistNamed(library, typed) && (
+          <NavLink size={13} style={{ minHeight: 44 }} onPress={() => saveArtist(typed)}>
+            {`Save ${typed} as an artist`}
+          </NavLink>
         )}
       </View>
 

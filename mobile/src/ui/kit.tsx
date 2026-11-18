@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
@@ -21,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { getLibrary } from '@/data/store';
+import { BUBBLE_HEIGHT, bubblePlace } from './bubble';
 import { tick } from './haptics';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor } from './tabs';
 import { useBar, useWide, useGutter } from './wide';
@@ -330,10 +332,11 @@ export function Segmented<T extends string>({ options, value, onChange, variant 
   );
 }
 
-export function Chip({ label, on, onPress, square, style }: { label: string; on?: boolean; onPress?: () => void; square?: boolean; style?: StyleProp<ViewStyle> }) {
+export function Chip({ label, on, onPress, square, style, hint }: { label: string; on?: boolean; onPress?: () => void; square?: boolean; style?: StyleProp<ViewStyle>; /** What the chip is read out as, when its label alone would not say: "Line 2 later". */ hint?: string }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={hint}
       accessibilityState={{ selected: !!on }}
       onPress={onPress}
       style={[s.chip, square && { borderRadius: 12, paddingHorizontal: 0, flex: 1 }, on && { backgroundColor: C.text, borderColor: C.text }, style]}
@@ -539,6 +542,7 @@ export function Slider({
   reset,
   height = 40,
   label,
+  display,
   disabled,
   style,
 }: {
@@ -546,6 +550,8 @@ export function Slider({
   min?: number;
   max?: number;
   step?: number;
+  /** The value as words, such as "−3 dB". While the slider is dragged it shows in a bubble above the thumb, which the finger hides. */
+  display?: string;
   onChange: (v: number) => void;
   /** Called once when the drag ends, for work too heavy to run on every move. */
   onCommit?: (v: number) => void;
@@ -563,6 +569,10 @@ export function Slider({
   latest.current = value;
   // The touch in progress: where it began, the value then, and whether it has turned out to be a drag or a scroll.
   const touch = useRef<{ x: number; y: number; mode: 'wait' | 'drag' | 'scroll'; from: number; lastX: number } | null>(null);
+  // Where the slider is in the window while it is being dragged, which is also when its bubble shows.
+  const [held, setHeld] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [bubbleWidth, setBubbleWidth] = useState(52);
+  const win = useWindowDimensions();
 
   const snap = (v: number) => {
     const stepped = Math.round((v - min) / step) * step + min;
@@ -632,7 +642,10 @@ export function Slider({
         // scrolling, and only one that sets off sideways is moving the slider.
         if (g.mode === 'wait') {
           if (dy > SLOP && dy > dx) g.mode = 'scroll';
-          else if (dx > SLOP) g.mode = 'drag';
+          else if (dx > SLOP) {
+            g.mode = 'drag';
+            ref.current?.measureInWindow((x, y, width) => width > 0 && setHeld({ left: x, top: y, width }));
+          }
         }
         if (g.mode === 'drag') {
           // Sliding the finger away from the track, up or down, slows the thumb for fine settings,
@@ -653,6 +666,7 @@ export function Slider({
       onResponderRelease={() => {
         const g = touch.current;
         touch.current = null;
+        setHeld(null);
         // A tap that never moved sets the value where it landed; a second tap straight after puts it back to rest.
         if (g?.mode === 'wait') {
           const now = Date.now();
@@ -668,9 +682,10 @@ export function Slider({
       onResponderTerminate={() => {
         const g = touch.current;
         touch.current = null;
+        setHeld(null);
         if (g && latest.current !== g.from) onCommit?.(latest.current);
       }}
-      style={[{ height, justifyContent: 'center', opacity: disabled ? 0.4 : 1 }, Platform.OS === 'web' && ({ cursor: 'pointer', userSelect: 'none', touchAction: 'pan-y' } as object), style]}
+      style={[{ height, justifyContent: 'center', opacity: disabled ? 0.4 : 1 }, Platform.OS === 'web' && ({ cursor: 'pointer', userSelect: 'none', touchAction: 'pan-y' } as object), held && { zIndex: 10 }, style]}
     >
       <View pointerEvents="none" style={{ height: 4, borderRadius: 2, backgroundColor: C.dim, marginHorizontal: 9 }}>
         <View style={{ width: `${t * 100}%`, height: 4, borderRadius: 2, backgroundColor: C.accent }} />
@@ -678,6 +693,25 @@ export function Slider({
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 18, top: 0, bottom: 0, justifyContent: 'center' }}>
         <View style={{ marginLeft: `${t * 100}%`, width: 18, height: 18, borderRadius: 9, backgroundColor: C.accent }} />
       </View>
+      {held && display !== undefined && <Bubble text={display} at={9 + t * (held.width - 18)} width={bubbleWidth} onWidth={setBubbleWidth} held={held} height={height} windowWidth={win.width} />}
+    </View>
+  );
+}
+
+/** The value of a slider being dragged, shown clear of the finger. It takes no touches, so it never gets in the way of the drag or of scrolling. */
+function Bubble({ text, at, width, onWidth, held, height, windowWidth }: { text: string; at: number; width: number; onWidth: (w: number) => void; held: { left: number; top: number; width: number }; height: number; windowWidth: number }) {
+  const place = bubblePlace(at, width, held, height, windowWidth);
+  return (
+    <View
+      testID="slider-bubble"
+      pointerEvents="none"
+      accessible={false}
+      onLayout={(e) => Math.abs(e.nativeEvent.layout.width - width) > 0.5 && onWidth(e.nativeEvent.layout.width)}
+      style={{ position: 'absolute', left: place.left, top: place.top, height: BUBBLE_HEIGHT, minWidth: 40, paddingHorizontal: 10, borderRadius: 10, backgroundColor: C.text, alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.45)' }}
+    >
+      <Txt size={14} w="semi" color={C.bg} numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>
+        {text}
+      </Txt>
     </View>
   );
 }
@@ -716,7 +750,7 @@ export function SliderRow({
       <Txt size={fontSize} style={{ width: labelWidth }}>
         {label}
       </Txt>
-      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
+      <Slider label={label} value={value} min={min} max={max} step={step} display={display} onChange={onChange} onCommit={onCommit} reset={reset} height={minHeight} style={{ flex: 1 }} />
       {display !== undefined && (
         <Txt size={13} color={C.muted} right style={{ width: valueWidth }}>
           {display}

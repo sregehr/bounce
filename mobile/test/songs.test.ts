@@ -2,7 +2,7 @@ import { DEFAULT_MASTER, DEFAULT_POLISH } from '../src/dsp/presets';
 import { emptyLibrary, type Library, type Project, type Take } from '../src/data/model';
 import { routeKey, timingFor, withTiming } from '../src/data/timing';
 import { gearName } from '../src/data/labels';
-import { activeBeats, beatsIn, carryOver, loadedSong, makeSong, micLead, mixLead, songLead, songsIn, workBeat } from '../src/data/songs';
+import { activeBeats, beatsIn, carryOver, loadedSong, makeSong, mendSongs, micLead, mixLead, songLead, songsIn, workBeat } from '../src/data/songs';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -38,11 +38,25 @@ const lib = (projects: Project[], patch: Partial<Library> = {}): Library => ({ .
 // Finishing a song.
 const a = beat('a', [take(1), take(2), take(3)], { takeId: 't2' });
 const song = makeSong(a, '  Night bus  ', 100);
-check('a finished song keeps only the chosen take', song.takes.length === 1 && song.takeId === 't2' && song.takes[0].key === 'take-2');
+check('a finished song with no layers keeps only the chosen take', song.takes.length === 1 && song.takeId === 't2' && song.takes[0].key === 'take-2');
 check('it gets its own id, the typed title and a link to its beat', song.id !== a.id && song.name === 'Night bus' && song.saved?.from === 'a' && song.saved.at === 100);
 check('an empty title falls back to the beat name', makeSong(a, '  ', 1).name === 'Beat a');
 check('the beat is left as it was', a.takes.length === 3 && !a.saved);
 check('an instrumental can be finished', makeSong(beat('i'), 'Inst', 1).takes.length === 0);
+// Layers and best bars are part of the song.
+const stacked = beat('s', [take(1), take(2), take(3), take(4)], { takeId: 't2', layers: [{ takeId: 't3', role: 'double', level: 44, pan: -35 }], comp: { 1: 't4' } });
+const stackedSong = makeSong(stacked, 'Stacked', 1);
+check('a finished song keeps its layered takes and the takes its best bars play from', stackedSong.takes.map((t) => t.id).join() === 't2,t3,t4' && stackedSong.takeId === 't2', stackedSong.takes.map((t) => t.id).join());
+check('and leaves out a take that plays no part in it', !stackedSong.takes.some((t) => t.id === 't1'));
+// A song finished before that was so: it has the layers but not their takes.
+const lost: Project = { ...stackedSong, id: 'lost', takes: stackedSong.takes.filter((t) => t.id === 't2'), stats: { lufs: -10, truePeakDb: -1, durationSec: 30 } };
+const mended = mendSongs(lib([lost, stacked])).projects[0];
+check('a song that lost its layered takes gets them back from its beat', mended.takes.map((t) => t.id).join() === 't2,t3,t4', mended.takes.map((t) => t.id).join());
+check('and forgets the numbers measured without them', mended.stats === null);
+const partly = mendSongs(lib([lost, { ...stacked, takes: stacked.takes.filter((t) => t.id !== 't4') }])).projects[0];
+check('a take the beat no longer has stays missing, the rest come back', partly.takes.map((t) => t.id).join() === 't2,t3');
+const whole = lib([stackedSong, stacked]);
+check('a library with nothing to mend is left exactly as it is', mendSongs(whole) === whole && mendSongs(lib([lost])).projects[0] === lost);
 // What capture calls the thing a beat is played from.
 check('a connected sampler or interface goes by its own name', gearName('MPC LIVE III') === 'MPC LIVE III' && gearName('Scarlett 2i2 USB') === 'Scarlett 2i2 USB');
 check('a built-in microphone, or nothing, is "your gear"', gearName('MacBook Pro Microphone') === 'your gear' && gearName(null) === 'your gear' && gearName('') === 'your gear');

@@ -24,7 +24,32 @@ export const songsIn = (projects: Project[]) => projects.filter((p) => p.saved).
  */
 export function makeSong(project: Project, title: string, now = Date.now()): Project {
   const take = project.takes.find((t) => t.id === project.takeId) ?? null;
-  return { ...project, id: newId(), name: title.trim() || project.name, createdAt: now, updatedAt: now, takes: take ? [take] : [], takeId: take?.id ?? null, saved: { at: now, from: project.id } };
+  // The takes stacked on the chosen one, and those its best bars play from, are part of the song too.
+  const heard = new Set(take ? [take.id, ...partsOf(project)] : []);
+  return { ...project, id: newId(), name: title.trim() || project.name, createdAt: now, updatedAt: now, takes: project.takes.filter((t) => heard.has(t.id)), takeId: take?.id ?? null, saved: { at: now, from: project.id } };
+}
+
+/** The takes a song plays besides its chosen one: its layers, and the takes its best bars come from. */
+const partsOf = (p: Project) => [...(p.layers ?? []).map((l) => l.takeId), ...Object.values(p.comp ?? {})];
+
+/**
+ * Finished songs used to keep only their chosen take, so their layers and best bars fell silent.
+ * Where the beat a song was made from still has those takes, they are given back to the song.
+ */
+export function mendSongs(l: Library): Library {
+  let mended = false;
+  const projects = l.projects.map((song) => {
+    if (!song.saved) return song;
+    const has = new Set(song.takes.map((t) => t.id));
+    const missing = new Set(partsOf(song).filter((id) => !has.has(id)));
+    if (missing.size === 0 || !has.has(song.takeId ?? '')) return song;
+    const found = l.projects.find((p) => p.id === song.saved!.from && !p.saved)?.takes.filter((t) => missing.has(t.id)) ?? [];
+    if (found.length === 0) return song;
+    mended = true;
+    // The numbers kept from its last master were of the song without them.
+    return { ...song, takes: [...song.takes, ...found], stats: null };
+  });
+  return mended ? { ...l, projects } : l;
 }
 
 /** The name a song goes out under: the artist it features, or else the name in Settings. */

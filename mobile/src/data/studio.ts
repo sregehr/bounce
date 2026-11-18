@@ -10,18 +10,15 @@ import { decode } from '@/engine/engine';
 import type { RecordedTake } from '@/engine/types';
 
 import { blobBytes, blobs, makeBlob } from './db';
+import { audioBudget, bytesOf, SizedCache } from './sizedCache';
 import { type Layer, newId, type Beat, type LoopChoice, type Project, type Take } from './model';
 import { activeTake, addTake, createProject, getProject, patchProject, stacks } from './store';
 
 // ---------- Sound in and out of storage ----------
 
-const cache = new Map<string, Pcm>();
-function remember(key: string, pcm: Pcm) {
-  cache.delete(key);
-  cache.set(key, pcm);
-  // A handful of decoded files is plenty; each can be tens of megabytes.
-  while (cache.size > 6) cache.delete(cache.keys().next().value as string);
-}
+// Decoded files, kept by size rather than by count: each can be tens of megabytes.
+const cache = new SizedCache<Pcm>(() => audioBudget().pcm);
+const remember = (key: string, pcm: Pcm) => cache.set(key, pcm, bytesOf(pcm.channels));
 
 export async function loadPcm(key: string): Promise<Pcm> {
   const hit = cache.get(key);
@@ -256,24 +253,34 @@ export function mixSignature(project: Project, options: MixOptions = {}) {
   return JSON.stringify([project.id, project.beat.key, project.beat.bpm, take?.id ?? null, take ? stackKey(project, take) : null, take?.loop ?? null, project.polish, project.master, project.overrides, project.space ?? null, options.include ?? 'mix', options.targetLufs === undefined ? 'style' : options.targetLufs]);
 }
 
-const mixes = new Map<string, Promise<RenderOutput>>();
+// Finished mixes, kept by size: on a phone that is one mix of a long song, so switching between
+// two versions of it renders again (quickly, from the stages below) rather than holding both.
+const mixes = new SizedCache<Promise<RenderOutput>>(() => audioBudget().mixes);
 // The processed vocal and beat from the last render, so that changing only the vocal level
 // or the master does not redo them.
 const stages: StageCache = {};
 let renderQueue: Promise<unknown> = Promise.resolve();
 
-/** The mastered mix for a project. Repeated calls with the same settings share one render. */
-export function getMix(project: Project, options: MixOptions = {}, onStage?: (stage: string) => void): Promise<RenderOutput> {
+/**
+ * The mastered mix for a project. Repeated calls with the same settings share one render.
+ * `keep: false` renders without holding on to the result, for a mix that is used once (an
+ * exported stem): it is the caller's alone, and is freed when the caller lets go of it.
+ */
+export function getMix(project: Project, options: MixOptions = {}, onStage?: (stage: string) => void, { keep = true }: { keep?: boolean } = {}): Promise<RenderOutput> {
   const signature = mixSignature(project, options);
   const hit = mixes.get(signature);
   if (hit) return hit;
   // One render at a time: they share the stage cache, and two at once would only slow each other.
   const work = renderQueue.then(() => renderInput(project, options)).then((input) => renderMix(input, onStage, stages));
-  renderQueue = work.catch(() => {});
-  mixes.set(signature, work);
-  while (mixes.size > 4) mixes.delete(mixes.keys().next().value as string);
+  // The queue only needs to know when this render is over; holding its result would keep a whole mix alive.
+  renderQueue = work.then(
+    () => {},
+    () => {},
+  );
+  if (keep) mixes.set(signature, work, 0);
   work.then(
     (out) => {
+      mixes.resize(signature, work, bytesOf(out.channels));
       if (options.include || options.targetLufs !== undefined || options.withTake === false) return;
       // Keep what was measured, so lists and later renders do not have to work it out again.
       const take = activeTake(project);
@@ -290,6 +297,26 @@ export function getMix(project: Project, options: MixOptions = {}, onStage?: (st
     () => mixes.delete(signature),
   );
   return work;
+}
+
+/**
+ * Lets go of every finished mix except the one with these settings, before work that needs the
+ * room (an export). What a screen is showing stays alive through that screen; this only stops
+ * the cache from holding the others.
+ */
+export function keepOnlyMix(project: Project, options: MixOptions = {}) {
+  mixes.keepOnly([mixSignature(project, options)]);
+}
+
+/**
+ * Lets go of the processed vocal, the processed beat, or both. Each is a whole song long, and is
+ * only kept to make the next render quick; the next render that needs one makes it again.
+ */
+export function dropStages(which: ('vocal' | 'beat')[] = ['vocal', 'beat']) {
+  for (const stage of which) {
+    stages[stage] = undefined;
+    stages[`${stage}Key`] = undefined;
+  }
 }
 
 export async function getRaw(project: Project): Promise<Stereo> {

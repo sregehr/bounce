@@ -15,6 +15,7 @@ import { Logo } from '@/ui/Logo';
 import { estimateMs } from '@/data/timing';
 import { useTiming } from '@/ui/timing';
 import { useTask } from '@/ui/hooks';
+import { BackButton, asSheet, useSheet } from '@/ui/nav';
 import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -76,7 +77,7 @@ function Brand() {
   );
 }
 
-export default function Onboarding() {
+function Onboarding() {
   const wide = useWide();
   const insets = useSafeAreaInsets();
   const profile = useLibrary((l) => l.profile);
@@ -87,7 +88,8 @@ export default function Onboarding() {
   const setup = !!params.setup;
   // Signing in on the web leaves the page and comes back to the account step.
   const [step, setStep] = useState<StepId>(setup ? 'sound' : params.step === 'account' && backendAvailable ? 'account' : 'welcome');
-  const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  const sheet = useSheet();
+  const leave = () => (sheet ? sheet.close() : router.canGoBack() ? router.back() : router.replace('/'));
   const [artist, setArtist] = useState(profile.artist);
   const [producer, setProducer] = useState(profile.producer);
   const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number; of: number; taps?: boolean } | null>(null);
@@ -128,7 +130,19 @@ export default function Onboarding() {
 
   const steps = (
     <>
-      {setup ? <TopBar left="Setup" right={<NavLink onPress={leave}>Done</NavLink>} /> : <Dots at={step} />}
+      {setup ? (
+        // The first of the two setup steps closes the sheet; the second steps back to the first.
+        <TopBar back={step === 'timing' ? { onBack: () => setStep('sound') } : true} left="Setup" />
+      ) : step === 'welcome' ? (
+        <Dots at={step} />
+      ) : (
+        <View style={[s.row, { gap: 4, minHeight: 44 }]}>
+          <BackButton onBack={back} />
+          <View style={{ flex: 1 }}>
+            <Dots at={step} />
+          </View>
+        </View>
+      )}
 
       {step === 'welcome' && (
         <>
@@ -183,14 +197,11 @@ export default function Onboarding() {
           </View>
           <Foot>
             <Btn label="Continue" onPress={saveNames} />
-            <NavLink center size={14} onPress={() => setStep('welcome')}>
-              Back
-            </NavLink>
           </Foot>
         </>
       )}
 
-      {step === 'account' && <AccountStep onNext={next} onBack={back} />}
+      {step === 'account' && <AccountStep onNext={next} />}
 
       {step === 'sound' && (
         <>
@@ -271,11 +282,6 @@ export default function Onboarding() {
           </Card>
           <Foot>
             <Btn label={setup ? 'Done' : 'Continue'} onPress={setup ? leave : next} disabled={check.busy || tapping} />
-            {setup && (
-              <NavLink center size={14} onPress={() => setStep('sound')}>
-                Back to the sound check
-              </NavLink>
-            )}
             {!timing && !setup && (
               <NavLink center size={14} onPress={next}>
                 Skip: use the estimate
@@ -335,3 +341,6 @@ export default function Onboarding() {
     </Screen>
   );
 }
+
+// The first time it is the whole screen. Opened again from the mic screen for the two setup steps, it is a sheet over that screen.
+export default asSheet(Onboarding, { when: (params) => !!params.setup, fallback: '/vocals' });

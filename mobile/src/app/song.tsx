@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Platform, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Layer, Take } from '@/data/model';
 import { LAYER_START } from '@/data/model';
-import { activeTake, deleteTake, patchProject, setCompBar, setLayers, stacks, useLibrary, useProject } from '@/data/store';
+import { artistById } from '@/data/artists';
+import { activeTake, deleteTake, patchProject, redoSong, setCompBar, setLayers, setLyrics, stacks, undoSong, useLibrary, useProject, useSongHistory } from '@/data/store';
 import { barSeconds, compOf, layersOf } from '@/data/studio';
 import { useSong } from '@/data/song';
 import { NoSong } from '@/ui/AddBeat';
 import { BeatCard } from '@/ui/BeatDetails';
-import { Btn, Chip, Eyebrow, Muted, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
+import { Btn, Chip, Eyebrow, Muted, NavLink, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
 import { useStopOnLeave } from '@/ui/hooks';
-import { Status, SwipeRow } from '@/ui/parts';
+import { SongUndo, Status, SwipeRow, UndoToast } from '@/ui/parts';
 import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
@@ -33,11 +34,26 @@ export default function Song() {
   const repeat = useRepeat();
   const song = useSong(take ? project : null, { autoplay: false, repeat });
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
+  const library = useLibrary((l) => l);
   const insets = useSafeAreaInsets();
   const gutter = useGutter();
   const tabBar = useBar();
   const [details, setDetails] = useState(false);
   const wide = useWide();
+  const history = useSongHistory(project?.id ?? null);
+  const projectId = project?.id;
+  // On a keyboard, the usual keys undo and redo an edit to the song. In the lyrics they undo typing, as in any text field.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !projectId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z' || (e.target as HTMLElement | null)?.closest?.('input,textarea')) return;
+      e.preventDefault();
+      if (e.shiftKey) redoSong(projectId);
+      else undoSong(projectId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [projectId]);
   useStopOnLeave();
 
   // Mastering the beat alone sets the take aside. Back here, the song has its newest take again.
@@ -48,7 +64,9 @@ export default function Song() {
 
   if (!project || project.saved) return <NoSong title="No song yet" about="A song starts with a beat. Add one and its takes and lyrics live here." />;
 
-  const about = (k: Take) => [dayLabel(k.createdAt), clock(k.durationSec), k.origin === 'kept' ? 'kept' : k.origin === 'punched' ? 'punched in' : null].filter(Boolean).join(' · ');
+  // A take by someone other than the song's artist says whose it is.
+  const by = (k: Take) => (k.artistId && k.artistId !== project.artistId ? (artistById(library, k.artistId)?.name ?? null) : null);
+  const about = (k: Take) => [by(k), dayLabel(k.createdAt), clock(k.durationSec), k.origin === 'kept' ? 'kept' : k.origin === 'punched' ? 'punched in' : null].filter(Boolean).join(' · ');
   /** Tapping a take picks it and plays it polished over the beat; tapping the picked one plays or pauses. */
   const pick = (k: Take) => {
     if (k.id === take?.id) return song.toggle();
@@ -73,7 +91,7 @@ export default function Song() {
             {[...project.takes].reverse().map((k) => {
               const on = k.id === take.id;
               return (
-                <SwipeRow key={k.id} label={`Delete take ${k.number}`} onDelete={() => void deleteTake(project.id, k.id)}>
+                <SwipeRow key={k.id} once label={`Delete take ${k.number}`} onDelete={() => deleteTake(project.id, k.id)}>
                 <Pressable accessibilityRole="radio" accessibilityLabel={`Take ${k.number}`} accessibilityState={{ checked: on }} onPress={() => pick(k)} style={[s.row, s.between, { minHeight: 48 }, s.divided]}>
                   <Txt size={15} w="semi" color={on ? C.accent : C.text}>
                     Take {k.number}
@@ -98,7 +116,10 @@ export default function Song() {
   const bar = barSeconds(project.beat.bpm);
   const bars = take && bar ? Math.min(32, Math.max(1, Math.ceil(Math.max(take.durationSec, ...others.map((k) => k.durationSec)) / bar))) : 0;
   const tint = (k: Take) => TINTS[project.takes.indexOf(k) % TINTS.length];
-  const editLayer = (id: string, patch: Partial<Layer>) => setLayers(project.id, (all) => all.map((l) => (l.takeId === id ? { ...l, ...patch } : l)));
+  const numberOf = (id: string) => project.takes.find((k) => k.id === id)?.number ?? '';
+  /** Changes one layer. Dragging its level or pan is one step to undo; `what` names the control. */
+  const editLayer = (id: string, patch: Partial<Layer>, what?: 'level' | 'pan') =>
+    setLayers(project.id, (all) => all.map((l) => (l.takeId === id ? { ...l, ...patch } : l)), `Changed take ${numberOf(id)}'s ${what ?? 'part'}`, what && `${id}:${what}`);
   const stack = take && others.length > 0 && (
           <View style={{ gap: 14 }}>
             <View style={{ gap: 4 }}>
@@ -111,17 +132,17 @@ export default function Song() {
                   <Txt size={15} w="semi">
                     Take {l.take.number}
                   </Txt>
-                  <Chip label="Remove" onPress={() => setLayers(project.id, (all) => all.filter((x) => x.takeId !== l.takeId))} style={{ paddingHorizontal: 12 }} />
+                  <Chip label="Remove" onPress={() => setLayers(project.id, (all) => all.filter((x) => x.takeId !== l.takeId), `Removed the layer of take ${l.take.number}`)} style={{ paddingHorizontal: 12 }} />
                 </View>
                 <Segmented options={ROLES} value={ROLE_LABEL[l.role]} onChange={(v) => editLayer(l.takeId, { role: ROLE_OF[v], ...LAYER_START[ROLE_OF[v]] })} variant="compact" />
-                <SliderRow label={`Take ${l.take.number} level`} value={l.level} display={`${l.level}`} onChange={(level) => editLayer(l.takeId, { level })} labelWidth={110} valueWidth={40} />
-                <SliderRow label={`Take ${l.take.number} pan`} value={l.pan} min={-100} max={100} step={5} reset={0} display={l.pan === 0 ? 'Centre' : l.pan < 0 ? `L ${-l.pan}` : `R ${l.pan}`} onChange={(pan) => editLayer(l.takeId, { pan })} labelWidth={110} valueWidth={56} />
+                <SliderRow label={`Take ${l.take.number} level`} value={l.level} display={`${l.level}`} onChange={(level) => editLayer(l.takeId, { level }, 'level')} labelWidth={110} valueWidth={40} />
+                <SliderRow label={`Take ${l.take.number} pan`} value={l.pan} min={-100} max={100} step={5} reset={0} display={l.pan === 0 ? 'Centre' : l.pan < 0 ? `L ${-l.pan}` : `R ${l.pan}`} onChange={(pan) => editLayer(l.takeId, { pan }, 'pan')} labelWidth={110} valueWidth={56} />
               </View>
             ))}
             {free.length > 0 && (
               <View style={[s.row, { gap: 8, flexWrap: 'wrap' }]}>
                 {free.map((k) => (
-                  <Chip key={k.id} label={`Layer take ${k.number}`} onPress={() => setLayers(project.id, (all) => [...all, { takeId: k.id, role: 'double', ...LAYER_START.double }])} style={{ paddingHorizontal: 14 }} />
+                  <Chip key={k.id} label={`Layer take ${k.number}`} onPress={() => setLayers(project.id, (all) => [...all, { takeId: k.id, role: 'double', ...LAYER_START.double }], `Layered take ${k.number}`)} style={{ paddingHorizontal: 14 }} />
                 ))}
               </View>
             )}
@@ -164,12 +185,20 @@ export default function Song() {
 
   const lyrics = (
         <View style={[{ gap: 8 }, wide && { flex: 1 }]}>
-          <Eyebrow>Lyrics</Eyebrow>
+          <View style={[s.row, s.between, { minHeight: 24 }]}>
+            <Eyebrow>Lyrics</Eyebrow>
+            {/* Typing is taken back a stretch at a time, right where it was typed. */}
+            {history.undo?.kind === 'lyrics' && (
+              <NavLink size={13} w="semi" style={{ minHeight: 44, marginVertical: -10 }} onPress={() => undoSong(project.id)}>
+                Undo typing
+              </NavLink>
+            )}
+          </View>
           <TextInput
             accessibilityLabel="Lyrics"
             multiline
             value={project.lyrics}
-            onChangeText={(text) => patchProject(project.id, { lyrics: text })}
+            onChangeText={(text) => setLyrics(project.id, text)}
             placeholder="Write the bars here. They stay with the song when you finish it, and the first line can caption a snippet."
             placeholderTextColor={C.muted}
             selectionColor={C.accent}
@@ -181,6 +210,7 @@ export default function Song() {
   // Wide: the takes and the beat on the left, the lyrics down the right, and the next step in the header.
   if (wide)
     return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Screen gap={22}>
         <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
           <View style={{ flex: 1 }}>{header}</View>
@@ -191,6 +221,7 @@ export default function Song() {
           gap={36}
           left={
             <>
+              <SongUndo projectId={project.id} />
               {takes}
               {stack}
               {beat}
@@ -199,12 +230,16 @@ export default function Song() {
           right={lyrics}
         />
       </Screen>
+      <UndoToast projectId={project.id} />
+      </View>
     );
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Screen gap={20}>
         {header}
+
+        <SongUndo projectId={project.id} />
 
         {takes}
 
@@ -226,6 +261,7 @@ export default function Song() {
           <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, minHeight: 52 }} />
         </View>
       )}
+      <UndoToast projectId={project.id} lift={take ? NEXT_HEIGHT + 4 : 0} />
     </View>
   );
 }

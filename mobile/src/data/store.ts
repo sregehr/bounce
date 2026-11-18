@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react';
 
-import { DEFAULT_MASTER, DEFAULT_POLISH } from '@/dsp/presets';
+import { DEFAULT_MASTER, DEFAULT_POLISH, type Chain, type VocalStyle } from '@/dsp/presets';
 
+import { adopts, artistNamed, artistsIn, sessionArtist, withArtist } from './artists';
 import { blobs, kv, persist } from './db';
-import { LAYER_START, emptyLibrary, newId, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
+import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
 import { carryOver, makeSong } from './songs';
 
 let library: Library = emptyLibrary();
@@ -33,6 +34,7 @@ export async function loadLibrary() {
     // A library from before backups were locked to their device gets its secret now, and keeps it.
     if (saved && !saved.settings?.deviceSecret) update((l) => ({ ...l }));
     void persist();
+    void emptyBin();
     ready = true;
   } catch (e) {
     loadError = e instanceof Error && e.message ? e.message : 'Storage is not available.';
@@ -101,6 +103,51 @@ export const setProfile = (patch: Partial<Profile>) => update((l) => ({ ...l, pr
 export const setSettings = (patch: Partial<Settings>) => update((l) => ({ ...l, settings: { ...l.settings, ...patch } }));
 export const setCurrent = (id: string | null) => update((l) => (l.currentId === id ? l : { ...l, currentId: id }));
 
+// ---------- Artists ----------
+
+/** Saves a profile for a name, or finds the one that name already has. */
+export function saveArtist(name: string): Artist | null {
+  const trimmed = name.trim().slice(0, 40);
+  if (!trimmed) return null;
+  const known = artistNamed(library, trimmed);
+  if (known) return known;
+  const artist: Artist = { id: newId(), name: trimmed, createdAt: Date.now() };
+  // Songs that already carry the name, from before it had a profile, are joined to it.
+  update((l) => ({ ...l, artists: [...artistsIn(l), artist], projects: l.projects.map((p) => (!p.artistId && p.artist?.trim().toLowerCase() === trimmed.toLowerCase() ? { ...p, artistId: artist.id } : p)) }));
+  return artist;
+}
+
+/** Renames an artist, on their profile and on every song of theirs. */
+export function renameArtist(id: string, name: string) {
+  update((l) => ({ ...l, artists: artistsIn(l).map((a) => (a.id === id ? { ...a, name } : a)), projects: l.projects.map((p) => (p.artistId === id ? { ...p, artist: name } : p)) }));
+}
+
+/** Keeps a vocal chain, and the style it was made under, as the sound for an artist. */
+export function setArtistSound(id: string, chain: Chain | undefined, style?: VocalStyle) {
+  update((l) => ({ ...l, artists: artistsIn(l).map((a) => (a.id === id ? { ...a, chain, style: chain ? style : undefined } : a)) }));
+}
+
+/** Removes a profile. Their songs keep their name. */
+export function removeArtist(id: string) {
+  update((l) => ({ ...l, artists: artistsIn(l).filter((a) => a.id !== id), sessionArtistId: l.sessionArtistId === id ? null : l.sessionArtistId, projects: l.projects.map((p) => (p.artistId === id ? { ...p, artistId: undefined } : p)) }));
+}
+
+/** Puts an artist on a song: their name, and their vocal chain where the song has none of its own. */
+export function setSongArtist(projectId: string, artist: Artist) {
+  patchProject(projectId, (p) => withArtist(p, artist), false);
+}
+
+/**
+ * Says who is at the mic from now on, or no one. New songs and takes are theirs until it is
+ * changed. The song open at the time becomes theirs too if it is no one's yet, or has no takes.
+ */
+export function setSession(artistId: string | null, projectId?: string | null) {
+  update((l) => ({ ...l, sessionArtistId: artistId }));
+  const artist = sessionArtist(library);
+  const project = getProject(projectId ?? null);
+  if (artist && project && !project.saved && (adopts(project) || project.takes.length === 0)) setSongArtist(project.id, artist);
+}
+
 export function useProject(): Project | null {
   const id = useLibrary((l) => l.currentId);
   const projects = useLibrary((l) => l.projects);
@@ -154,6 +201,106 @@ export function useMixHistory(id: string | null) {
   return { canUndo: past > 0, canRedo: future > 0 };
 }
 
+// ---------- Undo for the song ----------
+
+/**
+ * One edit to a song that can be taken back: a deleted take, a change to the layers or the best
+ * bars, or a stretch of typing in the lyrics. Each knows how to undo itself against the song as
+ * it is now, so a take recorded since is left alone.
+ */
+export type SongEdit = {
+  kind: 'take' | 'layers' | 'bars' | 'lyrics';
+  /** What was done, in words that follow "Undo": "Deleted take 2". */
+  label: string;
+  back: (p: Project) => Partial<Project>;
+  forth: (p: Project) => Partial<Project>;
+  /** Stored files this edit can still bring back. They are kept for as long as it can. */
+  holds?: string[];
+  /** One of a run of small changes, such as typing or dragging a slider: undoable, but not announced each time. */
+  quiet?: boolean;
+  at: number;
+  /** When the run of changes this one stands for began, and what ties them together. */
+  began: number;
+  group?: string;
+};
+type SongHistory = { past: SongEdit[]; future: SongEdit[] };
+// For this session only, like the mix's: undo is for the last few moves.
+const songHistories = new Map<string, SongHistory>();
+const songHistoryOf = (id: string) => songHistories.get(id) ?? (songHistories.set(id, { past: [], future: [] }), songHistories.get(id)!);
+
+const heldKeys = () => new Set([...songHistories.values()].flatMap((h) => [...h.past, ...h.future]).flatMap((e) => e.holds ?? []));
+
+/** Lets go of edits that can no longer be undone or redone, and of the files only they were keeping. */
+function release(edits: SongEdit[]) {
+  for (const key of edits.flatMap((e) => e.holds ?? [])) void dropBlob(key);
+}
+
+/**
+ * Notes an edit so it can be undone. Changes of the same thing in quick succession, such as
+ * dragging one slider or typing one line, count as one: `group` names the thing, `within` is how
+ * long a pause still belongs to it, and `span` is the longest one step may run.
+ */
+function note(projectId: string, edit: Omit<SongEdit, 'at' | 'began'>, within = 0, span = 0) {
+  const h = songHistoryOf(projectId);
+  const now = Date.now();
+  const last = h.past[h.past.length - 1];
+  if (last && edit.group && last.group === edit.group && h.future.length === 0 && now - last.at < within && now - last.began < span) {
+    // The step keeps where it started from and takes on where it has got to.
+    last.forth = edit.forth;
+    last.label = edit.label;
+    last.at = now;
+    return;
+  }
+  h.past.push({ ...edit, at: now, began: now });
+  release([...h.future, ...h.past.splice(0, Math.max(0, h.past.length - 50))]);
+  h.future = [];
+}
+
+function stepSong(id: string, from: 'past' | 'future') {
+  const h = songHistories.get(id);
+  const edit = h?.[from].pop();
+  if (!h || !edit || !getProject(id)) return null;
+  h[from === 'past' ? 'future' : 'past'].push(edit);
+  // A step taken back is no longer added to by the next change.
+  edit.at = 0;
+  patchProject(id, from === 'past' ? edit.back : edit.forth);
+  return edit;
+}
+
+/** Takes back the last edit to a song, or puts back the last one taken back. Returns what it was, or null when there was nothing. */
+export const undoSong = (id: string) => stepSong(id, 'past');
+export const redoSong = (id: string) => stepSong(id, 'future');
+
+/** What can be undone and redone on a song, and the edit made last, for offering to undo it there and then. */
+export function useSongHistory(id: string | null) {
+  const key = useSyncExternalStore(
+    subscribe,
+    () => {
+      const h = songHistories.get(id ?? '');
+      const last = h?.past[h.past.length - 1];
+      const next = h?.future[h.future.length - 1];
+      return JSON.stringify([last ? [last.label, last.kind, last.at, !!last.quiet] : null, next ? next.label : null]);
+    },
+    () => 'null',
+  );
+  const [last, redo] = (JSON.parse(key) as [[string, SongEdit['kind'], number, boolean] | null, string | null] | null) ?? [null, null];
+  return { canUndo: !!last, canRedo: !!redo, undo: last ? { label: last[0], kind: last[1], at: last[2], quiet: last[3] } : null, redo };
+}
+
+// A deleted take's audio stays on the device while the delete can be undone. Its key is written
+// down, so if the app is closed first the file is cleared out the next time it opens.
+let bin: string[] = [];
+function toBin(key: string) {
+  bin = [...bin, key];
+  void kv.set('bin', bin).catch(() => {});
+}
+async function emptyBin() {
+  const waiting = (await kv.get<string[]>('bin').catch(() => undefined)) ?? [];
+  await Promise.all(waiting.map(dropBlob));
+  // Anything binned while that ran is kept on the list.
+  await kv.set('bin', bin).catch(() => {});
+}
+
 /**
  * Switches between two mixes of the same song. The first switch to B starts it as a copy of A,
  * so the two can then be taken in different directions and compared.
@@ -200,6 +347,9 @@ export function createProject(beat: Beat, name: string): Project {
     lyrics: '',
     stats: null,
   };
+  // A beat brought in during a session starts out as that artist's song, with their sound.
+  const artist = sessionArtist(library);
+  if (artist) Object.assign(project, withArtist(project, artist));
   update((l) => ({ ...l, projects: [project, ...l.projects], currentId: project.id }));
   return project;
 }
@@ -209,13 +359,18 @@ const projectKeys = (p: Project) => [p.beat.key, ...p.takes.map((t) => t.key), p
 export async function deleteProject(id: string) {
   const project = getProject(id);
   if (!project) return;
+  // A beat that is gone takes its undo steps with it, and the takes they were holding on to.
+  const held = songHistories.get(id);
+  songHistories.delete(id);
+  histories.delete(id);
   update((l) => ({ ...l, projects: l.projects.filter((p) => p.id !== id), currentId: l.currentId === id ? null : l.currentId, songId: l.songId === id ? null : l.songId }));
-  await Promise.all(projectKeys(project).map(dropBlob));
+  await Promise.all([...projectKeys(project), ...[...(held?.past ?? []), ...(held?.future ?? [])].flatMap((e) => e.holds ?? [])].map(dropBlob));
 }
 
 /** Deletes a stored file unless something still uses it: a finished song shares its audio and cover with the beat it came from. */
 export async function dropBlob(key: string) {
-  if (library.projects.some((p) => projectKeys(p).includes(key))) return;
+  // Nor one that an undo could still bring back.
+  if (library.projects.some((p) => projectKeys(p).includes(key)) || heldKeys().has(key)) return;
   await blobs.delete(key).catch(() => {});
 }
 
@@ -231,40 +386,98 @@ export function finishSong(projectId: string, title: string): Project | null {
   return song;
 }
 
-export function addTake(projectId: string, take: Take, layer?: Layer['role']) {
+export function addTake(projectId: string, recorded: Take, layer?: Layer['role']) {
+  // A take recorded during a session is that artist's, and a song that was no one's becomes theirs with it.
+  const artist = sessionArtist(library);
+  const take: Take = artist && !recorded.artistId ? { ...recorded, artistId: artist.id } : recorded;
+  const mine = (p: Project) => (artist && adopts(p) ? withArtist(p, artist) : null);
   // A take recorded as a layer joins the stack on the picked take instead of replacing it.
-  if (layer) patchProject(projectId, (p) => ({ takes: [...p.takes, take], layers: [...(p.layers ?? []), { takeId: take.id, role: layer, ...LAYER_START[layer] }] }));
-  else patchProject(projectId, (p) => ({ takes: [...p.takes, take], takeId: take.id }));
+  if (layer) patchProject(projectId, (p) => ({ ...mine(p), takes: [...p.takes, take], layers: [...(p.layers ?? []), { takeId: take.id, role: layer, ...LAYER_START[layer] }] }));
+  else patchProject(projectId, (p) => ({ ...mine(p), takes: [...p.takes, take], takeId: take.id }));
 }
 
 /** Whether a take lines up with the picked one bar for bar, so it can be layered on it or stand in for some of its bars. */
 export const stacks = (lead: Take | null, other: Take) => !!lead && other.id !== lead.id && lead.phaseSec < 0.001 && other.phaseSec < 0.001 && other.loop.bars === lead.loop.bars && other.loop.startBar === lead.loop.startBar;
 
-export function setLayers(projectId: string, change: (layers: Layer[]) => Layer[]) {
-  patchProject(projectId, (p) => ({ layers: change(p.layers ?? []) }));
+/** Changes the layers stacked on the picked take. `label` says what was done, for Undo; `group` ties together a run of changes to one control. */
+export function setLayers(projectId: string, change: (layers: Layer[]) => Layer[], label = 'Changed the layers', group?: string) {
+  const project = getProject(projectId);
+  if (!project) return;
+  const before = project.layers ?? [];
+  const after = change(before);
+  // Put back as they were, leaving out any whose take has gone since and keeping any added since.
+  const restore = (to: Layer[], from: Layer[]) => (p: Project) => ({
+    layers: [...to.filter((l) => p.takes.some((t) => t.id === l.takeId)), ...(p.layers ?? []).filter((l) => !to.some((x) => x.takeId === l.takeId) && !from.some((x) => x.takeId === l.takeId))],
+  });
+  note(projectId, { kind: 'layers', label, group: group && `layers:${group}`, quiet: !!group, back: restore(before, after), forth: restore(after, before) }, 900, 30000);
+  patchProject(projectId, { layers: after });
 }
+
+const withBar = (bar: number, takeId: string | null | undefined) => (p: Project) => {
+  const comp = { ...(p.comp ?? {}) };
+  if (takeId && p.takes.some((t) => t.id === takeId)) comp[String(bar)] = takeId;
+  else delete comp[String(bar)];
+  return { comp };
+};
 
 /** Has one bar of the picked take play from another take, or from the picked take again when `takeId` is null. */
 export function setCompBar(projectId: string, bar: number, takeId: string | null) {
-  patchProject(projectId, (p) => {
-    const comp = { ...(p.comp ?? {}) };
-    if (takeId) comp[String(bar)] = takeId;
-    else delete comp[String(bar)];
-    return { comp };
-  });
+  const project = getProject(projectId);
+  if (!project) return;
+  // Tapping a bar round its takes is one step back to where it started.
+  note(projectId, { kind: 'bars', label: `Changed bar ${bar + 1}`, group: `bar:${bar}`, back: withBar(bar, project.comp?.[String(bar)] ?? null), forth: withBar(bar, takeId) }, 2500, 30000);
+  patchProject(projectId, withBar(bar, takeId));
 }
 
-export async function deleteTake(projectId: string, takeId: string) {
-  const take = getProject(projectId)?.takes.find((t) => t.id === takeId);
-  if (!take) return;
-  patchProject(projectId, (p) => {
-    const takes = p.takes.filter((t) => t.id !== takeId);
-    // Nothing keeps pointing at a take that is gone.
-    const layers = (p.layers ?? []).filter((l) => l.takeId !== takeId);
-    const comp = Object.fromEntries(Object.entries(p.comp ?? {}).filter(([, id]) => id !== takeId));
-    return { takes, layers, comp, takeId: p.takeId === takeId ? (takes[takes.length - 1]?.id ?? null) : p.takeId };
+/**
+ * Changes the lyrics. Typing is undone a stretch at a time: a new step starts after a pause,
+ * at each new line, and every few seconds of unbroken typing.
+ */
+export function setLyrics(projectId: string, text: string) {
+  const project = getProject(projectId);
+  if (!project || project.lyrics === text) return;
+  const before = project.lyrics;
+  note(projectId, { kind: 'lyrics', label: 'Changed the lyrics', quiet: true, group: `lyrics:${text.split('\n').length}`, back: () => ({ lyrics: before }), forth: () => ({ lyrics: text }) }, 1500, 8000);
+  patchProject(projectId, { lyrics: text });
+}
+
+const withoutTake = (takeId: string) => (p: Project) => {
+  const takes = p.takes.filter((t) => t.id !== takeId);
+  // Nothing keeps pointing at a take that is gone.
+  const layers = (p.layers ?? []).filter((l) => l.takeId !== takeId);
+  const comp = Object.fromEntries(Object.entries(p.comp ?? {}).filter(([, id]) => id !== takeId));
+  return { takes, layers, comp, takeId: p.takeId === takeId ? (takes[takes.length - 1]?.id ?? null) : p.takeId };
+};
+
+/**
+ * Deletes a take. It can be undone for the rest of the session, so its audio stays on the device
+ * until then: it is cleared out once the delete can no longer be undone, or the next time the app opens.
+ */
+export function deleteTake(projectId: string, takeId: string) {
+  const project = getProject(projectId);
+  const take = project?.takes.find((t) => t.id === takeId);
+  if (!project || !take) return;
+  const layers = (project.layers ?? []).filter((l) => l.takeId === takeId);
+  const comp = Object.fromEntries(Object.entries(project.comp ?? {}).filter(([, id]) => id === takeId));
+  const picked = project.takeId === takeId;
+  toBin(take.key);
+  note(projectId, {
+    kind: 'take',
+    label: `Deleted take ${take.number}`,
+    holds: [take.key],
+    // The take goes back where it was in the list, with the layer and the bars it had, and picked if it was.
+    back: (p) =>
+      p.takes.some((t) => t.id === take.id)
+        ? {}
+        : {
+            takes: [...p.takes, take].sort((a, b) => a.number - b.number),
+            layers: [...(p.layers ?? []), ...layers.filter((l) => !(p.layers ?? []).some((x) => x.takeId === l.takeId))],
+            comp: { ...comp, ...(p.comp ?? {}) },
+            takeId: picked ? take.id : p.takeId,
+          },
+    forth: withoutTake(takeId),
   });
-  await dropBlob(take.key);
+  patchProject(projectId, withoutTake(takeId));
 }
 
 /** The take a project is currently working with. */

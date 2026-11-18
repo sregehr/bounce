@@ -1,5 +1,5 @@
 import type { VoiceStats } from '@/dsp/analysis';
-import type { Chain, MasterSettings, Polish, Space } from '@/dsp/presets';
+import type { Chain, MasterSettings, Polish, Space, VocalStyle } from '@/dsp/presets';
 
 /** A stored audio file: `key` finds it in the blob store. */
 export type AudioInfo = { key: string; durationSec: number; sampleRate: number; channels: number };
@@ -33,6 +33,8 @@ export type Take = AudioInfo & {
   clipped: boolean;
   origin: 'recorded' | 'kept' | 'punched';
   voice: VoiceStats | null;
+  /** Who was at the mic, when an artist was picked for the session. */
+  artistId?: string;
 };
 
 /** `bars` 0 means the whole beat, played through once. */
@@ -54,7 +56,21 @@ export type Cover = {
 
 export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format: 'wav24' | 'wav16' | 'm4a'; instrumental: boolean; vocals: boolean };
 /** `startSec` is where the snippet begins when the user moved it; without one the strongest stretch is used. */
-export type SnippetChoice = { lengthSec: 15 | 20 | 30; captions: boolean; credit: boolean; caption: string; made: boolean; startSec?: number | null; shape?: 'tall' | 'square' | 'wide' };
+export type SnippetChoice = {
+  lengthSec: 15 | 20 | 30;
+  captions: boolean;
+  credit: boolean;
+  caption: string;
+  made: boolean;
+  startSec?: number | null;
+  shape?: 'tall' | 'square' | 'wide';
+  /** What the words on screen are: the lyric lines in time with the vocal, or the one caption line. Timed when the song has lyrics, unless set. */
+  words?: 'timed' | 'line';
+  /** The lyric line the snippet opens on when picked by hand, by its place in the lyrics. */
+  lineFirst?: number | null;
+  /** Lines moved earlier or later by hand, in seconds, by their place in the lyrics. */
+  lineShift?: Record<string, number>;
+};
 
 /** One person's part in a song. `share` is their percentage of it. */
 export type Credit = { name: string; role: 'Writer' | 'Producer' | 'Performer'; share: number };
@@ -97,6 +113,8 @@ export type Project = {
   lyrics: string;
   /** Who is on the song: the rapper or singer it features. Empty means the name in Settings. */
   artist?: string;
+  /** That artist's saved profile, when they have one. Older songs have only the name. */
+  artistId?: string;
   /** Numbers from the last master, shown in lists without rendering again. */
   stats: { lufs: number; truePeakDb: number; durationSec: number } | null;
   /** Set on a finished song in the Vault: when it was saved, and the beat it was made from. */
@@ -104,6 +122,16 @@ export type Project = {
 };
 
 export type Profile = { artist: string; producer: string; onboarded: boolean };
+
+/** Someone who records here: their name, and the vocal sound that suits their voice. */
+export type Artist = {
+  id: string;
+  name: string;
+  /** Their vocal chain, saved from the Mix page the same way "my preset" is, and the vocal style it was made under. */
+  chain?: Chain;
+  style?: VocalStyle;
+  createdAt: number;
+};
 
 export type Settings = {
   /** The microphone used for vocals. */
@@ -137,6 +165,10 @@ export type Library = {
   songId?: string | null;
   /** Set once songs from before the Vault held only finished ones have been carried over. */
   vault?: 1;
+  /** The artists recorded here who have a saved profile. */
+  artists?: Artist[];
+  /** The artist at the mic for this session. New songs and takes are theirs until it is changed. */
+  sessionArtistId?: string | null;
 };
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);

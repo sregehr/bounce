@@ -1,6 +1,8 @@
 // The phone build renders snippet videos natively; that arrives with the phone app.
 export type SnippetVideo = { blob: Blob; extension: 'mp4' | 'webm' };
-export type SnippetCard = { title: string; artist: string; caption: string | null; credit: string | null; peaks: number[]; coverUrl: string | null };
+import type { TimedLine } from './lyricTiming';
+
+export type SnippetCard = { title: string; artist: string; caption: string | null; credit: string | null; peaks: number[]; coverUrl: string | null; lines?: TimedLine[] | null };
 export type SnippetShape = 'tall' | 'square' | 'wide';
 export const videoSupported = () => false;
 export const SCRIM: [number, number][] = [

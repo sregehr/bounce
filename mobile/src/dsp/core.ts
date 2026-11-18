@@ -175,22 +175,31 @@ function kWeighting(sampleRate: number): [Coeffs, Coeffs] {
 /** Integrated loudness in LUFS, with the standard absolute and relative gates. */
 export function integratedLufs(channels: Float32Array[], sampleRate: number): number {
   const [shelf, high] = kWeighting(sampleRate);
-  const weighted = channels.map((ch) => filter(filter(ch, shelf), high));
   const block = Math.round(sampleRate * 0.4);
   const hop = Math.round(sampleRate * 0.1);
-  const n = weighted[0]?.length ?? 0;
+  const n = channels[0]?.length ?? 0;
+  // One channel is weighted at a time and let go before the next: each weighted copy is as long
+  // as the song, and this is called several times in a render. The sums carry on from channel to
+  // channel in the same order as adding them all at once, so the result is exactly the same.
   if (n < block) {
     // Too short for gating: fall back to the plain weighted power.
     let sum = 0;
-    for (const ch of weighted) for (let i = 0; i < n; i++) sum += ch[i] * ch[i];
+    for (const ch of channels) {
+      const weighted = filter(filter(ch, shelf), high);
+      for (let i = 0; i < n; i++) sum += weighted[i] * weighted[i];
+    }
     return n ? -0.691 + 10 * Math.log10(sum / n + 1e-12) : -70;
   }
-  const powers: number[] = [];
-  for (let start = 0; start + block <= n; start += hop) {
-    let sum = 0;
-    for (const ch of weighted) for (let i = start; i < start + block; i++) sum += ch[i] * ch[i];
-    powers.push(sum / block);
+  const sums = new Float64Array(Math.floor((n - block) / hop) + 1);
+  for (const ch of channels) {
+    const weighted = filter(filter(ch, shelf), high);
+    for (let b = 0, start = 0; b < sums.length; b++, start += hop) {
+      let sum = sums[b];
+      for (let i = start; i < start + block; i++) sum += weighted[i] * weighted[i];
+      sums[b] = sum;
+    }
   }
+  const powers = Array.from(sums, (sum) => sum / block);
   const loud = (p: number) => -0.691 + 10 * Math.log10(p + 1e-12);
   const gated = powers.filter((p) => loud(p) > -70);
   if (gated.length === 0) return -70;

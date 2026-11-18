@@ -7,8 +7,10 @@ import { DEMO_GROUPS, DEMO_SONGS, type DemoSong } from '@/data/demoSongs';
 import type { Project } from '@/data/model';
 import { DEMO, makeDemoBeat } from '@/dsp/demoBeat';
 import { decode, play, stopTransport, toggle } from '@/engine/engine';
-import { Chip, Eyebrow, Muted, NavLink, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { Chip, Eyebrow, Muted, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTransport } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
+import { useRowLines } from '@/ui/type';
 import { C, clock } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
@@ -18,6 +20,8 @@ function Row({ id, title, detail, busy, disabled, divided, onPress, load, roomy 
   const tid = `demo:${id}`;
   const t = useTransport(tid);
   const preview = useTask();
+  // With large text a title wraps instead of being cut short; the row grows to fit.
+  const lines = useRowLines();
   const onPreview = () => {
     if (t.loaded) return toggle();
     void preview.run(async () => play(tid, { a: await load() }));
@@ -31,13 +35,13 @@ function Row({ id, title, detail, busy, disabled, divided, onPress, load, roomy 
         accessibilityState={{ disabled, busy }}
         disabled={disabled}
         onPress={onPress}
-        style={({ pressed }) => [s.row, s.between, { flex: 1, minHeight: height, gap: 12, opacity: disabled && !busy ? 0.4 : pressed ? 0.7 : 1 }]}
+        style={({ pressed }) => [s.row, s.between, { flex: 1, minHeight: height, gap: 12, paddingVertical: lines > 1 ? 8 : 0, opacity: disabled && !busy ? 0.4 : pressed ? 0.7 : 1 }]}
       >
         <View style={{ flex: 1, gap: 2 }}>
-          <Txt size={16} w="semi" numberOfLines={1}>
+          <Txt size={16} w="semi" numberOfLines={lines}>
             {title}
           </Txt>
-          <Txt size={13} color={preview.error ? C.recText : C.muted} numberOfLines={1}>
+          <Txt size={13} color={preview.error ? C.recText : C.muted} numberOfLines={lines}>
             {preview.error ?? (preview.busy ? 'Loading the preview…' : detail)}
           </Txt>
         </View>
@@ -81,7 +85,7 @@ const builtIn = () =>
 
 const FILTERS = [...DEMO_GROUPS, 'Built in'] as const;
 
-export default function Demos() {
+function Demos() {
   const task = useTask();
   const [picked, setPicked] = useState<string | null>(null);
   const wide = useWide();
@@ -96,7 +100,7 @@ export default function Demos() {
     void task.run(async () => void ((await work()) && router.replace('/song')));
   };
 
-  const title = <TopBar left="Demo songs" right={<NavLink to="/" back>Close</NavLink>} />;
+  const title = <TopBar back left="Demo songs" />;
   const intro = <Muted>Ready-made beats to freestyle over. Play one to hear it first; tap its name to add it to your library.</Muted>;
   const error = task.error && (
     <Txt size={13} color={C.recText}>
@@ -174,3 +178,6 @@ export default function Demos() {
     </Screen>
   );
 }
+
+// A sheet over Home.
+export default asSheet(Demos);

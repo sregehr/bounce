@@ -26,16 +26,68 @@ const WIDE = viewWidth >= 1000 && viewWidth > viewHeight;
 // Something only the Vault says: the phone labels its search field, the wide layout does not need to.
 const IN_VAULT = WIDE ? 'Removing a song here' : 'Search your songs';
 await page.setViewport({ width: viewWidth, height: viewHeight, deviceScaleFactor: 2 });
+// TEXT=22.4px runs everything at a larger text size (16px is the usual; 22.4px is the largest the app follows), for looking over the screenshots.
+if (process.env.TEXT) await page.evaluateOnNewDocument((size) => document.documentElement.style.setProperty('font-size', size), process.env.TEXT);
 const problems = [];
 const chatter = new Set();
 page.on('console', (m) => {
   if (m.type() === 'warn' || m.type() === 'error') chatter.add(`${m.type()}: ${m.text().slice(0, 260)}`);
   // The segmentation library logs its start-up line as an error, and the browser's own
   // "failed to load" line carries no address; failed requests are listed with theirs below.
-  if (m.type() === 'error' && !/TensorFlow Lite|Failed to load resource/.test(m.text())) problems.push(`console: ${m.text().slice(0, 300)}`);
+  if (m.type() === 'error' && !offline && !/TensorFlow Lite|Failed to load resource/.test(m.text())) problems.push(`console: ${m.text().slice(0, 300)}`);
 });
-page.on('pageerror', (e) => problems.push(`error: ${String(e).slice(0, 300)}`));
+page.on('pageerror', (e) => !offline && problems.push(`error: ${String(e).slice(0, 300)}`));
 page.on('response', (r) => r.status() >= 400 && !r.url().endsWith('/symbolicate') && problems.push(`http ${r.status()}: ${r.url().slice(0, 200)}`));
+
+// Storage can be made to fail from a test. The switch lives in sessionStorage so it survives a reload:
+// 'read' makes reading the library fail, 'write' makes storing audio fail.
+await page.evaluateOnNewDocument(() => {
+  const fault = () => {
+    try {
+      return window.__e2eRaw ? null : sessionStorage.getItem('e2e-fault');
+    } catch {
+      return null;
+    }
+  };
+  const refuse = () => {
+    throw new DOMException('Storage was made to fail for this test.', 'UnknownError');
+  };
+  const { get, put } = IDBObjectStore.prototype;
+  IDBObjectStore.prototype.get = function (...args) {
+    return fault() === 'read' && this.name === 'kv' ? refuse() : get.apply(this, args);
+  };
+  IDBObjectStore.prototype.put = function (...args) {
+    return fault() === 'write' && this.name === 'blobs' ? refuse() : put.apply(this, args);
+  };
+});
+const setFault = (kind) => page.evaluate((kind) => (kind ? sessionStorage.setItem('e2e-fault', kind) : sessionStorage.removeItem('e2e-fault')), kind);
+/** What the app has saved under a key, read straight from the browser's storage, as JSON. `store` is 'kv', or 'blobs' for the names of the stored files. */
+const stored = (key, store = 'kv') =>
+  page.evaluate(
+    (key, store) =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open('bounce');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          window.__e2eRaw = true;
+          const request = store === 'kv' ? db.transaction('kv').objectStore('kv').get(key) : db.transaction('blobs').objectStore('blobs').getAllKeys();
+          window.__e2eRaw = false;
+          request.onerror = () => (db.close(), reject(request.error));
+          request.onsuccess = () => (db.close(), resolve(JSON.stringify(request.result ?? null)));
+        };
+      }),
+    key,
+    store,
+  );
+// The backup server the app talks to, learnt from its own requests.
+let serverOrigin = null;
+page.on('request', (r) => {
+  const hit = /^(https?:\/\/[^/]+)\/api\/(query|mutation)$/.exec(r.url());
+  if (hit) serverOrigin = hit[1];
+});
+// While a test has the server cut off, the browser's complaints about that are expected.
+let offline = false;
 
 let failed = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -152,6 +204,39 @@ async function scrollOver(label) {
   await finger.end();
   await sleep(300);
 }
+/**
+ * Holds a finger on a slider (found by its label) and drags it sideways to a fraction of its width, or
+ * up the page when `scroll` is set. Reports the value bubble as it is with the finger still down, then lifts.
+ */
+async function holdSlider(label, fraction, scroll = false, picture = null) {
+  const box = await page.evaluate((label) => {
+    const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    if (!n) return null;
+    n.scrollIntoView({ block: 'center' });
+    const r = n.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, label);
+  if (!box) return log(false, `hold "${label}"`, 'no such slider'), null;
+  const x = box.x + box.w * 0.5, y = box.y + box.h / 2;
+  const to = box.x + 9 + (box.w - 18) * fraction;
+  const finger = await page.touchscreen.touchStart(x, y);
+  for (let i = 1; i <= 8; i++) {
+    await (scroll ? finger.move(x + (i % 2), y - i * 14) : finger.move(x + ((to - x) * i) / 8, y));
+    await sleep(16);
+  }
+  await sleep(150);
+  const seen = await page.evaluate((label) => {
+    const n = document.querySelector('[data-testid=slider-bubble]');
+    const slider = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
+    const r = n?.getBoundingClientRect();
+    const track = slider?.getBoundingClientRect();
+    return { text: n?.innerText ?? null, left: r?.left, right: r?.right, bottom: r?.bottom, thumbTop: track ? track.top + track.height / 2 - 9 : 0, width: innerWidth, now: Number(slider?.getAttribute('aria-valuenow')) };
+  }, label);
+  if (picture) await shot(picture);
+  await finger.end();
+  await sleep(250);
+  return { ...seen, gone: await page.evaluate(() => !document.querySelector('[data-testid=slider-bubble]')) };
+}
 /** Drags a row (found by its label) to the left, as a finger would, to show its Delete button. */
 async function swipeLeft(label) {
   const box = await page.evaluate((label) => {
@@ -179,7 +264,19 @@ async function swipeLeft(label) {
   await sleep(400);
 }
 const enabled = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=button]')].some((n) => n.getAttribute('aria-label') === label && n.getAttribute('aria-disabled') !== 'true' && n.getBoundingClientRect().width > 0), label);
+/** Whether a control with this label or text is on screen. */
+const shows = (label) =>
+  page.evaluate((label) => [...document.querySelectorAll('[role=button],[role=link],[role=tab],[role=checkbox],a,button')].some((n) => n.getBoundingClientRect().width > 0 && getComputedStyle(n).visibility !== 'hidden' && [n.getAttribute('aria-label'), n.innerText?.trim()].includes(label)), label);
+/** Whether the browser would ask before this tab is closed or reloaded: what a page does to keep a recording from being lost. */
+const asksBeforeLeaving = () =>
+  page.evaluate(() => {
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    return leaving.defaultPrevented;
+  });
 const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
+/** What a slider (found by the start of its label) reads out to a screen reader. */
+const valueText = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label')?.startsWith(label)).pop()?.getAttribute('aria-valuetext') ?? '', label);
 async function tapTrack(label, fraction) {
   const box = await page.evaluate((label) => {
     const n = [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop();
@@ -285,7 +382,11 @@ async function song() {
   await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass after the count-in', 12000);
   await sleep(2500);
   await shot('08-vocals-recording');
-  await sleep(4000);
+  // Going back mid-take would drop it, so the browser's Back button is held while one runs.
+  await page.goBack().catch(() => {});
+  await sleep(600);
+  log(new URL(page.url()).pathname === '/vocals' && /Bar \d+ · pass \d/.test(await text()), 'Back does not leave the mic screen while a take is running', page.url());
+  await sleep(3400);
   await tap('Done, hear it back');
   await expectText('Take 1', 'playback opens on the new take', 10000);
   await expectText(/Polished\s/, 'polish finishes', 30000);
@@ -389,8 +490,34 @@ async function song() {
   await tap('Remove');
   await sleep(300);
   log(!/Take 2 level/.test(await text()), 'a layer can be removed again');
+  // What was just done is offered back at the foot of the screen for a few seconds.
+  await tap('Undo: Removed the layer of take 2');
+  await expectText('Take 2 level', 'Undo, offered where the layer was removed, puts it back');
+  await tap('Remove');
+  await sleep(300);
   await expectText('Take 1, polished over the beat', 'and the song is as it was', 30000);
+  // A deleted take can be brought back, and its audio comes with it.
+  await swipeLeft('Take 3');
+  await tap('Delete take 3');
+  await expectText('2 takes', 'a take is deleted');
+  await shot('10d-undo-delete');
+  await tap('Undo: Deleted take 3');
+  await expectText('3 takes', 'Undo brings a deleted take back');
+  await tap('Take 3');
+  await expectText('Take 3, polished over the beat', 'with its audio, which renders again', 30000);
+  await tap('Redo');
+  await expectText('2 takes', 'Redo deletes it again');
+  await tap('Undo');
+  await expectText('3 takes', 'and Undo on the song page steps back through edits');
+  await tap('Take 1');
+  await expectText('Take 1, polished over the beat', 'the first take is picked again', 30000);
   await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
+  // Typing is undone a line at a time, not a letter at a time.
+  const lyricsNow = () => state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Lyrics').pop()?.value ?? '');
+  await tap('Undo typing');
+  log((await lyricsNow()) === 'Night bus rolling, city on mute', 'Undo typing takes back the last line of lyrics', JSON.stringify(await lyricsNow()));
+  await tap('Redo');
+  log((await lyricsNow()) === 'Night bus rolling, city on mute\nEvery red light is a breath I use', 'and Redo puts it back', JSON.stringify(await lyricsNow()));
   await tap('Pause', { optional: true });
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'switching takes renders', 30000);
@@ -419,6 +546,17 @@ async function song() {
   await shot('11-advanced');
   await slide('Gain', 0.9);
   await expectText('Set by hand', 'editing a band marks the chain as set by hand', 5000);
+  // Adjustable controls say their value in real units, and move without a drag.
+  let spoken = await valueText('Gain');
+  log(/^[−+]?\d+\.\d dB$/.test(spoken), 'the gain slider reads out in dB', spoken);
+  spoken = await valueText('Position in take');
+  log(/^\d:\d\d of \d:\d\d$/.test(spoken), 'the seek bar reads out as a time', spoken);
+  const point = await valueText('Curve point 2');
+  await page.evaluate(() => [...document.querySelectorAll('[role=slider]')].find((n) => n.getAttribute('aria-label')?.startsWith('Curve point 2'))?.focus());
+  await page.keyboard.press('ArrowDown');
+  await sleep(400);
+  spoken = await valueText('Curve point 2');
+  log(/Hz, [−+]?\d+\.\d dB$/.test(spoken) && spoken !== point, 'an EQ point says where it is and moves from the keyboard', `${point} -> ${spoken}`);
   await tap('Compressor', { exact: false, optional: WIDE });
   await slide('Threshold', 0.3);
   await tap('Save as my preset');
@@ -439,6 +577,13 @@ async function song() {
   const intensityBefore = await trackAt('Intensity');
   await scrollOver('Intensity');
   log((await trackAt('Intensity')) === intensityBefore, 'scrolling the page over a slider leaves it where it was', `${intensityBefore} -> ${await trackAt('Intensity')}`);
+  // While a slider is dragged, its value shows in a bubble above the thumb, where the finger does not hide it.
+  const scrolled = await holdSlider('Intensity', 0, true);
+  log(scrolled?.text === null, 'scrolling over a slider shows no value bubble');
+  const bubble = await holdSlider('Intensity', 1, false, '12b-slider-bubble');
+  log(bubble?.text === `${bubble?.now}%` && bubble.now === 100, 'dragging a slider shows its value in a bubble, in the words the row uses', `${bubble?.text}`);
+  log(bubble?.left >= 0 && bubble.right <= bubble.width && bubble.bottom <= bubble.thumbTop, 'the bubble sits above the thumb and inside the screen', `${Math.round(bubble?.left)}–${Math.round(bubble?.right)} of ${bubble?.width}`);
+  log(bubble?.gone === true, 'and goes when the finger lifts');
   await slide('Intensity', 1);
   await expectText('100%');
   await expectText(/Polished\s/, 'the mix renders with the master', 30000);
@@ -458,6 +603,22 @@ async function song() {
     log(Math.abs(top - 320) < 40, 'Mix is still scrolled to where it was left', `scrollTop ${top}, before ${before}, after ${await page.evaluate(`(() => { const n = (${scroller})(); return n ? [n.scrollTop, n.scrollHeight, n.clientHeight].join('/') : 'none'; })()`)}`);
   }
   await shot('13-mix-master');
+
+  // Larger text. A browser has no Dynamic Type, so the app follows the browser's own font size:
+  // turned up to the most the app allows, a slider's label and value move above its track,
+  // which then has the whole width, and nothing spills off the side of the page.
+  const sliderWidth = () => state(() => [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Vocal level').pop()?.getBoundingClientRect().width ?? 0);
+  const textSize = (px) => state(`document.documentElement.style.fontSize = '${px}'; window.dispatchEvent(new Event('resize'))`);
+  const beside = await sliderWidth();
+  await textSize('22.4px');
+  await sleep(500);
+  const above = await sliderWidth();
+  log(above > beside + 80, 'with large text a slider row stacks its label and value above the track', `track ${Math.round(beside)} -> ${Math.round(above)} px wide`);
+  log(await state(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'and the page does not spill sideways');
+  await shot('13b-large-text');
+  await textSize('');
+  await sleep(300);
+  log(Math.abs((await sliderWidth()) - beside) < 2, 'and goes back beside it at the usual size');
 }
 
 const DOWNLOADS = path.join(SHOTS, 'downloads-' + Date.now());
@@ -636,12 +797,18 @@ async function finish() {
     }
     await tap('WAV, 16-bit');
   }
-  await tap('Back');
-  await expectText('Prod. Lowkey', 'Back returns to the player');
+  // Share is a sheet over the player: it has the one close button every sheet has, and Escape closes it too.
+  log(await state(() => !!document.querySelector('[role=dialog]')), 'Share opens as a sheet over the player');
+  await tap('Close');
+  await expectText('Prod. Lowkey', 'closing the sheet returns to the player');
+  await tap('Share');
+  await expectText('Keep as mastered', 'the sheet opens again');
+  await page.keyboard.press('Escape');
+  await expectText('Prod. Lowkey', 'and Escape closes it');
   // The wide player always shows the lyrics; the phone keeps them behind a button.
   await tap('Lyrics', { optional: WIDE });
   await expectText('Every red light is a breath I use', 'the lyrics written on the song came with it');
-  await tap('Done', { optional: WIDE });
+  await tap('Hide lyrics', { optional: WIDE });
   await tap('Pause', { optional: true });
 
   await tap('Snippet');
@@ -650,10 +817,29 @@ async function finish() {
   if (await state(() => !![...document.querySelectorAll('[role=slider]')].find((n) => n.getAttribute('aria-label') === 'Snippet position'))) {
     await tapTrack('Snippet position', 0.2);
     await expectText('Your pick', 'the snippet can be moved to another part of the song', 5000);
+    const stretch = await valueText('Snippet position');
+    log(/^\d:\d\d to \d:\d\d$/.test(stretch), 'the snippet window reads out as the stretch it covers', stretch);
     await tap('Strongest stretch');
     await expectText('Strongest stretch picked', 'and put back on the strongest stretch', 5000);
   }
-  log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
+  // With lyrics on the song, the words on the video are its lines, each timed to where the voice is.
+  await expectText('Line timing', 'a song with lyrics shows them in time on its snippet');
+  const lineLabels = () => state(() => [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).map((n) => n.getAttribute('aria-label') ?? '').filter((l) => l.startsWith('Play from line ')));
+  let timedLines = [];
+  for (let i = 0; i < 40 && !timedLines.length; i++) (timedLines = await lineLabels()).length || (await sleep(250));
+  const startOf = (label) => Number(/at ([\d.]+) s/.exec(label ?? '')?.[1] ?? NaN);
+  log(timedLines.length >= 1 && timedLines.every((l, i) => i === 0 || startOf(l) > startOf(timedLines[i - 1])), 'the lyric lines in this stretch are listed in order, each with when it shows', timedLines.join(' | '));
+  const onCard = await state(() => document.querySelector('[data-testid=snippet-line]')?.innerText.trim() ?? '');
+  log(['Night bus rolling, city on mute', 'Every red light is a breath I use'].includes(onCard), 'and the card shows a lyric line where the caption was', onCard);
+  // A line that comes in early or late is moved a quarter of a second at a time, and put back.
+  const lineNo = /line (\d+)/.exec(timedLines[timedLines.length - 1] ?? '')?.[1] ?? '1';
+  const wasAt = startOf(timedLines[timedLines.length - 1]);
+  await tap(`Line ${lineNo} earlier`);
+  let nowAt = startOf((await lineLabels()).pop());
+  log(Math.abs(wasAt - nowAt - 0.25) < 0.011 || nowAt < wasAt, 'a line can be nudged earlier', `${wasAt} s -> ${nowAt} s`);
+  await tap('Reset timing');
+  nowAt = startOf((await lineLabels()).pop());
+  log(nowAt === wasAt, 'and Reset timing puts it back', `${nowAt} s`);
   await shot('21-snippet');
   // The snippet is made first; saving or sharing it is then one more tap.
   await tap('Make snippet');
@@ -662,6 +848,10 @@ async function finish() {
   await sleep(500);
   await tap('Save snippet');
   await expectText(/Saved Night bus snippet\.(mp4|webm) to your downloads/i, 'snippet video is recorded', 60000);
+  // One caption line is still there for the asking, written on the card itself.
+  await tap('One line');
+  log((await state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Caption line').pop()?.value ?? '')) === 'Night bus rolling, city on mute', 'the caption on the card starts as the first lyric line, and is edited there');
+  log(!/Line timing/.test(await text()), 'and the line timing is put away with it');
   const video = (await waitDownloads(4)).find((f) => /snippet\.(mp4|webm)$/.test(f));
   log(!!video && fs.statSync(path.join(DOWNLOADS, video)).size > 20000, 'snippet video file was written', video ? `${video}, ${fs.statSync(path.join(DOWNLOADS, video)).size} bytes` : 'missing');
   // The same snippet in the square shape for feeds: picking a shape asks for it to be made again.
@@ -687,10 +877,8 @@ async function finish() {
     await tap('More for Night bus');
     await tap('Edit image');
     await expectText('Cover art', 'Edit image opens the cover screen for that song', 10000);
-    await tap('Skip');
-    await expectText('Prod. Lowkey', 'and leaving it returns to the song', 15000);
-    await tap('Close the player');
-    await expectText(IN_VAULT, 'then back to the Vault');
+    await tap('Close');
+    await expectText(IN_VAULT, 'and closing it returns to the Vault', 15000);
   }
   await type('Search your songs', 'red light');
   await expectText('Has lyrics', 'search finds a word in the lyrics');
@@ -704,6 +892,8 @@ async function finish() {
   log(await state(() => ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Song')), 'the player is full screen');
   await tap('Close the player');
   await expectText(IN_VAULT, 'closing the player returns to the Vault');
+  // On a wide screen the Vault shows around the player's card, so its text is there before the card has gone.
+  log(await page.waitForFunction(() => location.pathname !== '/player', { timeout: 5000 }).then(() => true, () => false), 'and the player itself is gone');
   // The finished song is its own copy: the beat keeps all three takes.
   await tap('Song');
   await expectText('3 takes', 'Song opens the beat the finished song came from', 10000);
@@ -737,7 +927,11 @@ async function library() {
   await expectText('Add a beat', 'home offers the ways to add a beat');
   await tap('Add a demo song');
   await expectText('Ready-made beats', 'and leads into the demo songs');
-  await tap('Home');
+  // The demo songs are a sheet over Home, with no tabs around it; closing it shows Home again.
+  log(await state(() => !!document.querySelector('[role=dialog]') && ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0)), 'as a sheet, with the tab bar out of the way');
+  await tap('Close');
+  await sleep(500);
+  log(await state(() => !document.querySelector('[role=dialog]')), 'closing the sheet puts it away');
   await expectText('Add a beat');
   await tap('Open Night bus');
   await expectText('Beat details', 'a beat opens its song', 10000);
@@ -788,6 +982,10 @@ async function library() {
   await expectText('Recording', 'recording starts at the first sound', 8000);
   await sleep(4500);
   await shot('25-record');
+  // The same goes for a beat being captured.
+  await page.goBack().catch(() => {});
+  await sleep(600);
+  log(new URL(page.url()).pathname === '/record' && /Recording/i.test(await text()), 'Back does not leave a capture that is running', page.url());
   await tap('Stop recording');
   await expectText('Not in the Vault yet', 'a captured beat opens on the Song tab', 20000);
   // Its details, where it is named and mastered alone, open in place.
@@ -853,14 +1051,67 @@ async function library() {
   log(await transportPlaying(), 'and plays');
   await shot('28-playback-48k');
 
+  // Artists: picking who is on the mic starts a session, and a song that is no one's becomes theirs.
+  await tap('Freestyle over Basement tape');
+  await expectText('On the mic: no one picked', 'the mic screen says no one has been picked yet', 10000);
+  await tap('Pick');
+  await type('New artist name', 'Jay Oh');
+  await tap('Add');
+  await expectText('On the mic: Jay Oh', 'an artist is added and picked for the session');
+  await shot('28b-on-the-mic');
+  // Their vocal sound is saved from the Mix page, next to the preset.
+  await tap('Mix');
+  await expectText(/Polished\s/, 'the mix opens', 30000);
+  await tap('Pause', { optional: true });
+  await tap('Save for Jay Oh');
+  await expectText('Saved for Jay Oh', 'the vocal chain is saved for the artist on the song');
+  await expectText("Use Jay Oh's sound", 'and can be put on a song of theirs again');
+  // The artist view: the mic screen for the person at the mic, with the navigation put away.
+  await tap('Freestyle over Basement tape');
+  await expectText('Always listening');
+  await tap('Open artist view');
+  await expectText('Exit artist view', 'the artist view opens');
+  await expectText('Tap to record', 'with one large record button');
+  log(await state(() => ![...document.querySelectorAll('[role=tab]')].some((n) => n.getBoundingClientRect().width > 0)), 'and no navigation around it');
+  const big = await state(() => { const r = [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0).find((n) => n.getAttribute('aria-label') === 'Start recording')?.getBoundingClientRect(); return r ? Math.min(r.width, r.height) : 0; });
+  log(big >= 140, 'the record button is large enough to hit from a step away', `${Math.round(big)} points`);
+  await shot('28c-artist-view');
+  await tap('Start recording');
+  await expectText('Tap to stop', 'recording starts from the artist view', 12000);
+  await sleep(1200);
+  await shot('28d-artist-view-recording');
+  await sleep(2500);
+  await tap('Stop recording');
+  await expectText('Take 2 saved', 'the take is saved and the artist view stays up', 10000);
+  await expectText('Exit artist view');
+  await tap('Hear the last take');
+  let heard = false;
+  for (let i = 0; i < 60 && !heard; i++) (heard = /Stop playing/.test(await text())) || (await sleep(500));
+  log(heard, 'the take can be heard back from the artist view');
+  await tap('Stop playing', { optional: true });
+  await tap('Exit artist view');
+  await expectText('Always listening', 'leaving it returns to the full mic screen');
+  await tap('Song');
+  await expectText('2 takes', 'the take recorded in the artist view is on the song');
+  await swipeLeft('Take 2');
+  await tap('Delete take 2');
+  await expectText('1 take', 'and can be deleted like any other');
+  // The artist has a profile, with their songs and their sound on it.
+  await page.goto(BASE + '/profile', { waitUntil: 'networkidle2' });
+  await expectText('Artists you record', 'Profile lists the artists recorded here', 20000);
+  await expectText(/1 song · Vocal sound saved/, 'with their songs and the vocal sound saved for them');
+  await shot('28e-artists');
+  await page.goto(BASE + '/', { waitUntil: 'networkidle2' });
+  await expectText('Basement tape', 'Home opens again', 20000);
+  await tap('Open Basement tape');
+  await expectText('1 take', 'and the song is as it was left', 20000);
+
   // Swipe to delete: a take from the song, then the beat from Home.
   await tap('Song');
   await expectText('1 take', 'Song shows the new take');
   await swipeLeft('Take 1');
   await tap('Delete take 1');
-  await expectText('1 take', 'the first tap on Delete only asks');
-  await tap('Tap again to delete take 1');
-  await expectText('No takes yet', 'swiping and tapping Delete removes a take', 10000);
+  await expectText('No takes yet', 'one tap on Delete removes a take, since it can be undone', 10000);
   await tap('Home');
   await expectText('Add a beat', 'Home opens');
   await sleep(600); // let the screen change settle before dragging on it
@@ -908,7 +1159,295 @@ async function library() {
   }
 }
 
-const flows = { onboarding, song, finish, library };
+// ---------- Server settings, for the backup limits ----------
+
+// The backup limits are server settings. They can only be changed here when the app is talking to
+// the local server that `npx convex` in this folder manages (LIMITS=0 leaves them alone regardless).
+const cliServer = /^EXPO_PUBLIC_CONVEX_URL=(.+)$/m.exec(fs.existsSync('.env.local') ? fs.readFileSync('.env.local', 'utf8') : '')?.[1]?.trim().replace(/\/$/, '');
+const LIMIT_NAMES = ['BACKUP_MAX_MB', 'BACKUP_MAX_FILE_MB'];
+const convexCli = (...args) => spawnSync('npx', ['convex', 'env', ...args], { encoding: 'utf8' });
+/** What the limits were before this run, so they can be put back; null until they have been touched. */
+let limitsBefore = null;
+function canLimit() {
+  if (process.env.LIMITS === '0' || !serverOrigin || !/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(serverOrigin) || cliServer !== serverOrigin) return false;
+  if (limitsBefore) return true;
+  const before = {};
+  for (const name of LIMIT_NAMES) {
+    const got = convexCli('get', name);
+    if (got.status !== 0) return false;
+    before[name] = /not found/.test(got.stdout + got.stderr) ? undefined : got.stdout.trim() || undefined;
+  }
+  limitsBefore = before;
+  return true;
+}
+/** Sets the backup limits in megabytes; a limit left out goes back to the server's default. */
+function setLimits({ total, file } = {}) {
+  const want = { BACKUP_MAX_MB: total, BACKUP_MAX_FILE_MB: file };
+  for (const name of LIMIT_NAMES) {
+    const done = want[name] === undefined ? convexCli('remove', name) : convexCli('set', name, String(want[name]));
+    if (done.status !== 0 && want[name] !== undefined) throw new Error(`could not set ${name} on the server: ${(done.stderr || done.stdout).trim().slice(0, 200)}`);
+  }
+}
+/** Puts the limits back as they were found. Safe to call more than once. */
+function restoreLimits() {
+  if (!limitsBefore) return;
+  for (const name of LIMIT_NAMES) limitsBefore[name] === undefined ? convexCli('remove', name) : convexCli('set', name, limitsBefore[name]);
+  limitsBefore = null;
+}
+process.on('SIGINT', () => (restoreLimits(), process.exit(130)));
+
+/** Starts a take from the mic in the bar, lets it run for a while past the count-in, and stops it. */
+async function recordTake(during) {
+  await tap('Start recording');
+  // A layer renders the mix it plays over first, so the take can be a moment in starting.
+  for (let i = 0; i < 160 && !(await shows('Stop recording')); i++) await sleep(250);
+  // The count-in shows the beat it is on; the take itself starts when that goes.
+  await sleep(300);
+  for (let i = 0; i < 60 && /count-in · \d/i.test(await text()); i++) await sleep(150);
+  await during?.();
+  await sleep(3500);
+  await tap('Stop recording');
+}
+const openSettings = async () => {
+  await tap('Home');
+  await tap('Your menu');
+  await tap('Settings');
+  await expectText('Storage', 'Settings opens');
+};
+
+/** What happens when things go wrong: storage that cannot be read or written, a backup with no room, a server that is away. */
+async function failures() {
+  // ----- A change made in the last moment before the page goes away -----
+  // Changes are saved a quarter of a second after they are made, so this one is still waiting when the page reloads.
+  await tap('Song');
+  await expectText('Lyrics', 'Song opens');
+  await sleep(1000);
+  await type('Lyrics', 'Saved in the last moment');
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(600);
+  const lastSaved = JSON.parse(await stored('library')).projects.some((p) => p.lyrics === 'Saved in the last moment');
+  log(lastSaved, 'a change made just before a reload is still saved', lastSaved ? '' : 'the lyrics typed just before it are not in the saved library');
+
+  // ----- A library that will not open -----
+  await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
+  await expectText('Add a beat', 'Home opens with the library', 30000);
+  await sleep(600);
+  const savedLibrary = await stored('library');
+  await setFault('read');
+  await page.reload({ waitUntil: 'networkidle2' });
+  await expectText('Your songs could not be opened', 'a library that cannot be read gets a screen that says so', 30000);
+  await expectText('Nothing has been changed or lost');
+  await expectText('Storage was made to fail for this test', 'with what storage reported');
+  log(!(await shows('Home')) && !/Add a beat/i.test(await text()), 'and the app does not start on an empty library behind it');
+  await shot('31-library-unreadable');
+  await tap('Try again');
+  await sleep(1500);
+  log(/Your songs could not be opened/.test(await text()), 'trying again while storage still fails stays on that screen');
+  log((await stored('library')) === savedLibrary, 'nothing is written over the saved library while it shows');
+  await setFault(null);
+  await tap('Try again');
+  await expectText('Add a beat', 'trying again once storage answers opens the library', 30000);
+  await expectText('Night bus', 'with the songs that were saved');
+
+  // ----- The backup, switched on for what follows -----
+  await openSettings();
+  const hasBackup = !/No backup server is configured/.test(await text());
+  if (hasBackup) {
+    if (/Off\. Everything stays only on this device/.test(await text())) await tap('Back up my beats and takes');
+    await expectText('Everything is backed up', 'the backup is up to date before anything goes wrong', 90000);
+  }
+  const limits = hasBackup && canLimit();
+  if (hasBackup && !limits) console.log(`skip the backup-full and file-too-big messages: they need the local server this folder's .env.local points at (app uses ${serverOrigin}, .env.local has ${cliServer ?? 'none'}), and Node 22.13 or newer for the Convex command line`);
+  // From here no file over 1 MB is taken, so the beat added next stays out of the backup.
+  if (limits) setLimits({ file: 1 });
+
+  // ----- A take that cannot be stored -----
+  await page.goto(BASE + '/demos', { waitUntil: 'networkidle2', timeout: 120000 });
+  await expectText('Ready-made beats', 'the demo songs open');
+  await tap('Built in', { optional: true });
+  await tap('Add Night bus');
+  await expectText('No takes yet', 'a fresh beat is added to record over', 20000);
+  await sleep(600);
+  // A second copy of a demo gets a number after its name.
+  const beatName = await page.evaluate((saved) => saved.projects.find((p) => p.id === saved.currentId)?.name ?? '', JSON.parse(await stored('library')));
+  log(/^Night bus( \d+)?$/.test(beatName), 'and is the beat that is open', beatName);
+  const mic = `Freestyle over ${beatName}`;
+  await tap(mic);
+  await expectText('Always listening', 'the mic screen opens');
+  await expectText(/Fake .* ms (estimated|measured)/, 'and the microphone connects', 10000);
+  await tap('8 bars');
+  log(!(await asksBeforeLeaving()), 'with nothing being recorded, the tab can be closed without being asked');
+
+  await setFault('write');
+  await recordTake(async () => log(await asksBeforeLeaving(), 'while a take is being recorded, closing or reloading the tab asks first'));
+  await expectText('That take could not be saved', 'a take that cannot be stored says so', 15000);
+  await expectText('It is still here');
+  log((await shows('Try again')) && (await shows('Save as a file')) && (await shows('Discard')), 'and offers to try again, save it as a file, or discard it');
+  log(await asksBeforeLeaving(), 'with a take waiting to be saved, leaving still asks first');
+  await shot('32-take-unsaved');
+  // Recording again would replace the take in hand, so the mic waits.
+  await tap('Start recording', { optional: true });
+  await sleep(1200);
+  log(!(await shows('Stop recording')) && (await shows('Try again')), 'the mic does not start another take over it');
+  await tap('Try again');
+  await sleep(1500);
+  log((await shows('Try again')) && /That take could not be saved/.test(await text()), 'trying again while storage still fails keeps the take in hand');
+  await setFault(null);
+  await tap('Try again');
+  await expectText(/Take 1 · 0:0\d/, 'trying again once storage works saves the take and opens it in the mix', 15000);
+  await expectText(/Polished\s/, 'where it plays back polished', 30000);
+  log(!(await asksBeforeLeaving()), 'once it is saved, the tab can be closed again');
+  await tap('Pause', { optional: true });
+
+  // The same failure, answered by saving the take as a file.
+  await tap(mic);
+  await expectText('Always listening');
+  await setFault('write');
+  await recordTake();
+  await expectText('That take could not be saved', 'a second take fails the same way', 15000);
+  let had = downloads().length;
+  await tap('Save as a file');
+  await expectText(`Saved to your downloads as ${beatName} take.wav. It is not in this song.`, 'a take that cannot be stored can be saved as a file', 20000);
+  await waitDownloads(had + 1);
+  const takeFile = fs.existsSync(path.join(DOWNLOADS, `${beatName} take.wav`)) ? fs.readFileSync(path.join(DOWNLOADS, `${beatName} take.wav`)) : null;
+  log(!!takeFile && takeFile.toString('latin1', 0, 4) === 'RIFF' && takeFile.readUInt16LE(22) === 1 && takeFile.readUInt16LE(34) === 24 && takeFile.length > 100000, 'the file is the take, as a 24-bit mono WAV', takeFile ? `${takeFile.length} bytes` : 'missing');
+  log(!(await shows('Try again')) && !(await asksBeforeLeaving()), 'and then nothing is left waiting');
+
+  // And answered by discarding it, which takes a second tap.
+  await recordTake();
+  await expectText('That take could not be saved', 'a third take fails the same way', 15000);
+  await tap('Discard');
+  log((await shows('Tap again to discard')) && (await shows('Try again')), 'Discard asks for a second tap first');
+  await tap('Tap again to discard');
+  await sleep(400);
+  log(!(await shows('Try again')) && !/could not be saved|waiting to be saved/.test(await text()), 'the second tap discards the take');
+  log(!(await asksBeforeLeaving()), 'and the tab can be closed again');
+  await setFault(null);
+  await tap('Song');
+  await expectText('1 take', 'only the take that was saved is in the song');
+  log(!/2 takes/.test(await text()), 'the two that were not saved are not');
+
+  // ----- A take recorded as a layer -----
+  await tap(mic);
+  await expectText('Always listening');
+  await tap('Record as a layer on take 1');
+  await recordTake();
+  await expectText('Take 2 level', 'a take recorded as a layer opens Song, under Layers', 20000);
+  await expectText('2 takes');
+  log((await trackAt('Take 2 pan')) === 40 && (await trackAt('Take 2 level')) === 50, 'as an ad-lib, off to the right', `level ${await trackAt('Take 2 level')}, pan ${await trackAt('Take 2 pan')}`);
+  log(!(await shows('Layer take 2')), 'so it is not offered as a layer a second time');
+  await sleep(600);
+  const layeredSong = JSON.parse(await stored('library')).projects.find((p) => p.takes.length === 2 && p.layers?.length === 1);
+  log(!!layeredSong && layeredSong.takeId === layeredSong.takes[0].id && layeredSong.layers[0].takeId === layeredSong.takes[1].id && layeredSong.layers[0].role === 'adlib', 'take 1 is still the picked take, with take 2 saved on it as an ad-lib layer');
+  await expectText('Take 1, polished over the beat', 'and the song renders with the layer in', 40000);
+  await shot('33-layer-recorded');
+  await tap('Pause', { optional: true });
+
+  // ----- A captured beat that cannot be stored -----
+  await tap('Home');
+  await tap('Capture from your gear');
+  await tap('Connect', { optional: true });
+  await expectText('Connected', 'the capture screen connects', 10000);
+  await setFault('write');
+  await tap('Arm recording');
+  await expectText('Recording', 'a capture starts at the first sound', 8000);
+  log(await asksBeforeLeaving(), 'while a beat is being captured, closing or reloading the tab asks first');
+  await sleep(4000);
+  await tap('Stop recording');
+  await expectText('That capture could not be saved', 'a capture that cannot be stored says so', 30000);
+  await expectText('captured, not saved yet');
+  log((await shows('Try again')) && (await shows('Save as a file')) && (await shows('Discard capture')), 'and offers to try again, save it as a file, or discard it');
+  log(await asksBeforeLeaving(), 'with a capture waiting to be saved, leaving still asks first');
+  await shot('34-capture-unsaved');
+  await tap('Try again');
+  await sleep(600);
+  for (let i = 0; i < 60 && !(await shows('Try again')); i++) await sleep(250);
+  log(/That capture could not be saved/.test(await text()), 'trying again while storage still fails keeps the capture in hand');
+  had = downloads().length;
+  await tap('Save as a file');
+  await expectText(/Saved to your downloads as Untitled beat \d+\.wav/, 'a capture that cannot be stored can be saved as a file', 20000);
+  const beatFile = (await waitDownloads(had + 1)).find((f) => /^Untitled beat \d+\.wav$/.test(f));
+  const beatBytes = beatFile ? fs.readFileSync(path.join(DOWNLOADS, beatFile)) : null;
+  log(!!beatBytes && beatBytes.toString('latin1', 0, 4) === 'RIFF' && beatBytes.readUInt16LE(22) === 2 && beatBytes.length > 200000, 'the file is the capture, as a stereo WAV', beatBytes ? `${beatFile}, ${beatBytes.length} bytes` : 'missing');
+  log(await shows('Try again'), 'and the capture is still in hand, in case storage comes back');
+  // Discarding listens for a new capture, which the test tone starts straight away.
+  await tap('Discard capture');
+  await expectText('Recording', 'discarding it listens for a new capture', 8000);
+  log(!/could not be saved/.test(await text()), 'with the message gone');
+  await sleep(4000);
+  await tap('Stop recording');
+  await expectText('That capture could not be saved', 'the next capture fails the same way', 30000);
+  await setFault(null);
+  await tap('Try again');
+  await expectText('Not in the Vault yet', 'trying again once storage works saves the capture and opens it', 30000);
+  log(!(await asksBeforeLeaving()), 'and the tab can be closed again');
+  await tap('Beat details', { exact: false });
+  await expectText('Beat captured', 'as a captured beat');
+
+  if (!hasBackup) return;
+
+  // ----- A backup that will not take a file, or has no room -----
+  if (limits) {
+    await openSettings();
+    await expectText(/Backed up, except \d+ files? too big to back up\./, 'Settings says when files were too big to back up', 90000);
+    await shot('35-backup-too-big');
+    await tap('Vault');
+    await expectText('Backed up, except files too big to back up.', 'and so does the Vault');
+    // Now any one file is fine, but the backup as a whole has no room for more.
+    setLimits({ total: 0.001 });
+    await openSettings();
+    // Showing the restore code runs a backup first.
+    await tap("Show this device's restore code");
+    await expectText('The backup is full, so newer work is only on this device. Delete songs you no longer need to make room.', 'Settings says when the backup is full', 60000);
+    await shot('36-backup-full');
+    await tap('Hide the code');
+    await tap('Vault');
+    await expectText('The backup is full; newer work is only on this device.', 'and so does the Vault');
+    // With the limits gone, what was left out goes up.
+    restoreLimits();
+    await openSettings();
+    await tap("Show this device's restore code");
+    await expectText('Everything is backed up', 'once there is room again the rest is backed up', 90000);
+    await tap('Hide the code');
+  }
+
+  // ----- Deleting everything while the server cannot be reached -----
+  if (!serverOrigin) return void console.log('skip deleting everything offline: the backup server was never seen');
+  await openSettings();
+  await expectText('Everything is backed up', 'the backup is up to date before everything is deleted', 90000);
+  const { deviceId, deviceSecret } = JSON.parse(await stored('library')).settings;
+  const onServer = () =>
+    fetch(`${serverOrigin}/api/query`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: 'backup:summary', format: 'json', args: { deviceId, secret: deviceSecret } }) })
+      .then((r) => r.json())
+      .then((answer) => answer.value);
+  const held = await onServer();
+  log(held.projects > 0 && held.files > 0, "the server holds this device's backup", JSON.stringify(held));
+  offline = true;
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setBlockedURLs', { urls: [`*${new URL(serverOrigin).host}*`] });
+  await tap('Delete everything on this device');
+  await tap('Tap again to delete every beat, take and cover on this device');
+  await expectText('Capture a beat. Freestyle over it.', 'everything on the device is deleted and the welcome opens', 30000);
+  await sleep(600);
+  log((await stored('', 'blobs')) === '[]' && JSON.parse(await stored('library')).projects.length === 0, 'no song or audio is left on the device');
+  const owed = JSON.parse(await stored('erase'));
+  log(owed?.length === 1 && owed[0].deviceId === deviceId && owed[0].secret === deviceSecret, 'the deletion the server could not be told about is kept', `${owed?.length ?? 0} kept`);
+  const still = await onServer();
+  log(still.projects === held.projects, 'and the copy on the server is still there for now', JSON.stringify(still));
+  // Back online: the next backup run, a few seconds after launch, sends what is owed.
+  await cdp.send('Network.setBlockedURLs', { urls: [] });
+  await page.reload({ waitUntil: 'networkidle2' });
+  offline = false;
+  let gone = null;
+  for (const until = Date.now() + 40000; Date.now() < until; await sleep(500)) {
+    gone = await onServer();
+    if (gone.projects === 0 && gone.files === 0 && (await stored('erase')) === '[]') break;
+  }
+  log(gone.projects === 0 && gone.files === 0, 'once the server can be reached the owed deletion is sent and the backup is gone', JSON.stringify(gone));
+  log((await stored('erase')) === '[]', 'and nothing is owed any more');
+}
+
+const flows = { onboarding, song, finish, library, failures };
 const order = flow === 'all' ? Object.keys(flows) : flow.split(',');
 try {
   for (const name of order) {
@@ -919,6 +1458,8 @@ try {
   log(false, 'run', String(e).slice(0, 400));
   await shot('crash');
 }
+// Server settings a flow changed do not outlive the run.
+restoreLimits();
 if (problems.length) {
   failed++;
   console.log(`\nBrowser problems (${problems.length}):\n` + [...new Set(problems)].slice(0, 12).join('\n'));

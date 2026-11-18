@@ -1,5 +1,12 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import { View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+
+/**
+ * True inside a sheet the system draws (a page sheet on an iPad is a column about as wide as the
+ * phone layouts are designed for, whatever the size of the screen behind it). Screens in one
+ * keep the single column and its ordinary margins.
+ */
+export const Narrow = createContext(false);
 
 /** The widest the wide layout grows on a big display; beyond it the app sits centred. */
 export const WIDE_MAX = 1440;
@@ -10,7 +17,8 @@ export const WIDE_MAX = 1440;
  */
 export function useWide() {
   const { width, height } = useWindowDimensions();
-  return width >= 1000 && width > height;
+  const narrow = useContext(Narrow);
+  return !narrow && width >= 1000 && width > height;
 }
 
 /**
@@ -51,7 +59,8 @@ export function useBar() {
  */
 export function useRoomy() {
   const { width } = useWindowDimensions();
-  return !useWide() && width >= ROOMY_FROM;
+  const narrow = useContext(Narrow);
+  return !useWide() && !narrow && width >= ROOMY_FROM;
 }
 
 /** The margin either side of single-column content: `base` on a phone, and whatever centres the column when there is room. */

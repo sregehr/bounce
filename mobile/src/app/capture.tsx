@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { gearName } from '@/data/labels';
 import { setSettings, useLibrary } from '@/data/store';
 import { closeInput, inputAllowed, openInput, setPair, useEngine, wake } from '@/engine/engine';
-import { Btn, Card, Eyebrow, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Card, Eyebrow, Muted, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { InputPanel } from '@/ui/parts';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
@@ -27,7 +27,7 @@ export default function Capture() {
     void openInput(deviceId);
   };
 
-  const title = <TopBar left="Capture a beat" right={<NavLink back to="/" onPress={() => closeInput()}>Back</NavLink>} />;
+  const title = <TopBar back={{ to: '/', onPress: () => closeInput() }} left="Capture a beat" />;
 
   const state = (
     <>

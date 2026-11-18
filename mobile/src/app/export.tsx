@@ -10,14 +10,17 @@ import { artistOf } from '@/data/songs';
 import { linkNotes, linksAvailable, makeLink, removeLink, type Note } from '@/data/shares';
 import { useSong } from '@/data/song';
 import { aacSupported } from '@/dsp/aac';
+import { stopTransport } from '@/engine/engine';
 import { Btn, Card, Chip, Eyebrow, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
+import { asSheet } from '@/ui/nav';
+import { useRowLines } from '@/ui/type';
 import { C, clock, lufs, plural } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
 const ROLES = ['Writer', 'Producer', 'Performer'] as const;
 
-export default function Export() {
+function Export() {
   const project = useProject();
   const take = activeTake(project);
   const profile = useLibrary((l) => l.profile);
@@ -30,6 +33,7 @@ export default function Export() {
   // Files that are rendered and waiting for a tap: the share sheet only opens straight from one.
   const [ready, setReady] = useState<OutFile[] | null>(null);
   const wide = useWide();
+  const lines = useRowLines();
   useStopOnLeave();
   // Whether this browser can make the small format, at this beat's sample rate.
   const [small, setSmall] = useState(false);
@@ -49,6 +53,8 @@ export default function Export() {
     task.run(async () => {
       setDone(null);
       song.pause();
+      // Rendering needs the room: the copy of the song loaded for playing here is let go, and loads again on Play.
+      if (!ready) stopTransport();
       const files = ready ?? (await exportFiles(project, setStage));
       setStage('');
       if (how === 'save') {
@@ -64,19 +70,19 @@ export default function Export() {
     });
   const asMastered = project.stats ? lufs(project.stats.lufs) : 'as it is';
 
-  const top = <TopBar left="Share" right={<NavLink to={project.saved ? '/player' : '/playback'} back>Back</NavLink>} />;
+  const top = <TopBar back left="Share" />;
 
   const card = (
       <Card style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ gap: 2, flex: 1 }}>
-          <Txt size={16} w="semi" numberOfLines={1}>
+          <Txt size={16} w="semi" numberOfLines={lines}>
             {project.name}
           </Txt>
           <Txt size={13} color={C.muted}>
             {[clock(song.mix?.durationSec ?? project.stats?.durationSec ?? project.beat.durationSec), take ? 'beat and vocals' : 'beat only', project.overrides.master ? 'set by hand' : project.master.style, song.mix ? lufs(song.mix.lufs) : null].filter(Boolean).join(' · ')}
           </Txt>
         </View>
-        <RoundPlay playing={song.t.playing} onPress={song.toggle} disabled={!song.t.loaded} />
+        <RoundPlay playing={song.t.playing} onPress={song.toggle} disabled={!song.t.loaded && !song.mix} />
       </Card>
   );
 
@@ -168,7 +174,7 @@ export default function Export() {
         )}
         {notes.map((n, i) => (
           <View key={i} style={[s.row, { gap: 10, alignItems: 'flex-start', paddingVertical: 6, borderTopWidth: 0.5, borderTopColor: C.border }]}>
-            <Txt size={13} w="semi" color={C.accent} style={{ width: 40 }}>
+            <Txt size={13} w="semi" color={C.accent} style={{ minWidth: 40 }}>
               {clock(n.atSec)}
             </Txt>
             <View style={{ flex: 1 }}>
@@ -297,3 +303,6 @@ export default function Export() {
     </Screen>
   );
 }
+
+// A sheet over the player or the mix.
+export default asSheet(Export, { fallback: '/vault' });

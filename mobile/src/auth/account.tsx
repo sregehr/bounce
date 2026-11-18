@@ -92,7 +92,7 @@ export function AccountPanel({ returnTo }: { returnTo?: string }) {
 }
 
 /** The optional account step of the welcome. */
-export function AccountStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+export function AccountStep({ onNext }: { onNext: () => void }) {
   const { signedIn, me } = useAccount();
   return (
     <>
@@ -105,9 +105,6 @@ export function AccountStep({ onNext, onBack }: { onNext: () => void; onBack: ()
       <AccountPanel returnTo="/onboarding?step=account" />
       <Foot>
         {signedIn ? <Btn label="Continue" onPress={onNext} /> : <Btn kind="outline" label="Not now" onPress={onNext} />}
-        <NavLink center size={14} onPress={onBack}>
-          Back
-        </NavLink>
       </Foot>
     </>
   );

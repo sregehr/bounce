@@ -1133,6 +1133,7 @@ async function library() {
     await sleep(600);
   }
   await expectText('Bring a beat', 'home is empty once every beat is deleted');
+  await shot('29-home-empty');
   await tap('Song');
   await expectText('No song yet', 'Song stays put and says why it is empty');
   await expectText('Add a beat', 'and offers the ways to add a beat');
@@ -1141,6 +1142,13 @@ async function library() {
   await expectText('Nothing to mix yet', 'Mix does the same');
   await tap('Add a beat to freestyle');
   await expectText('Nothing to record over yet', 'and so does the mic');
+  // With nothing to record over, the mic is not shown as live, and a tap goes to capture a beat.
+  const micColour = await page.evaluate(() => getComputedStyle([...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Capture a beat to freestyle').pop() ?? document.body).backgroundColor);
+  log(micColour === 'rgb(30, 30, 32)', 'the mic rests dark while there is no beat', micColour);
+  await tap('Capture a beat to freestyle');
+  log(await page.waitForFunction(() => location.pathname === '/capture', { timeout: 5000 }).then(() => true, () => false), 'and a tap on it opens capture');
+  await tap('Add a beat to freestyle');
+  await expectText('Nothing to record over yet', 'and from there it leads back to the mic');
   await tap('Try a demo song');
   await expectText('Ready-made beats', 'its tiles lead on, here to the demo songs');
 

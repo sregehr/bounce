@@ -7,6 +7,7 @@ import { activeBeats, beatsIn } from '@/data/songs';
 import { deleteProject, setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { loopSeconds } from '@/data/studio';
 import { AddBeat } from '@/ui/AddBeat';
+import { EmptyBeats } from '@/ui/EmptyBeats';
 import { Eyebrow, Foot, MicIcon, Muted, Screen, Txt, s } from '@/ui/kit';
 import { SwipeRow } from '@/ui/parts';
 import { useLargeText, useRowLines } from '@/ui/type';
@@ -68,7 +69,7 @@ export default function Home() {
             {done ? 'Bring a new beat' : 'Bring a beat'}
           </Txt>
           <Txt size={15} w="medium" lh={1.4} color={C.bg}>
-            Capture one from your gear, import a file, or pick a demo song, from the row {wide ? 'below' : 'above'}.
+            Capture one from your gear, import a file, or pick a demo song, from the row below.
           </Txt>
         </View>
       );
@@ -100,8 +101,10 @@ export default function Home() {
         </Muted>
       );
 
-  const notes = (saveError || projects.length === 0) && (
-        <Foot>
+  const none = projects.length === 0;
+  const notes = (saveError || none) && (
+        // Beside the picture on a wide screen the notes sit under it, instead of taking half the column.
+        <Foot style={wide && none && { flexGrow: 0 }}>
           {saveError && (
             <Txt size={13} color={C.recText}>
               Changes are not being saved: {saveError}
@@ -126,6 +129,11 @@ export default function Home() {
           right={
             <>
               {beats}
+              {none && (
+                <View style={{ flex: 1, justifyContent: 'center' }}>
+                  <EmptyBeats caption />
+                </View>
+              )}
               {finished}
               {notes}
             </>
@@ -136,9 +144,12 @@ export default function Home() {
 
   return (
     <Screen gap={20}>
+      {/* With no beat yet, the card that says where to start leads, and the ways to add one follow it. */}
+      {none && hero}
       <AddBeat />
-      {hero}
+      {!none && hero}
       {beats}
+      {none && <EmptyBeats width={240} />}
       {finished}
       {notes}
     </Screen>

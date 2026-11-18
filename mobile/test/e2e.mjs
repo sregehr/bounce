@@ -431,7 +431,6 @@ async function song() {
   // A deleted take can be brought back, and its audio comes with it.
   await swipeLeft('Take 3');
   await tap('Delete take 3');
-  await tap('Tap again to delete take 3');
   await expectText('2 takes', 'a take is deleted');
   await shot('10d-undo-delete');
   await tap('Undo: Deleted take 3');
@@ -985,7 +984,6 @@ async function library() {
   await expectText('2 takes', 'the take recorded in the artist view is on the song');
   await swipeLeft('Take 2');
   await tap('Delete take 2');
-  await tap('Tap again to delete take 2');
   await expectText('1 take', 'and can be deleted like any other');
   // The artist has a profile, with their songs and their sound on it.
   await page.goto(BASE + '/profile', { waitUntil: 'networkidle2' });
@@ -1002,9 +1000,7 @@ async function library() {
   await expectText('1 take', 'Song shows the new take');
   await swipeLeft('Take 1');
   await tap('Delete take 1');
-  await expectText('1 take', 'the first tap on Delete only asks');
-  await tap('Tap again to delete take 1');
-  await expectText('No takes yet', 'swiping and tapping Delete removes a take', 10000);
+  await expectText('No takes yet', 'one tap on Delete removes a take, since it can be undone', 10000);
   await tap('Home');
   await expectText('Add a beat', 'Home opens');
   await sleep(600); // let the screen change settle before dragging on it

@@ -223,8 +223,10 @@ const NO_SELECT = { userSelect: 'none' } as object;
  * A list row that slides left to show a Delete button, as iOS lists do. The swipe only shows
  * the button, and deleting takes two taps on it: the first asks, the second deletes. Swiping
  * back, tapping the row, or waiting a few seconds puts it away again.
+ *
+ * `once` is for a delete that can be undone where it happened: one tap deletes, without asking.
  */
-export function SwipeRow({ children, label, onDelete }: { children: ReactNode; label: string; onDelete: () => void }) {
+export function SwipeRow({ children, label, onDelete, once }: { children: ReactNode; label: string; onDelete: () => void; once?: boolean }) {
   const x = useRef(new Animated.Value(0)).current;
   const [open, setOpen] = useState(false);
   const from = useRef(0);
@@ -267,7 +269,7 @@ export function SwipeRow({ children, label, onDelete }: { children: ReactNode; l
         tabIndex={open ? 0 : -1}
         disabled={!open}
         onPress={() => {
-          if (!sure) return askSure();
+          if (!once && !sure) return askSure();
           settle(false);
           onDelete();
         }}

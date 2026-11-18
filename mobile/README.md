@@ -71,9 +71,15 @@ reachable from this computer, so a phone keeps its work on the phone.
 
 ```bash
 npm run typecheck
-npm test              # the audio maths: loudness, limiter, tempo, key, mixing, mastering
+npm test              # the audio maths, and the library and backup when storage or the server fails
+npm run test:server   # the backup limits on the local server (needs `npx convex dev` running)
 npm run e2e           # drives the whole app in headless Chrome with a fake microphone
 ```
+
+`npm run test:server` and the last part of `npm run e2e` set the server settings `BACKUP_MAX_MB`
+and `BACKUP_MAX_FILE_MB` on the local server while they run and put them back afterwards. The
+browser run only does so when the app is talking to the server in this folder's `.env.local`,
+and `LIMITS=0` stops it.
 
 `npm run e2e` expects the app at http://localhost:8081 (set `BASE` to test a build instead)
 and Google Chrome installed. Editing files while it runs reloads the page and fails the run.

@@ -22,7 +22,9 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 const [viewWidth, viewHeight] = (process.env.VIEW ?? '390x844').split('x').map(Number);
-await page.setViewport({ width: viewWidth, height: viewHeight, deviceScaleFactor: 2 });
+// PHONE=1 makes the page a touch device, which is what the app takes for a phone when it decides how much audio to keep ready.
+const PHONE = !!process.env.PHONE;
+await page.setViewport({ width: viewWidth, height: viewHeight, deviceScaleFactor: 2, isMobile: PHONE, hasTouch: PHONE });
 
 // Before the app loads: keep hold of the microphone tracks so a test can pull one out, count how
 // much of each picked file is read, and let a test pin the live audio clock to a low rate, the
@@ -232,7 +234,7 @@ async function imports() {
   const demo = path.join(FILES, 'Sky at forty four.m4a');
   fs.copyFileSync(path.resolve('public/demo/a-little-more-sky.m4a'), demo);
   await choose('Import a file', demo);
-  await expectText('No takes yet', 'a 44.1 kHz M4A is imported', 30000);
+  await expectText('Nothing recorded over this beat yet', 'a 44.1 kHz M4A is imported', 30000);
   const sky = await beatNamed('Sky at forty four');
   log(sky?.sampleRate === 44100, 'and kept at 44.1 kHz, not the live clock\'s rate', `${sky?.sampleRate} Hz`);
   log(Math.abs((sky?.durationSec ?? 0) - 45) < 1.5, 'at its full length', `${sky?.durationSec?.toFixed(1)} s`);
@@ -242,7 +244,7 @@ async function imports() {
   else {
     await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
     await choose('Import a file', mp3);
-    await expectText('No takes yet', 'a 48 kHz MP3 is imported', 30000);
+    await expectText('Nothing recorded over this beat yet', 'a 48 kHz MP3 is imported', 30000);
     const tone = await beatNamed('Tone at forty eight');
     log(tone?.sampleRate === 48000, 'and kept at 48 kHz', `${tone?.sampleRate} Hz`);
   }
@@ -264,8 +266,115 @@ async function imports() {
   log(!(await library()).projects.some((p) => p.name === 'Thirteen minutes'), 'and nothing is added');
 }
 
+// ---------- Memory during a long export ----------
+
+/** In-app navigation, so nothing held in memory is dropped the way a page load would drop it. */
+async function go(route) {
+  await page.evaluate((route) => {
+    history.pushState({}, '', route);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, route);
+  await sleep(600);
+}
+
+/**
+ * Measures how much memory the tab uses while a long song is exported with every extra.
+ * MINUTES sets the song's length (default 4). Not part of `all`: it records for that long.
+ * Prints the peak resident memory of the page's process, sampled from outside the page so
+ * that it is seen even while the page is busy, and the peak of the JavaScript heap plus buffers.
+ */
+async function memory() {
+  const minutes = Number(process.env.MINUTES ?? 4);
+  const rate = 44100;
+  const frames = Math.round(minutes * 60 * rate);
+  const file = path.join(FILES, `Long song ${minutes}.wav`);
+  // A click on every beat at 90 BPM over a low drone: loud all the way through, so nothing is trimmed.
+  const wav = Buffer.alloc(44 + frames * 4);
+  wav.write('RIFF', 0), wav.writeUInt32LE(36 + frames * 4, 4), wav.write('WAVEfmt ', 8), wav.writeUInt32LE(16, 16), wav.writeUInt16LE(1, 20), wav.writeUInt16LE(2, 22);
+  wav.writeUInt32LE(rate, 24), wav.writeUInt32LE(rate * 4, 28), wav.writeUInt16LE(4, 32), wav.writeUInt16LE(16, 34), wav.write('data', 36), wav.writeUInt32LE(frames * 4, 40);
+  const beat = Math.round((rate * 60) / 90);
+  for (let i = 0; i < frames; i++) {
+    const hit = Math.exp(-(i % beat) / 900) * Math.sin(i * 0.02) * 0.6;
+    const v = Math.round((hit + Math.sin(i * 0.0157) * 0.2) * 32767);
+    wav.writeInt16LE(v, 44 + i * 4);
+    wav.writeInt16LE(Math.round(v * 0.9), 46 + i * 4);
+  }
+  fs.writeFileSync(file, wav);
+
+  await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
+  console.log(`     the page is a ${(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) ? 'touch device (phone budget)' : 'computer'}`);
+  await choose('Import a file', file);
+  await expectText('Nothing recorded over this beat yet', `a ${minutes}-minute beat is imported`, 180000);
+  await tap(`Freestyle over Long song ${minutes}`);
+  await expectText('Whole beat · once through', 'the mic screen opens on the whole beat');
+  await expectText(/Fake .* ms (estimated|measured)/, 'the microphone connects', 8000);
+  await tap('Start recording');
+  // The beat plays through once, and the take is saved and opened when it ends.
+  await expectText('Take 1', 'a take the length of the beat is recorded', (minutes * 60 + 90) * 1000);
+  await expectText(/Polished\s/, 'and polished', 300000);
+  await go('/export');
+  await expectText('Loud, for socials and demos', 'Share opens');
+  // What plays on this screen is rendered at the export loudness; let it finish, as someone choosing options would.
+  for (let i = 0; i < 600 && !(await has('Play')); i++) await sleep(500);
+  await sleep(2000);
+  await tap('Vocals only');
+  await sleep(500);
+
+  const downloadsTo = path.join(SHOTS, 'review-downloads-' + Date.now());
+  fs.mkdirSync(downloadsTo, { recursive: true });
+  const cdp = await page.createCDPSession();
+  await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadsTo });
+  const whole = await browser.target().createCDPSession();
+  const renderers = async () => (await whole.send('SystemInfo.getProcessInfo')).processInfo.filter((p) => p.type === 'renderer').map((p) => p.id);
+  const pids = await renderers();
+  const rss = () => Math.max(0, ...spawnSync('ps', ['-o', 'rss=', '-p', pids.join(',')]).stdout.toString().split('\n').map(Number).filter(Boolean)) / 1024;
+  const heap = async () => {
+    const h = await cdp.send('Runtime.getHeapUsage');
+    return (h.usedSize + (h.backingStorageSize ?? 0)) / 1048576;
+  };
+  // What is really held, as opposed to waiting to be cleared away: measured after a forced collection.
+  const held = async () => {
+    await cdp.send('HeapProfiler.collectGarbage');
+    await sleep(500);
+    await cdp.send('HeapProfiler.collectGarbage');
+    return heap();
+  };
+  const heldBefore = await held();
+  const before = { rss: rss(), heap: await heap() };
+  let peakRss = before.rss, peakHeap = before.heap, peakHeld = heldBefore, sampling = true;
+  const outside = (async () => {
+    while (sampling) (peakRss = Math.max(peakRss, rss())), await sleep(50);
+  })();
+  const inside = (async () => {
+    while (sampling) {
+      peakHeap = Math.max(peakHeap, await heap().catch(() => 0));
+      // With GC=1 a collection is forced before every other reading, which shows what the export
+      // needs rather than what it leaves lying about. It slows the export, so it is its own run.
+      if (process.env.GC) peakHeld = Math.max(peakHeld, await cdp.send('HeapProfiler.collectGarbage').then(heap).catch(() => 0));
+      await sleep(100);
+    }
+  })();
+  const started = Date.now();
+  if (!(await tap('Save to Files', { optional: true }))) await tap('Save 3 files');
+  await expectText('3 files saved to your downloads', 'the export finishes', 600000);
+  const took = (Date.now() - started) / 1000;
+  await sleep(1500);
+  sampling = false;
+  await Promise.all([outside, inside]);
+  const heldAfter = await held();
+  const saved = fs.readdirSync(downloadsTo).filter((f) => f.endsWith('.zip')).map((f) => fs.statSync(path.join(downloadsTo, f)).size)[0];
+  log(saved > frames * 2 * 3 * 3 * 0.99, 'the ZIP holds three full-length 24-bit files', `${(saved / 1048576).toFixed(0)} MB`);
+  const mb = (n) => `${Math.round(n)} MB`;
+  console.log(`\nMEMORY ${minutes}-minute song, exported with the instrumental and the vocals (${took.toFixed(0)} s):`);
+  console.log(`  page process, resident:   ${mb(before.rss)} before, ${mb(peakRss)} at its peak`);
+  console.log(`  JavaScript heap + buffers: ${mb(before.heap)} before, ${mb(peakHeap)} at its peak (sampled between tasks)`);
+  console.log(`  of that, really held (after a forced collection): ${mb(heldBefore)} before the export, ${process.env.GC ? `${mb(peakHeld)} at its peak, ` : ''}${mb(heldAfter)} after it`);
+}
+
 const flows = { mic, imports };
+const extra = { memory };
 const order = flow === 'all' ? Object.keys(flows) : flow.split(',');
+Object.assign(flows, extra);
 try {
   console.log('\n== start');
   await start();

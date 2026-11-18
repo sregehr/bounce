@@ -873,9 +873,9 @@ export async function decode(data: ArrayBuffer): Promise<{ channels: Float32Arra
     // A browser with no offline decoder: the live clock is better than not opening the file.
     c = await context();
   }
-  const copy = data.slice(0);
+  // The decoder takes the buffer for itself, which no caller minds, and which saves a copy of the file.
   // Older Safari only takes callbacks; newer browsers return a promise as well.
-  const decoded = await new Promise<AudioBuffer>((resolve, reject) => void c.decodeAudioData(copy, resolve, reject)?.then(resolve, reject));
+  const decoded = await new Promise<AudioBuffer>((resolve, reject) => void c.decodeAudioData(data, resolve, reject)?.then(resolve, reject));
   const channels: Float32Array[] = [];
   for (let i = 0; i < Math.min(2, decoded.numberOfChannels); i++) channels.push(decoded.getChannelData(i).slice());
   return { channels, sampleRate: decoded.sampleRate };

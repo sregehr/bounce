@@ -1,5 +1,5 @@
 // Handing finished files to the user, in a browser.
-import { zip } from './zip';
+import { crc32, zipFrame } from './zip';
 
 export type OutFile = { name: string; data: ArrayBuffer | Blob; type: string };
 
@@ -27,8 +27,17 @@ export async function saveFiles(files: OutFile[], bundle = 'Bounce export'): Pro
     download(f.name, f.data instanceof Blob ? f.data : new Blob([f.data], { type: f.type }));
     return f.name;
   }
-  const parts = await Promise.all(files.map(async (f) => ({ name: f.name, data: new Uint8Array(f.data instanceof Blob ? await f.data.arrayBuffer() : f.data) })));
-  download(`${bundle}.zip`, new Blob([zip(parts) as Uint8Array<ArrayBuffer>], { type: 'application/zip' }));
+  // The archive is put together from the files where they are, with only its small headers made
+  // here. Each file is looked at once, alone, for its checksum, so a long song's three WAVs are
+  // never all in memory together, let alone twice over.
+  const entries = [];
+  for (const f of files) {
+    const bytes = new Uint8Array(f.data instanceof Blob ? await f.data.arrayBuffer() : f.data);
+    entries.push({ name: f.name, size: bytes.length, crc: crc32(bytes) });
+  }
+  const { headers, end } = zipFrame(entries);
+  const parts: BlobPart[] = files.flatMap((f, i) => [headers[i] as Uint8Array<ArrayBuffer>, f.data]);
+  download(`${bundle}.zip`, new Blob([...parts, end as Uint8Array<ArrayBuffer>], { type: 'application/zip' }));
   return `${bundle}.zip`;
 }
 

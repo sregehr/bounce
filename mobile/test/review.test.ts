@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import { decodeRate, sniffAudio, SNIFF_BYTES } from '../src/dsp/sniff';
 import { encodeWav } from '../src/dsp/wav';
 import { importRefusal, MAX_UNMEASURED_BYTES, TOO_BIG, TOO_LONG } from '../src/data/importLimit';
+import { budgetFor, MB, SizedCache } from '../src/data/sizedCache';
+import { crc32, zip, zipFrame } from '../src/data/zip';
 import { recordState } from '../src/ui/recordControl';
 
 let failed = 0;
@@ -87,6 +89,53 @@ check('a big file that says it is short is believed', importRefusal(said(600), M
 check('an MP3 too big to be twelve minutes at any bitrate is refused', importRefusal(mp3Says, 30 + 320 * 125 * 800) === TOO_LONG, JSON.stringify(mp3Says));
 check('an MP3 that might be short enough is left to the decoder', importRefusal(said(null, 400), 16e6) === null);
 check('a file that says nothing is judged by size alone', importRefusal(junk, 5e6) === null && importRefusal(junk, MAX_UNMEASURED_BYTES + 1) === TOO_BIG);
+
+// ---------- Keeping memory down on long songs ----------
+
+// A four-minute stereo song at 48 kHz is 92 MB a copy.
+const song = 92 * MB;
+const phone = budgetFor({ touchFirst: true });
+const laptop = budgetFor({ touchFirst: false, memoryGb: 8 });
+let budget = phone.mixes;
+const kept = new SizedCache<string>(() => budget);
+kept.set('a', 'A', song);
+kept.set('b', 'B', song);
+check('a phone keeps one finished mix of a long song', kept.size === 1 && kept.get('b') === 'B' && kept.get('a') === undefined);
+kept.set('c', 'C', 20 * MB);
+kept.set('d', 'D', 20 * MB);
+kept.set('e', 'E', 20 * MB);
+check('and several of a short one', kept.size === 3 && kept.get('b') === undefined);
+kept.set('huge', 'H', 500 * MB);
+check('the newest is kept even when it alone is over the budget', kept.size === 1 && kept.get('huge') === 'H');
+budget = laptop.mixes;
+const roomy = new SizedCache<string>(() => budget);
+for (const k of ['a', 'b', 'c', 'd']) roomy.set(k, k, song);
+check('a computer keeps four mixes of a long song', roomy.size === 4);
+roomy.get('a');
+roomy.set('e', 'e', song);
+check('the one used longest ago goes first', roomy.get('a') === 'a' && roomy.get('b') === undefined && roomy.size === 4);
+roomy.set('pending', 'p', 0);
+roomy.resize('pending', 'p', 3 * song);
+check('a render is sized when it finishes, and the cache is trimmed then', roomy.bytes <= laptop.mixes && roomy.get('pending') === 'p', `${Math.round(roomy.bytes / MB)} MB`);
+roomy.resize('pending', 'someone else', 1);
+check('sizing something that has since been replaced does nothing', roomy.bytes >= 3 * song);
+roomy.keepOnly(['pending']);
+check('an export lets go of every mix but the one it needs', roomy.size === 1 && roomy.get('pending') === 'p');
+check('a phone has room for the beat and takes of a long song, a computer for more', phone.pcm >= song + 2 * (song / 2) && laptop.pcm > phone.pcm && budgetFor({ touchFirst: false, memoryGb: 4 }).mixes === phone.mixes);
+
+// The ZIP is put together around the files; the result must be the same archive as before.
+const fileA = new Uint8Array(1000).map((_, i) => i % 251), fileB = new Uint8Array(77).fill(9);
+const whole = zip([{ name: 'Song.wav', data: fileA }, { name: 'Söng (vocals).wav', data: fileB }]);
+const zipParts = zipFrame([{ name: 'Song.wav', size: fileA.length, crc: crc32(fileA) }, { name: 'Söng (vocals).wav', size: fileB.length, crc: crc32(fileB) }]);
+const pieces = [zipParts.headers[0], fileA, zipParts.headers[1], fileB, zipParts.end];
+const joined = new Uint8Array(pieces.reduce((n, p) => n + p.length, 0));
+pieces.reduce((at, p) => (joined.set(p, at), at + p.length), 0);
+check('a ZIP assembled from its parts is the same archive, byte for byte', joined.length === whole.length && joined.every((v, i) => v === whole[i]));
+const zipView = new DataView(whole.buffer);
+const endAt = whole.length - 22;
+const dirAt = zipView.getUint32(endAt + 16, true);
+const secondAt = zipView.getUint32(dirAt + 46 + 8 + 42, true);
+check('its index points at each file', zipView.getUint32(endAt, true) === 0x06054b50 && zipView.getUint16(endAt + 10, true) === 2 && zipView.getUint32(dirAt, true) === 0x02014b50 && zipView.getUint32(secondAt, true) === 0x04034b50 && zipView.getUint32(secondAt + 14, true) === crc32(fileB));
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);

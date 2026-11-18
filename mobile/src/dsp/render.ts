@@ -122,13 +122,15 @@ const echoFrames = (input: Pick<RenderInput, 'barFrames' | 'sampleRate'>) =>
  * Adds reverb and echo to a bus, in place. `source` is what feeds them; a full-range bus sends
  * only what is above the bass, so the low end stays tight.
  */
-function addSpace(bus: Stereo, source: Float32Array, send: Send | undefined, input: Pick<RenderInput, 'barFrames' | 'sampleRate'>, fullRange: boolean) {
+function addSpace(bus: Stereo, source: Float32Array | (() => Float32Array), send: Send | undefined, input: Pick<RenderInput, 'barFrames' | 'sampleRate'>, fullRange: boolean) {
   const wet = clamp(send?.reverb ?? 0, 0, 100) / 100;
   const repeats = clamp(send?.echo ?? 0, 0, 100) / 100;
   if (wet <= 0 && repeats <= 0) return;
-  let feed = source;
+  // A source that has to be worked out first is only worked out when something is sent: it is as long as the song.
+  const made = typeof source === 'function';
+  let feed = made ? source() : source;
   if (fullRange) {
-    const cut = [source.slice()];
+    const cut = [made ? feed : feed.slice()];
     highpass(cut, input.sampleRate, 220);
     feed = cut[0];
   }
@@ -222,7 +224,7 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
     const chain = input.overrides?.beat ?? autoBeatChain(rmsDb(beat), !!input.take);
     const bus: Float32Array[] = [beat[0], beat[1]];
     runChain(bus, sr, chain);
-    addSpace([bus[0], bus[1]], monoOf([bus[0], bus[1]]), input.space?.beat, input, true);
+    addSpace([bus[0], bus[1]], () => monoOf([bus[0], bus[1]]), input.space?.beat, input, true);
     beatStage = { bus: [bus[0], bus[1]], chain, level: rmsDb(bus) };
     if (cache && keys) {
       cache.beatKey = keys.beat;
@@ -248,35 +250,30 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   const full: Stereo = [beatBus[0].slice(), beatBus[1].slice()];
   // Each layer is balanced against the beat the way the lead is, set by its own level, and
   // placed left or right at equal power. The lead's level slider does not move them.
-  const stack: Stereo = [new Float32Array(length), new Float32Array(length)];
-  if (vocal) addInto(stack, vocal.bus, vocalGain);
+  // Every buffer here is as long as the song, so none is made that will not be used.
+  const stack: Stereo | null = vocal ? [new Float32Array(length), new Float32Array(length)] : null;
+  if (vocal && stack) addInto(stack, vocal.bus, vocalGain);
   for (const layer of vocal?.layers ?? []) {
     const at = clamp(layer.level, 0, 100);
     if (at <= 0 || layer.body <= -70) continue;
     const gain = fromDb(clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - layer.body, -24, 24) + 40 * Math.log10(at / 68));
     const angle = ((clamp(layer.pan, -100, 100) + 100) / 200) * (Math.PI / 2);
     const left = gain * Math.cos(angle) * Math.SQRT2, right = gain * Math.sin(angle) * Math.SQRT2;
-    for (let i = 0; i < length; i++) {
+    for (let i = 0; stack && i < length; i++) {
       stack[0][i] += layer.bus[0][i] * left;
       stack[1][i] += layer.bus[1][i] * right;
     }
   }
-  if (vocal) addInto(full, stack);
-  addSpace(full, monoOf(full), input.space?.master, input, true);
+  if (stack) addInto(full, stack);
+  addSpace(full, () => monoOf(full), input.space?.master, input, true);
   const measured = { balance: tonalBalance(full, sr), lufs: integratedLufs(full, sr) };
   const plan: MasterPlan = masterPlan(input.master, measured);
   const masterChain = input.overrides?.master ?? plan.chain;
   await tick();
 
-  let out: Float32Array[];
-  if (include === 'vocals') {
-    out = [new Float32Array(length), new Float32Array(length)];
-    if (vocal) addInto(out as Stereo, stack);
-  } else if (include === 'instrumental') {
-    out = [beatBus[0].slice(), beatBus[1].slice()];
-    addSpace(out as Stereo, monoOf(out as Stereo), input.space?.master, input, true);
-  }
-  else out = [full[0], full[1]];
+  // The vocal stem is the stack by itself. Anything else is `full`: for the instrumental no vocal
+  // was made above, so `full` is already the beat alone. Neither is used again, so no copies.
+  const out: Float32Array[] = include === 'vocals' ? (stack ?? [new Float32Array(length), new Float32Array(length)]) : [full[0], full[1]];
 
   // ----- Master -----
   onStage?.('Mastering');

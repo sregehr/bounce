@@ -5,15 +5,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { activeTake, deleteTake, patchProject, useLibrary, useProject, redoMix, switchMix, undoMix, useMixHistory } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
+import { matchNote } from '@/data/match';
 import { useSong } from '@/data/song';
 import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
 import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
 import { NoSong } from '@/ui/AddBeat';
 import { Btn, Chip, Chips, Muted, NavLink, Option, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
-import { useArmed, useStopOnLeave, useTask } from '@/ui/hooks';
+import { useArmed, useStopOnLeave, useTask, useTwoFingerUndo } from '@/ui/hooks';
 import { ChainEditor } from '@/ui/ChainEditor';
 import { Status, UndoToast } from '@/ui/parts';
+import { SavedMixes } from '@/ui/SavedMixes';
 import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, clock } from '@/ui/theme';
@@ -31,7 +33,8 @@ export default function Playback() {
   const take = activeTake(project);
   // The mix keeps coming round while it is being shaped, unless Repeat is turned off.
   const repeat = useRepeat();
-  const song = useSong(take ? project : null, { compare: true, repeat });
+  // With a second mix to flip to, the louder of the two is turned down to the other while listening here.
+  const song = useSong(take ? project : null, { compare: true, repeat, match: project?.mixAlt ? project.mixAltLoud : undefined });
   const insets = useSafeAreaInsets();
   const gutter = useGutter();
   const bar = useBar();
@@ -57,6 +60,8 @@ export default function Playback() {
   }, [projectId]);
   const wide = useWide();
   useStopOnLeave();
+  // A tap with two fingers takes back the last change to the mix.
+  useTwoFingerUndo(() => !!projectId && undoMix(projectId));
 
   if (!project || project.saved) return <NoSong title="Nothing to mix yet" about="Add a beat and record a take over it, and the mix opens here." />;
   // A beat with nothing recorded over it: Mix says so, and leads to the mic.
@@ -152,6 +157,7 @@ export default function Playback() {
   // Stepping back through changes, and two mixes to flip between while it plays.
   const side = project.mixSide ?? 'A';
   const compare = (
+    <View>
     <View style={[s.row, s.between, { gap: 12, minHeight: 44 }]}>
       <View style={[s.row, { gap: 8 }]}>
         <Chip label="Undo" onPress={() => history.canUndo && undoMix(project.id)} style={{ paddingHorizontal: 14, opacity: history.canUndo ? 1 : 0.35 }} />
@@ -161,7 +167,11 @@ export default function Playback() {
         <Segmented options={MIX_SIDES} value={side === 'A' ? 'Mix A' : 'Mix B'} onChange={(v) => switchMix(project.id, v === 'Mix A' ? 'A' : 'B')} variant="compact" />
       </View>
     </View>
+    {/* Two mixes are only a fair comparison at the same level. */}
+    {project.mixAlt && <Muted size={13}>{matchNote(song.trimDb, side)}</Muted>}
+    </View>
   );
+  const saved = <SavedMixes project={project} />;
 
   // Wide: listening and the broad strokes on the left, the chains open on the right, and the last step in the header.
   if (wide)
@@ -180,6 +190,7 @@ export default function Playback() {
               {compare}
               {double}
               {vocalLevel}
+              {saved}
             </View>
             {/* The rarely used links sit at the foot of the pane, out of the way. */}
             <View style={{ flexGrow: 1, justifyContent: 'flex-end' }}>{links}</View>
@@ -204,6 +215,7 @@ export default function Playback() {
             {compare}
             {double}
             {vocalLevel}
+            {saved}
             <View style={{ paddingTop: 10, paddingBottom: 6 }}>{chains}</View>
             {links}
           </View>

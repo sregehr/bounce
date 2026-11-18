@@ -430,6 +430,45 @@ async function song() {
   await sleep(300);
   log((await trackAt('Vocal level')) === levelSet && levelB !== levelSet, 'Mix A still has its own level', `A ${await trackAt('Vocal level')}, B ${levelB}`);
   await expectText(/Polished\s/, 'and renders again', 30000);
+  // Once both mixes have played, the louder is turned down to the other while comparing.
+  await tap('Mix B');
+  await expectText(/Polished\s/, 'Mix B renders', 30000);
+  await tap('Mix A');
+  await expectText('Levels matched', 'with both mixes heard, their levels are matched', 30000);
+  await expectText(/Polished\s/, 'and Mix A is back', 30000);
+  // A mix kept by name can be gone back to, and going back can be undone.
+  await tap('Save this mix');
+  await expectText('In use on Mix A', 'a saved mix is listed, and marked as the one in use');
+  await shot('10a-saved-mixes');
+  await slide('Vocal level', 0.5);
+  await sleep(900);
+  const levelMoved = await trackAt('Vocal level');
+  await tap('Use Mix 1');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet && levelMoved !== levelSet, 'using the saved mix puts its settings back', `${levelMoved} -> ${await trackAt('Vocal level')}`);
+  await tap('Undo');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelMoved, 'and Undo takes that back', `${await trackAt('Vocal level')}`);
+  // A tap with two fingers undoes as well.
+  const touch = await page.createCDPSession();
+  const fingers = [{ x: 120, y: 300, id: 1 }, { x: 200, y: 310, id: 2 }];
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers });
+  await sleep(60);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await touch.detach();
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet, 'a tap with two fingers undoes the last change', `${await trackAt('Vocal level')}`);
+  // Undo steps are still there after a reload.
+  await sleep(600);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await expectText('Saved mixes', 'the Mix page opens again after a reload', 30000);
+  await tap('Redo');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelMoved, 'after a reload Redo still goes forward', `${await trackAt('Vocal level')}`);
+  await tap('Undo');
+  await sleep(300);
+  log((await trackAt('Vocal level')) === levelSet, 'and Undo back', `${await trackAt('Vocal level')}`);
+  await expectText(/Polished\s/, 'the mix renders again', 30000);
   await shot('10-playback-tweak');
 
   // A second take, then punch in over it.

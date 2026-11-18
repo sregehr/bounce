@@ -76,6 +76,8 @@ export type PlayOptions = {
   a: { channels: Float32Array[]; sampleRate: number };
   b?: { channels: Float32Array[]; sampleRate: number };
   side?: 'a' | 'b';
+  /** Turns the main side down by this many dB (zero or below), to match it to another mix. The second side is left as it is. */
+  trimDb?: number;
   from?: number;
   loop?: boolean;
   /** Keep the current position and play state, for swapping in a re-rendered version. */

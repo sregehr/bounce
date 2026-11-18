@@ -10,6 +10,7 @@ import { decode } from '@/engine/engine';
 import type { RecordedTake } from '@/engine/types';
 
 import { blobBytes, blobs, makeBlob } from './db';
+import { soundKey } from './match';
 import { audioBudget, bytesOf, SizedCache } from './sizedCache';
 import { type Layer, newId, type Beat, type LoopChoice, type Project, type Take } from './model';
 import { activeTake, addTake, createProject, getProject, patchProject, stacks } from './store';
@@ -289,6 +290,8 @@ export function getMix(project: Project, options: MixOptions = {}, onStage?: (st
         project.id,
         (p) => ({
           stats: p.stats && p.stats.lufs === stats.lufs && p.stats.truePeakDb === stats.truePeakDb && p.stats.durationSec === stats.durationSec ? p.stats : stats,
+          // Which sound these numbers are for: the project as it was rendered, which may have moved on since.
+          statsOf: soundKey(project),
           takes: take && out.voice && !take.voice ? p.takes.map((t) => (t.id === take.id ? { ...t, voice: out.voice } : t)) : p.takes,
         }),
         false,

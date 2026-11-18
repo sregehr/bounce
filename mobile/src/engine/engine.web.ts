@@ -493,7 +493,7 @@ export function cancelCapture() {
 
 // ---------- Playback ----------
 
-type Loaded = { a: AudioBuffer; b: AudioBuffer | null; loop: boolean };
+type Loaded = { a: AudioBuffer; b: AudioBuffer | null; loop: boolean; /** Gain on the main side, 1 or below. */ trim: number };
 let loaded: Loaded | null = null;
 let sources: AudioBufferSourceNode[] = [];
 let gains: { a: GainNode; b: GainNode } | null = null;
@@ -544,7 +544,7 @@ function begin(from: number) {
     gains.b.connect(master);
   }
   const side = state.transport.side;
-  gains.a.gain.value = side === 'a' || !loaded.b ? 1 : 0;
+  gains.a.gain.value = side === 'a' || !loaded.b ? loaded.trim : 0;
   gains.b.gain.value = side === 'b' && loaded.b ? 1 : 0;
   const when = ctx.currentTime + 0.03;
   const offset = Math.max(0, Math.min(from, loaded.a.duration - 0.01));
@@ -576,7 +576,7 @@ export async function play(id: string, options: PlayOptions) {
   const position = keep ? currentPosition() : (options.from ?? 0);
   const c = await context(state.input.status === 'ready' || state.take.mode !== 'idle' ? undefined : options.a.sampleRate);
   const a = buffer(c, options.a);
-  loaded = { a, b: options.b ? buffer(c, options.b) : null, loop: !!options.loop };
+  loaded = { a, b: options.b ? buffer(c, options.b) : null, loop: !!options.loop, trim: Math.min(1, 10 ** ((options.trimDb ?? 0) / 20)) };
   set('transport', { id, duration: a.duration, side: options.side ?? (keep ? state.transport.side : 'a') });
   const start = keep ? wasPlaying : options.autoplay !== false;
   if (start && c.state === 'running') begin(Math.min(position, a.duration - 0.05));
@@ -616,7 +616,7 @@ export function setSide(side: 'a' | 'b') {
   set('transport', { side });
   if (!ctx || !gains || !loaded?.b) return;
   const t = ctx.currentTime;
-  gains.a.gain.setTargetAtTime(side === 'a' ? 1 : 0, t, 0.01);
+  gains.a.gain.setTargetAtTime(side === 'a' ? loaded.trim : 0, t, 0.01);
   gains.b.gain.setTargetAtTime(side === 'b' ? 1 : 0, t, 0.01);
 }
 

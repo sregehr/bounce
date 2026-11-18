@@ -82,6 +82,12 @@ export const LAYER_START: Record<Layer['role'], { level: number; pan: number }> 
 /** Everything that shapes the sound of a mix: what undo steps through, and what Mix A and Mix B each hold. */
 export type MixSettings = { polish: Polish; master: MasterSettings; overrides: { vocal?: Chain; beat?: Chain; master?: Chain }; space?: Space };
 
+/** How loud a mix measured, and the take, layers and beat it was measured with: a different take makes the number stale. */
+export type Loudness = { lufs: number; ctx: string };
+
+/** A mix kept by name, to come back to or compare against. */
+export type MixSnapshot = { id: string; name: string; at: number; mix: MixSettings; loud?: Loudness };
+
 export type Project = {
   id: string;
   name: string;
@@ -107,6 +113,12 @@ export type Project = {
   /** The other of two mixes being compared, and which of the two is the one in use now. */
   mixAlt?: MixSettings;
   mixSide?: 'A' | 'B';
+  /** How loud the other mix was when it was last heard, for matching the two while comparing. */
+  mixAltLoud?: Loudness;
+  /** Mixes saved by name. */
+  snapshots?: MixSnapshot[];
+  /** Which sound `stats` was measured from. */
+  statsOf?: string;
   exporting: ExportChoice;
   snippet: SnippetChoice;
   cover: Cover;

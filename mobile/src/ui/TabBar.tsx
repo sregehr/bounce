@@ -172,25 +172,27 @@ function useMic() {
   const beat = mic.id ? library.projects.find((p) => p.id === mic.id) : null;
   const recording = record?.state === 'recording';
   const is = (t: Tab) => tab === t;
-  const lit = is('mic') || !!record;
-  return { path, library, tab, record, input, asking, mic, beat, recording, is, lit, booth };
+  // On the mic screen with no beat there is nothing to record over: the mic is not live, and a tap goes to capture one.
+  const empty = path === '/vocals' && !record && !beat;
+  const lit = (is('mic') && !empty) || !!record;
+  return { path, library, tab, record, input, asking, mic, beat, recording, is, lit, booth, empty };
 }
 
 // The mic at rest: a dark disc, so the yellow is kept for when it is selected.
 const REST = 'rgb(30,30,32)';
 
 function MicButton({ nav, style }: { nav: ReturnType<typeof useMic>; style?: ViewStyle }) {
-  const { path, record, mic, beat, recording, is, lit } = nav;
+  const { path, record, mic, beat, recording, is, lit, empty } = nav;
   const { mic: MIC } = useBar();
   // The mic turns into the stop square, and back, instead of swapping.
   const at = useGlide(!!recording);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={record ? (recording ? 'Stop recording' : 'Start recording') : beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
+      accessibilityLabel={record ? (recording ? 'Stop recording' : 'Start recording') : beat ? `Freestyle over ${beat.name}` : empty ? 'Capture a beat to freestyle' : 'Add a beat to freestyle'}
       accessibilityState={{ selected: is('mic'), busy: !!record?.busy }}
       hitSlop={6}
-      onPress={() => (record ? record.press() : follow(mic, path))}
+      onPress={() => (record ? record.press() : empty ? router.push('/capture') : follow(mic, path))}
       style={({ pressed }) => ({
         width: MIC,
         height: MIC,

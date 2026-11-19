@@ -14,7 +14,7 @@ import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
 import { ArtistView } from '@/ui/ArtistView';
 import { setArtistViewOpen } from '@/ui/artistViewOpen';
-import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Pulse, Screen, SeekTrack, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Pulse, RoundPlay, Screen, SeekTrack, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
 import { OnTheMic } from '@/ui/OnTheMic';
 import { useTiming } from '@/ui/timing';
@@ -297,18 +297,18 @@ export default function Vocals() {
         <Card style={wide ? { padding: 22, gap: 16, borderRadius: 24 } : { padding: 16, gap: 12 }}>
           <View style={[s.row, s.between]}>
             <Eyebrow>{loop ? `Loop · bars ${first}–${first + loop.bars - 1}` : 'Whole beat · once through'}</Eyebrow>
-            {active ? (
+            {active && (
               <Txt size={13} w="semi" color={mode === 'recording' ? C.recText : C.accent}>
                 {counting ? `Count-in · ${count}` : loop ? `Bar ${first + cell} · pass ${pass}` : clock(take.elapsed)}
               </Txt>
-            ) : (
-              <NavLink size={13} w="semi" style={{ minHeight: 24 }} onPress={() => live && begin('listening')}>
-                {loop ? 'Play the loop' : 'Play the beat'}
-              </NavLink>
             )}
           </View>
-          {/* The stretch of the beat being recorded over, drawn as it is on the Song and Mix tabs. */}
-          <SeekTrack peaks={wave} height={wide ? 110 : 44} progress={active && !counting ? within / span : 0} played={mode === 'recording' ? C.rec : C.accent} disabled onSeek={() => {}} label={loop ? 'Place in the loop' : 'Place in the beat'} duration={span} />
+          {/* The same player as the Song and Mix tabs: play on the left, then the stretch of the beat being recorded over. */}
+          <View style={[s.row, { gap: 8 }]}>
+            {/* While a take is being recorded the mic below is what stops it. */}
+            <RoundPlay playing={mode === 'listening'} disabled={mode === 'recording'} label={`${mode === 'listening' ? 'Pause' : 'Play'} the ${loop ? 'loop' : 'beat'}`} onPress={() => (mode === 'listening' ? void stopTake(false) : live && void begin('listening'))} />
+            <SeekTrack peaks={wave} height={wide ? 110 : 44} progress={active && !counting ? within / span : 0} played={mode === 'recording' ? C.rec : C.accent} disabled onSeek={() => {}} label={loop ? 'Place in the loop' : 'Place in the beat'} duration={span} style={{ flex: 1 }} />
+          </View>
           {!bar && <Muted size={13}>Set the tempo in the beat details on the Song tab to loop 8 or 16 bars. Until then the whole beat plays through.</Muted>}
           {project.loop.bars > total && bar && !active ? <Muted size={13}>This beat is {plural(total, 'bar')} long, so that is what loops.</Muted> : null}
         </Card>

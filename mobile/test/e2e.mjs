@@ -490,6 +490,7 @@ async function song() {
   // Listening mode: hold what was played, then keep it.
   await tap('Play the loop');
   await expectText('Holding the last', 'listening holds the input', 5000);
+  log(await showing('Pause the loop'), 'the play button beside the waveform turns into pause while the loop plays');
   await sleep(3500);
   await tap('Keep that');
   await expectText('Take 3', 'kept take opens in playback', 10000);

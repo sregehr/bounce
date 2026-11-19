@@ -274,6 +274,8 @@ const asksBeforeLeaving = () =>
     window.dispatchEvent(leaving);
     return leaving.defaultPrevented;
   });
+/** Whether a control with this label is on screen. */
+const showing = (label, role) => page.evaluate((label, role) => [...document.querySelectorAll(role ? `[role=${role}]` : '[role=button],[role=link],[role=tab],[role=radio],[role=switch],button')].some((n) => n.getBoundingClientRect().width > 0 && (n.getAttribute('aria-label') ?? n.textContent ?? '').trim() === label), label, role);
 const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
 /** What a slider (found by the start of its label) reads out to a screen reader. */
 const valueText = (label) => page.evaluate((label) => [...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label')?.startsWith(label)).pop()?.getAttribute('aria-valuetext') ?? '', label);
@@ -377,7 +379,15 @@ async function song() {
   await shot('07-vocals-idle');
   // A new beat plays through whole until a loop is chosen.
   await expectText('Whole beat · once through', 'a new beat starts as the whole beat');
+  // Which bars to record over is chosen on the Song tab, and nowhere else.
+  log(!(await showing('8 bars')), 'the mic screen has no choice of bars of its own');
+  await tap('Song');
+  await expectText('Nothing recorded over this beat yet', 'the Song tab opens');
   await tap('8 bars');
+  await expectText('on loop', 'the bars are chosen on the Song tab before the first take');
+  await tap('Freestyle over', { exact: false });
+  await expectText(/Loop · bars 1–8/i, 'and the mic screen records over those bars', 8000);
+  log(await showing('Place in the loop', 'slider'), 'the loop is drawn as a waveform, as on the other tabs');
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass after the count-in', 12000);
   await sleep(2500);
@@ -394,11 +404,7 @@ async function song() {
   // The take is a few seconds long; with Repeat on, the mix is still going well after it would have ended.
   await sleep(9000);
   log(await transportPlaying(), 'the mix repeats while it is being shaped');
-  await tap('Repeat');
-  await sleep(9000);
-  log(!(await transportPlaying()), 'with Repeat off it stops at the end');
-  await tap('Repeat');
-  await tap('Play');
+  log(!(await showing('Repeat')) && !(await showing('8 bars')), 'the mix has no Repeat or bars of its own: it follows the Song tab');
   await sleep(500);
   await shot('09-playback');
   await tap('Compare with raw');
@@ -558,16 +564,17 @@ async function song() {
   await tap('Redo');
   log((await lyricsNow()) === 'Night bus rolling, city on mute\nEvery red light is a breath I use', 'and Redo puts it back', JSON.stringify(await lyricsNow()));
   await tap('Pause', { optional: true });
-  await tap('Mix take 1');
-  await expectText(/Polished\s/, 'switching takes renders', 30000);
-  // The part of the beat under the take can be changed in the mix.
-  await expectText('on loop', 'the mix shows which bars of the beat are looping');
+  // The part of the beat under the take is changed here on the Song tab.
+  await expectText('on loop', 'the Song tab shows which bars of the beat are looping');
   await tap('Whole beat');
   await expectText('whole beat, once through', 'the beat section can be changed');
-  await expectText(/Polished\s/, 'and the mix renders with it', 30000);
+  await expectText('Take 1, polished over the beat', 'and the take renders with it', 30000);
   await tap('8 bars');
   await expectText('on loop');
-  await expectText(/Polished\s/, 'the loop is put back', 30000);
+  await expectText('Take 1, polished over the beat', 'the loop is put back', 30000);
+  await tap('Pause', { optional: true });
+  await tap('Mix take 1');
+  await expectText(/Polished\s/, 'the mix opens with those bars', 30000);
   await sleep(400);
   await tap('Pause', { optional: true });
   await tapTrack('Position in take', 0.75);
@@ -698,8 +705,12 @@ async function finish() {
   await tap('Open your song');
   await expectText('Not in the Vault yet', 'the Vault leads to the song, which says it is not finished');
   await expectText('Has lyrics');
-  await expectText('on loop', 'the song page has the same repeat and bar controls as the mix');
+  await expectText('on loop', 'the song page has the repeat and bar controls');
+  // With Repeat off the take stops at its end; the Mix page follows the same choice.
   await tap('Repeat');
+  if (!(await transportPlaying())) await tap('Play');
+  await sleep(9000);
+  log(!(await transportPlaying()), 'with Repeat off it stops at the end');
   await tap('Repeat');
   await shot('13b-song-transport');
   await tap('Mix take 1');
@@ -1078,9 +1089,9 @@ async function library() {
   await expectText('100 BPM', 'its tempo is found');
   await tap('Beat details', { exact: false });
   await expectText('48 kHz');
+  await tap('8 bars');
   await tap('Freestyle over Basement tape');
   await expectText(/Fake .* ms (estimated|measured)/, 'the microphone reconnects for the new beat', 10000);
-  await tap('8 bars');
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 12000);
   await sleep(3500);
@@ -1319,10 +1330,11 @@ async function failures() {
   const beatName = await page.evaluate((saved) => saved.projects.find((p) => p.id === saved.currentId)?.name ?? '', JSON.parse(await stored('library')));
   log(/^Night bus( \d+)?$/.test(beatName), 'and is the beat that is open', beatName);
   const mic = `Freestyle over ${beatName}`;
+  await tap('Song');
+  await tap('8 bars');
   await tap(mic);
   await expectText('Always listening', 'the mic screen opens');
   await expectText(/Fake .* ms (estimated|measured)/, 'and the microphone connects', 10000);
-  await tap('8 bars');
   log(!(await asksBeforeLeaving()), 'with nothing being recorded, the tab can be closed without being asked');
 
   await setFault('write');

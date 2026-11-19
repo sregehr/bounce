@@ -1,4 +1,4 @@
-// The player controls shared by the Song and Mix pages.
+// The player controls shared by the Song and Mix pages, and the choice of bars that the Song tab alone offers.
 import { useSyncExternalStore } from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -10,7 +10,7 @@ import { barSeconds, barsIn, loopSeconds } from '@/data/studio';
 import { Muted, NavLink, RoundPlay, SeekTrack, Segmented, Txt, s } from './kit';
 import { C } from './theme';
 
-// Repeat is one choice for the whole app, so Song and Mix always agree.
+// Repeat is one choice for the whole app: it is set on the Song tab, and the Mix page follows it.
 let repeating = true;
 const listeners = new Set<() => void>();
 const setRepeat = (on: boolean) => {
@@ -46,33 +46,27 @@ function Pill({ label, name, on, solid, onPress }: { label: string; name: string
 }
 
 /**
- * Play, the position in the take, Repeat, and which bars of the beat the take sits over:
- * 8 or 16 bars on loop from a chosen bar, or the whole beat once through. `compare` adds the
- * switch to the raw take, for pages that loaded it.
+ * Which bars of the beat a song sits over: 8 or 16 bars on loop from a chosen bar, or the whole
+ * beat once through. It is set here, on the Song tab, and nowhere else: the mic records over the
+ * same bars and the mix plays them. With a take picked, the take is moved too; `repeat` adds the
+ * switch for whether it keeps coming round.
  */
-export function Transport({ project, take, song, compare }: { project: Project; take: Take; song: Pick<ReturnType<typeof useSong>, 't' | 'mix' | 'toggle' | 'seek' | 'setSide'>; compare?: boolean }) {
+export function LoopPicker({ project, take, repeat: withRepeat }: { project: Project; take?: Take | null; repeat?: boolean }) {
   const repeat = useRepeat();
-  const { t, mix } = song;
-  const raw = t.side === 'b';
   const beat = project.beat;
-  const loop = take.loop;
+  const loop = take?.loop ?? project.loop;
   const region = loopSeconds(beat, loop);
   const total = barsIn(beat);
   const first = (region?.startBar ?? 0) + 1;
   const length = loop.bars === 8 ? '8 bars' : loop.bars === 16 ? '16 bars' : 'Whole beat';
-  // The take keeps the bars it was recorded over until another part of the beat is chosen here.
-  const setLoop = (next: LoopChoice) => patchProject(project.id, (p) => ({ takes: p.takes.map((k) => (k.id === take.id ? { ...k, loop: next } : k)) }));
+  // The song and its picked take keep the same bars, so the next take is recorded over them too.
+  const setLoop = (next: LoopChoice) => patchProject(project.id, (p) => ({ loop: next, takes: take ? p.takes.map((k) => (k.id === take.id ? { ...k, loop: next } : k)) : p.takes }));
   const timed = !!barSeconds(beat.bpm);
 
   return (
     <View style={{ gap: 8 }}>
       <View style={[s.row, { gap: 8 }]}>
-        <RoundPlay playing={t.playing} onPress={song.toggle} disabled={!mix} />
-        <SeekTrack peaks={take.wave} height={44} progress={t.duration > 0 ? t.position / t.duration : 0} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" duration={t.duration} style={{ flex: 1 }} />
-        {compare && <Pill label="Raw" name="Compare with raw" on={raw} solid onPress={() => song.setSide(raw ? 'a' : 'b')} />}
-      </View>
-      <View style={[s.row, { gap: 8 }]}>
-        <Pill label="Repeat" name="Repeat" on={repeat} onPress={() => setRepeat(!repeat)} />
+        {withRepeat && <Pill label="Repeat" name="Repeat" on={repeat} onPress={() => setRepeat(!repeat)} />}
         {timed && (
           <View style={{ flex: 1 }}>
             <Segmented options={LENGTHS} value={length} onChange={(l) => setLoop({ ...loop, bars: l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0 })} variant="compact" />
@@ -98,6 +92,26 @@ export function Transport({ project, take, song, compare }: { project: Project; 
           )}
         </View>
       )}
+    </View>
+  );
+}
+
+/**
+ * Play and the position in the take. `loop` adds Repeat and the choice of bars, for the Song tab;
+ * `compare` adds the switch to the raw take, for pages that loaded it.
+ */
+export function Transport({ project, take, song, compare, loop }: { project: Project; take: Take; song: Pick<ReturnType<typeof useSong>, 't' | 'mix' | 'toggle' | 'seek' | 'setSide'>; compare?: boolean; loop?: boolean }) {
+  const { t, mix } = song;
+  const raw = t.side === 'b';
+
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={[s.row, { gap: 8 }]}>
+        <RoundPlay playing={t.playing} onPress={song.toggle} disabled={!mix} />
+        <SeekTrack peaks={take.wave} height={44} progress={t.duration > 0 ? t.position / t.duration : 0} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" duration={t.duration} style={{ flex: 1 }} />
+        {compare && <Pill label="Raw" name="Compare with raw" on={raw} solid onPress={() => song.setSide(raw ? 'a' : 'b')} />}
+      </View>
+      {loop && <LoopPicker project={project} take={take} repeat />}
     </View>
   );
 }

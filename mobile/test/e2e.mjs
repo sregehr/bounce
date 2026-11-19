@@ -274,6 +274,10 @@ const asksBeforeLeaving = () =>
     window.dispatchEvent(leaving);
     return leaving.defaultPrevented;
   });
+/** Opens the mic screen's Session setup row, if it is not open already. */
+async function openSetup() {
+  if (!/clicks before recording starts/.test(await text())) await tap('Session setup', { exact: false });
+}
 /** Whether a control with this label is on screen. */
 const showing = (label, role) => page.evaluate((label, role) => [...document.querySelectorAll(role ? `[role=${role}]` : '[role=button],[role=link],[role=tab],[role=radio],[role=switch],button')].some((n) => n.getBoundingClientRect().width > 0 && (n.getAttribute('aria-label') ?? n.textContent ?? '').trim() === label), label, role);
 const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
@@ -375,19 +379,15 @@ async function song() {
   log(await state(() => { const lit = (name) => getComputedStyle([...document.querySelectorAll('[role=tab]')].find((n) => n.getAttribute('aria-label') === name)).backgroundColor !== 'rgba(0, 0, 0, 0)'; return lit('Mix') && !lit('Song'); }), 'the Mix tab is the one lit');
   await tap('Record a take');
   await expectText('Always listening', 'vocals screen opens');
-  await expectText(/Fake .* ms (estimated|measured)/, 'microphone connects by itself once allowed', 8000);
+  await expectText('Tap to record', 'microphone connects by itself once allowed', 8000);
   await shot('07-vocals-idle');
   // A new beat plays through whole until a loop is chosen.
   await expectText('Whole beat · once through', 'a new beat starts as the whole beat');
-  // Which bars to record over is chosen on the Song tab, and nowhere else.
-  log(!(await showing('8 bars')), 'the mic screen has no choice of bars of its own');
-  await tap('Song');
-  await expectText('Nothing recorded over this beat yet', 'the Song tab opens');
+  // Which bars to record over is chosen here, on the mic screen.
   await tap('8 bars');
-  await expectText('on loop', 'the bars are chosen on the Song tab before the first take');
-  await tap('Freestyle over', { exact: false });
-  await expectText(/Loop · bars 1–8/i, 'and the mic screen records over those bars', 8000);
+  await expectText(/Loop · bars 1–8/i, 'the bars to record over are chosen on the mic screen');
   log(await showing('Place in the loop', 'slider'), 'the loop is drawn as a waveform, as on the other tabs');
+  log(await showing('Start recording') && !(await showing('Stop recording')), 'the record button is on the screen itself');
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording shows the bar and pass after the count-in', 12000);
   await sleep(2500);
@@ -404,7 +404,7 @@ async function song() {
   // The take is a few seconds long; with Repeat on, the mix is still going well after it would have ended.
   await sleep(9000);
   log(await transportPlaying(), 'the mix repeats while it is being shaped');
-  log(!(await showing('Repeat')) && !(await showing('8 bars')), 'the mix has no Repeat or bars of its own: it follows the Song tab');
+  log(!(await showing('Repeat')) && !(await showing('8 bars')), 'the mix has no Repeat or bars of its own: a take always repeats, over the bars it was recorded on');
   await sleep(500);
   await shot('09-playback');
   await tap('Compare with raw');
@@ -481,6 +481,7 @@ async function song() {
   // The mic in the bar is how another take is recorded from the song page.
   await tap('Freestyle over Night bus');
   await expectText('Always listening');
+  await openSetup();
   await tap('Punch in at bar 5', { exact: false });
   await tap('Start recording');
   await counted();
@@ -565,14 +566,7 @@ async function song() {
   await tap('Redo');
   log((await lyricsNow()) === 'Night bus rolling, city on mute\nEvery red light is a breath I use', 'and Redo puts it back', JSON.stringify(await lyricsNow()));
   await tap('Pause', { optional: true });
-  // The part of the beat under the take is changed here on the Song tab.
-  await expectText('on loop', 'the Song tab shows which bars of the beat are looping');
-  await tap('Whole beat');
-  await expectText('whole beat, once through', 'the beat section can be changed');
-  await expectText('Take 1, polished over the beat', 'and the take renders with it', 30000);
-  await tap('8 bars');
-  await expectText('on loop');
-  await expectText('Take 1, polished over the beat', 'the loop is put back', 30000);
+  log(!(await showing('Repeat')) && !(await showing('8 bars')), 'the Song tab has no Repeat or bars either');
   await tap('Pause', { optional: true });
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'the mix opens with those bars', 30000);
@@ -706,13 +700,6 @@ async function finish() {
   await tap('Open your song');
   await expectText('Not in the Vault yet', 'the Vault leads to the song, which says it is not finished');
   await expectText('Has lyrics');
-  await expectText('on loop', 'the song page has the repeat and bar controls');
-  // With Repeat off the take stops at its end; the Mix page follows the same choice.
-  await tap('Repeat');
-  if (!(await transportPlaying())) await tap('Play');
-  await sleep(9000);
-  log(!(await transportPlaying()), 'with Repeat off it stops at the end');
-  await tap('Repeat');
   await shot('13b-song-transport');
   await tap('Mix take 1');
   await expectText(/Polished\s/, 'the mix opens from the song', 30000);
@@ -1006,6 +993,7 @@ async function library() {
 
   // The microphone and its timing are set where recording happens, with the guided setup one tap away.
   await tap('Freestyle over Night bus');
+  await openSetup();
   await tap('Microphone and timing', { exact: false });
   await expectText('Play the clicks', 'the mic screen holds the microphone and timing');
   await shot('24a-mic-setup');
@@ -1090,9 +1078,9 @@ async function library() {
   await expectText('100 BPM', 'its tempo is found');
   await tap('Beat details', { exact: false });
   await expectText('48 kHz');
-  await tap('8 bars');
   await tap('Freestyle over Basement tape');
-  await expectText(/Fake .* ms (estimated|measured)/, 'the microphone reconnects for the new beat', 10000);
+  await expectText('Always listening', 'the mic screen opens for the new beat', 10000);
+  await tap('8 bars');
   await tap('Start recording');
   await expectText(/Bar \d+ · pass 1/, 'recording runs at the beat\'s rate', 12000);
   await sleep(3500);
@@ -1104,6 +1092,7 @@ async function library() {
 
   // Artists: picking who is on the mic starts a session, and a song that is no one's becomes theirs.
   await tap('Freestyle over Basement tape');
+  await openSetup();
   await expectText('On the mic: no one picked', 'the mic screen says no one has been picked yet', 10000);
   await tap('Pick');
   await type('New artist name', 'Jay Oh');
@@ -1120,6 +1109,7 @@ async function library() {
   // The artist view: the mic screen for the person at the mic, with the navigation put away.
   await tap('Freestyle over Basement tape');
   await expectText('Always listening');
+  await openSetup();
   await tap('Open artist view');
   await expectText('Exit artist view', 'the artist view opens');
   await expectText('Tap to record', 'with one large record button');
@@ -1135,6 +1125,12 @@ async function library() {
   await tap('Stop recording');
   await expectText('Take 2 saved', 'the take is saved and the artist view stays up', 10000);
   await expectText('Exit artist view');
+  // A take can be done again: the new one takes its place instead of adding to the list.
+  await tap('Redo take 2');
+  await counted();
+  await sleep(2500);
+  await tap('Stop recording');
+  await expectText('in place of take 2', 'redoing a take saves the new one in its place', 10000);
   await tap('Hear the last take');
   let heard = false;
   for (let i = 0; i < 60 && !heard; i++) (heard = /Stop playing/.test(await text())) || (await sleep(500));
@@ -1144,8 +1140,8 @@ async function library() {
   await expectText('Always listening', 'leaving it returns to the full mic screen');
   await tap('Song');
   await expectText('2 takes', 'the take recorded in the artist view is on the song');
-  await swipeLeft('Take 2');
-  await tap('Delete take 2');
+  await swipeLeft('Take 3');
+  await tap('Delete take 3');
   await expectText('1 take', 'and can be deleted like any other');
   // The artist has a profile, with their songs and their sound on it.
   await page.goto(BASE + '/profile', { waitUntil: 'networkidle2' });
@@ -1194,7 +1190,7 @@ async function library() {
   await tap('Add a beat to freestyle');
   await expectText('Nothing to record over yet', 'and so does the mic');
   // With nothing to record over, the mic is not shown as live, and a tap goes to capture a beat.
-  const micColour = await page.evaluate(() => getComputedStyle([...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Capture a beat to freestyle').pop() ?? document.body).backgroundColor);
+  const micColour = await page.evaluate(() => getComputedStyle([...document.querySelectorAll('[role=tab]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Capture a beat to freestyle').pop() ?? document.body).backgroundColor);
   log(micColour === 'rgb(30, 30, 32)', 'the mic rests dark while there is no beat', micColour);
   await tap('Capture a beat to freestyle');
   log(await page.waitForFunction(() => location.pathname === '/capture', { timeout: 5000 }).then(() => true, () => false), 'and a tap on it opens capture');
@@ -1331,11 +1327,9 @@ async function failures() {
   const beatName = await page.evaluate((saved) => saved.projects.find((p) => p.id === saved.currentId)?.name ?? '', JSON.parse(await stored('library')));
   log(/^Night bus( \d+)?$/.test(beatName), 'and is the beat that is open', beatName);
   const mic = `Freestyle over ${beatName}`;
-  await tap('Song');
-  await tap('8 bars');
   await tap(mic);
-  await expectText('Always listening', 'the mic screen opens');
-  await expectText(/Fake .* ms (estimated|measured)/, 'and the microphone connects', 10000);
+  await expectText('Always listening', 'the mic screen opens', 10000);
+  await tap('8 bars');
   log(!(await asksBeforeLeaving()), 'with nothing being recorded, the tab can be closed without being asked');
 
   await setFault('write');
@@ -1390,6 +1384,7 @@ async function failures() {
   // ----- A take recorded as a layer -----
   await tap(mic);
   await expectText('Always listening');
+  await openSetup();
   await tap('Record as a layer on take 1');
   await recordTake();
   await expectText('Take 2 level', 'a take recorded as a layer opens Song, under Layers', 20000);

@@ -13,7 +13,7 @@ import { Logo } from './Logo';
 import { Halo, Pop, useGlide } from './motion';
 import { PersonalMenu } from './PersonalMenu';
 import { useArtistViewOpen } from './artistViewOpen';
-import { askForMic, useAskingForMic, useRecordControl } from './recordControl';
+import { useRecordControl } from './recordControl';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor, type Tab } from './tabs';
 import { useBar, useGutter, useWide } from './wide';
 import { C } from './theme';
@@ -160,100 +160,67 @@ export function TopNav() {
   );
 }
 
-/** What the mic in the navigation is right now: a way to the mic screen, or that screen's record button. */
+/** The mic in the navigation: the way to the mic screen, where recording starts and stops. */
 function useMic() {
   const { path, library, tab, booth } = useNav();
-  const control = useRecordControl();
-  // On the mic screen the mic is the record button, and it stays up alone while a take runs.
-  const record = path === '/vocals' ? control : null;
-  const input = useEngine((e) => e.input);
-  const asking = useAskingForMic() && record?.state === 'off';
   const mic = micLead(library);
   const beat = mic.id ? library.projects.find((p) => p.id === mic.id) : null;
-  const recording = record?.state === 'recording';
   const is = (t: Tab) => tab === t;
-  // On the mic screen with no beat there is nothing to record over: the mic is not live, and a tap goes to capture one.
-  const empty = path === '/vocals' && !record && !beat;
-  const lit = (is('mic') && !empty) || !!record;
-  return { path, library, tab, record, input, asking, mic, beat, recording, is, lit, booth, empty };
+  // On the mic screen with no beat there is nothing to record over: a tap goes to capture one.
+  const empty = path === '/vocals' && !beat;
+  const lit = is('mic') && !empty;
+  return { path, library, tab, mic, beat, is, lit, booth, empty };
 }
 
 // The mic at rest: a dark disc, so the yellow is kept for when it is selected.
 const REST = 'rgb(30,30,32)';
 
 function MicButton({ nav, style }: { nav: ReturnType<typeof useMic>; style?: ViewStyle }) {
-  const { path, record, mic, beat, recording, is, lit, empty } = nav;
+  const { path, mic, beat, is, lit, empty } = nav;
   const { mic: MIC } = useBar();
-  // The mic turns into the stop square, and back, instead of swapping.
-  const at = useGlide(!!recording);
   return (
     <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={record ? (recording ? 'Stop recording' : 'Start recording') : beat ? `Freestyle over ${beat.name}` : empty ? 'Capture a beat to freestyle' : 'Add a beat to freestyle'}
-      accessibilityState={{ selected: is('mic'), busy: !!record?.busy }}
+      accessibilityRole="tab"
+      accessibilityLabel={beat ? `Freestyle over ${beat.name}` : empty ? 'Capture a beat to freestyle' : 'Add a beat to freestyle'}
+      accessibilityState={{ selected: is('mic') }}
       hitSlop={6}
-      onPress={() => (record ? record.press() : empty ? router.push('/capture') : follow(mic, path))}
+      onPress={() => (empty ? router.push('/capture') : follow(mic, path))}
       style={({ pressed }) => ({
         width: MIC,
         height: MIC,
         borderRadius: MIC / 2,
         // Like the glyphs beside it, the mic is an outline at rest and solid once it is the tab in view.
-        // Solid yellow also means it is live: there, a tap records rather than leading to the mic screen.
-        backgroundColor: recording ? C.rec : lit ? C.accent : REST,
+        backgroundColor: lit ? C.accent : REST,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: lit ? 0.5 : 2,
         borderColor: lit ? 'rgba(255,255,255,0.4)' : C.accent,
-        boxShadow: lit ? `0 10px 28px rgba(0,0,0,0.5), 0 6px 22px ${recording ? 'rgba(255,75,62,0.4)' : 'rgba(255,176,32,0.4)'}, inset 0 1px 0 rgba(255,255,255,0.35)` : '0 10px 28px rgba(0,0,0,0.5)',
-        opacity: record?.busy ? 0.6 : 1,
+        boxShadow: lit ? '0 10px 28px rgba(0,0,0,0.5), 0 6px 22px rgba(255,176,32,0.4), inset 0 1px 0 rgba(255,255,255,0.35)' : '0 10px 28px rgba(0,0,0,0.5)',
         transform: [{ scale: pressed ? 0.93 : 1 }],
         ...style,
       })}
     >
-      <Halo on={!!recording} size={MIC} color={C.rec} />
-      <Animated.View style={{ position: 'absolute', opacity: at.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }), transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [1, 0.6] }) }] }}>
-        <MicIcon size={Math.round(MIC * 0.44)} color={lit ? C.bg : C.accent} />
-      </Animated.View>
-      <Animated.View style={{ width: MIC * 0.34, height: MIC * 0.34, borderRadius: 5, backgroundColor: C.text, opacity: at, transform: [{ scale: at.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) }] }} />
+      <MicIcon size={Math.round(MIC * 0.44)} color={lit ? C.bg : C.accent} />
     </Pressable>
-  );
-}
-
-/** With no microphone connected, the record button opens this beside itself rather than recording. */
-function MicPrompt({ nav, style, cover }: { nav: ReturnType<typeof useMic>; style: ViewStyle; cover: ViewStyle }) {
-  const { input, library } = nav;
-  return (
-    <>
-      <Pressable accessibilityLabel="Close" onPress={() => askForMic(false)} style={[{ position: 'absolute' }, cover]} />
-      <Pop from="bottom" style={[{ position: 'absolute' }, style]}>
-      <View accessibilityRole="alert" style={{ borderRadius: 20, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, padding: 18, gap: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
-        <Txt size={17} w="display" ls={0}>
-          No microphone yet
-        </Txt>
-        <Muted size={14}>{input.error ?? 'Bounce needs a microphone to record your take. It only listens while this screen is open.'}</Muted>
-        <Btn label="Connect a microphone" busy={input.status === 'opening'} onPress={() => void openInput(library.settings.inputId, 'mic')} />
-      </View>
-      </Pop>
-    </>
   );
 }
 
 /**
  * Bottom navigation, floating over the page: a glass capsule with Home, Song, Mix and Vault, and
- * the mic raised in the middle of it. Every tab always works; one with nothing to show yet leads
+ * the mic raised in the middle of it, which leads to the mic screen. Every tab always works; one with nothing to show yet leads
  * to the step that gets there.
  */
 export function TabBar() {
   const nav = useMic();
-  const { path, library, tab, record, asking, is } = nav;
+  const { path, library, tab, is } = nav;
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const bar = useBar();
   // On a wider screen the capsule stays a comfortable size in the middle instead of stretching edge to edge.
   const side = Math.max(14, Math.round((width - bar.max) / 2));
   const bottom = Math.max(bar.lift, insets.bottom);
-  // In the artist view the record button is on the screen itself, much larger.
-  if ((!tab && !record) || hidesTabBar(path) || nav.booth) return null;
+  // While a take runs, or waits to be saved, or the phone is handed over in the artist view, the bar steps aside: a stray tap cannot end a take.
+  if (!tab || hidesTabBar(path) || nav.booth) return null;
 
   const button = (
     <View style={{ width: bar.mic + 12, height: bar.height, alignItems: 'center' }}>
@@ -261,12 +228,8 @@ export function TabBar() {
     </View>
   );
 
-  // While a take runs the tabs step aside, so a stray tap cannot end it; only the button stays.
-  if (!tab) return <View style={{ position: 'absolute', left: side, right: side, bottom, height: bar.height, alignItems: 'center' }}>{button}</View>;
-
   return (
     <View accessibilityRole="tablist" style={[{ position: 'absolute', left: side, right: side, bottom, height: bar.height, borderRadius: bar.height / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
-      {asking && <MicPrompt nav={nav} cover={{ left: -side, right: -side, bottom: -40, height: 2000 }} style={{ left: 0, right: 0, bottom: bar.height + 24 }} />}
       <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
       <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
       {/* The mic sits in the middle, raised out of the capsule. */}

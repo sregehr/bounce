@@ -14,7 +14,7 @@ import { Btn, Chip, Eyebrow, Muted, NavLink, Screen, Segmented, SliderRow, Txt, 
 import { useStopOnLeave, useTwoFingerUndo } from '@/ui/hooks';
 import { SongUndo, Status, SwipeRow, UndoToast } from '@/ui/parts';
 import { SongHeader } from '@/ui/SongHeader';
-import { Transport, useRepeat } from '@/ui/Transport';
+import { LoopPicker, Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
 import { Columns, useBar, useGutter, useWide } from '@/ui/wide';
 
@@ -73,7 +73,8 @@ export default function Song() {
   const pick = (k: Take) => {
     if (k.id === take?.id) return song.toggle();
     song.playWhenReady();
-    patchProject(project.id, { takeId: k.id }, false);
+    // The picked take's bars become the song's, so the mic records the next take over the same ones.
+    patchProject(project.id, { takeId: k.id, loop: k.loop }, false);
   };
 
   const header = (
@@ -86,7 +87,7 @@ export default function Song() {
 
   const takes = take ? (
           <View>
-            <Transport project={project} take={take} song={song} />
+            <Transport project={project} take={take} song={song} loop />
             <Txt size={13} color={song.error ? C.recText : C.muted} style={{ paddingTop: 8, paddingBottom: 6 }}>
               {song.error ?? (song.busy ? `Polishing take ${take.number}…` : `Take ${take.number}, polished over the beat`)}
             </Txt>
@@ -107,7 +108,11 @@ export default function Song() {
             })}
           </View>
         ) : (
-          <Muted>Nothing recorded over this beat yet. Tap the mic below to record a take, and it shows up here.</Muted>
+          <View style={{ gap: 12 }}>
+            <Muted>Nothing recorded over this beat yet. Tap the mic below to record a take, and it shows up here.</Muted>
+            {/* Which bars the first take will be recorded over. */}
+            <LoopPicker project={project} />
+          </View>
         );
 
   // More takes stacked on the picked one, and bars of it swapped for bars of another take.

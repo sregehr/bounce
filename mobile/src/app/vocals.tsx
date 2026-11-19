@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 
-import type { LoopChoice } from '@/data/model';
 import { sessionArtist } from '@/data/artists';
 import { artistOf } from '@/data/songs';
 import { activeTake, patchProject, setSettings, useLibrary, useProject } from '@/data/store';
@@ -15,7 +14,7 @@ import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
 import { ArtistView } from '@/ui/ArtistView';
 import { setArtistViewOpen } from '@/ui/artistViewOpen';
-import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Pulse, Screen, Segmented, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Foot, Muted, NavLink, Option, Pulse, Screen, SeekTrack, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
 import { OnTheMic } from '@/ui/OnTheMic';
 import { useTiming } from '@/ui/timing';
@@ -26,10 +25,6 @@ import { SongHeader } from '@/ui/SongHeader';
 import { C, clock, meterPct, plural } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
-const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
-type Length = (typeof LENGTHS)[number];
-const toBars = (l: Length): LoopChoice['bars'] => (l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0);
-const toLength = (b: LoopChoice['bars']): Length => (b === 8 ? '8 bars' : b === 16 ? '16 bars' : 'Whole beat');
 /** A recording on its way into the song, with what is needed to store it. */
 type Pending = { recorded: RecordedTake; origin: 'kept' | 'recorded'; punchAtSec?: number; layer?: boolean; note?: string };
 /** What to say when the microphone goes away in the middle of a take. */
@@ -86,6 +81,12 @@ export default function Vocals() {
   const bar = barSeconds(project?.beat.bpm ?? null);
   const total = project ? barsIn(project.beat) : 0;
   const previous = activeTake(project);
+  // Which bars to record over is set on the Song tab. A picked take carries its own, and the song follows it.
+  const pickedLoop = previous?.loop;
+  useEffect(() => {
+    if (project && pickedLoop && take.mode === 'idle' && (pickedLoop.bars !== project.loop.bars || pickedLoop.startBar !== project.loop.startBar)) patchProject(project.id, { loop: pickedLoop }, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, pickedLoop?.bars, pickedLoop?.startBar, take.mode]);
   const span = loop ? loop.end - loop.start : (project?.beat.durationSec ?? 1);
   const cells = loop ? loop.bars : 16;
   const canPunch = !!loop && !!bar && !!previous && previous.phaseSec < 0.001 && previous.loop.bars === project?.loop.bars && previous.loop.startBar === project?.loop.startBar;
@@ -258,8 +259,9 @@ export default function Vocals() {
   const within = active ? take.elapsed % span : 0;
   const cell = active && !counting ? Math.min(cells - 1, Math.floor((within / span) * cells)) : -1;
   const pass = Math.floor(take.elapsed / span) + 1;
-  const setLoop = (patch: Partial<LoopChoice>) => !active && patchProject(project.id, { loop: { ...project.loop, ...patch } }, false);
-  const length = toLength(project.loop.bars);
+  // The beat under the loop, for drawing: the slice of its waveform that the bars cover.
+  const beatWave = project.beat.wave;
+  const wave = loop && project.beat.durationSec > 0 ? beatWave.slice(Math.floor((loop.start / project.beat.durationSec) * beatWave.length), Math.max(1, Math.ceil((loop.end / project.beat.durationSec) * beatWave.length))) : beatWave;
   const first = (loop?.startBar ?? 0) + 1;
 
   const header = <SongHeader project={project} locked={active || !!unsaved} />;
@@ -305,32 +307,9 @@ export default function Vocals() {
               </NavLink>
             )}
           </View>
-          <View accessible={false} style={{ flexDirection: 'row', gap: wide ? 6 : 3 }}>
-            {Array.from({ length: cells }, (_, i) => (
-              <View key={i} style={[{ flex: 1, height: 34, borderRadius: 4, backgroundColor: !active ? C.dim : i < cell ? C.text : i === cell ? (mode === 'recording' ? C.rec : C.accent) : C.dim }, wide && { height: 130, borderRadius: 10, justifyContent: 'flex-end', padding: cells > 8 ? 6 : 10 }]}>
-                {wide && loop ? (
-                  <Txt size={cells > 8 ? 14 : 18} w="display" ls={0} color={active && i <= cell ? C.bg : C.muted}>
-                    {first + i}
-                  </Txt>
-                ) : null}
-              </View>
-            ))}
-          </View>
-          {bar ? (
-            <Segmented options={LENGTHS} value={length} onChange={(l) => setLoop({ bars: toBars(l) })} variant="inset" />
-          ) : (
-            <Muted size={13}>Set the tempo in the beat details on the Song tab to loop 8 or 16 bars. Until then the whole beat plays through.</Muted>
-          )}
-          {loop && total > loop.bars && !active && (
-            <View style={[s.row, s.between]}>
-              <NavLink size={13} style={{ minHeight: 28 }} onPress={() => setLoop({ startBar: Math.max(0, loop.startBar - 4) })}>
-                Start 4 bars earlier
-              </NavLink>
-              <NavLink size={13} style={{ minHeight: 28 }} onPress={() => setLoop({ startBar: Math.min(total - loop.bars, loop.startBar + 4) })}>
-                Start 4 bars later
-              </NavLink>
-            </View>
-          )}
+          {/* The stretch of the beat being recorded over, drawn as it is on the Song and Mix tabs. */}
+          <SeekTrack peaks={wave} height={wide ? 110 : 44} progress={active && !counting ? within / span : 0} played={mode === 'recording' ? C.rec : C.accent} disabled onSeek={() => {}} label={loop ? 'Place in the loop' : 'Place in the beat'} duration={span} />
+          {!bar && <Muted size={13}>Set the tempo in the beat details on the Song tab to loop 8 or 16 bars. Until then the whole beat plays through.</Muted>}
           {project.loop.bars > total && bar && !active ? <Muted size={13}>This beat is {plural(total, 'bar')} long, so that is what loops.</Muted> : null}
         </Card>
       );

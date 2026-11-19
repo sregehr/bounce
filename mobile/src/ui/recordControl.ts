@@ -1,18 +1,17 @@
-// The mic in the bottom bar doubles as the record button while the mic screen is open. That
-// screen owns recording, so it hands the bar what to show and what a press does through here.
+// The mic screen owns recording: its own button starts and stops a take. It tells the navigation
+// here what state it is in, so the bar can step aside while a take runs or waits to be saved.
 import { useSyncExternalStore } from 'react';
 
 export type RecordControl = {
-  /** `off`: no microphone yet, a press connects one. `ready`: a press records. `recording`: a press stops. */
+  /** `off`: no microphone yet. `ready`: the record button records. `recording`: it stops the take. */
   state: 'off' | 'ready' | 'recording';
   busy: boolean;
   /** A take is waiting to be saved: the tabs stay away until it is saved, exported or dropped. */
   holding?: boolean;
-  press: () => void;
 };
 
 /**
- * What the bar's mic should be. A take in progress comes before everything else: the button must
+ * What the record button should be. A take in progress comes before everything else: the button must
  * always stop it, even when the microphone has dropped out from under it.
  */
 export const recordState = (live: boolean, mode: 'idle' | 'listening' | 'recording'): RecordControl['state'] => (mode === 'recording' ? 'recording' : live ? 'ready' : 'off');
@@ -34,26 +33,5 @@ export function useRecordControl(): RecordControl | null {
     },
     () => current,
     () => current,
-  );
-}
-
-// Pressing record with no microphone connected opens a small sheet above the button to connect one.
-let asking = false;
-const askListeners = new Set<() => void>();
-
-export function askForMic(open: boolean) {
-  if (asking === open) return;
-  asking = open;
-  askListeners.forEach((fn) => fn());
-}
-
-export function useAskingForMic(): boolean {
-  return useSyncExternalStore(
-    (fn) => {
-      askListeners.add(fn);
-      return () => askListeners.delete(fn);
-    },
-    () => asking,
-    () => asking,
   );
 }

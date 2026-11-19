@@ -163,7 +163,7 @@ async function counted() {
 async function mic() {
   await tap('Freestyle over Night bus');
   await expectText('Always listening', 'the mic screen opens');
-  await expectText(/Fake .* ms (estimated|measured)/, 'the microphone connects', 8000);
+  await expectText('Tap to record', 'the microphone connects', 8000);
 
   // Muted on the device, or taken by a call: the track stays, but sends silence.
   await tap('Start recording');
@@ -198,12 +198,14 @@ async function mic() {
   await shot('review-mic-dropped');
   await expectText('The input was disconnected.', 'the mic screen shows the microphone has gone');
   log(!(await has('Stop recording')), 'the beat is not left playing against a dead microphone');
-  const lib = await library();
+  // The library is written a moment after a change, so the second take is waited for.
+  let lib = await library();
+  for (let i = 0; i < 10 && lib.projects[0].takes.length < 2; i++) (await sleep(200), (lib = await library()));
   const takes = lib.projects[0].takes;
-  log(takes.length === 2 && takes.every((t) => t.durationSec > 1.5 && t.durationSec < 8), 'both takes hold what was sung before the microphone went', takes.map((t) => t.durationSec.toFixed(1)).join(', '));
+  log(takes.length === 2 && takes.every((t) => t.durationSec > 1.5 && t.durationSec < 8), 'both takes hold what was sung before the microphone went', takes.map((t) => `take ${t.number}: ${t.durationSec.toFixed(1)} s`).join(', '));
   // With the microphone gone, the button offers to connect one again.
-  await tap('Start recording');
-  await expectText('Connect a microphone', 'with no take running and no microphone, the button offers to connect one');
+  await expectText('Connect a microphone', 'with no take running and no microphone, the screen offers to connect one');
+  log(!(await has('Start recording')), 'in place of the record button');
 }
 
 // ---------- Importing files ----------
@@ -307,7 +309,7 @@ async function memory() {
   await expectText('Nothing recorded over this beat yet', `a ${minutes}-minute beat is imported`, 180000);
   await tap(`Freestyle over Long song ${minutes}`);
   await expectText('Whole beat · once through', 'the mic screen opens on the whole beat');
-  await expectText(/Fake .* ms (estimated|measured)/, 'the microphone connects', 8000);
+  await expectText('Tap to record', 'the microphone connects', 8000);
   await tap('Start recording');
   // The beat plays through once, and the take is saved and opened when it ends.
   await expectText('Take 1', 'a take the length of the beat is recorded', (minutes * 60 + 90) * 1000);

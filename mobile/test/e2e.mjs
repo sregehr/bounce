@@ -1235,13 +1235,10 @@ async function library() {
   await expectText('Nothing to mix yet', 'Mix does the same');
   await tap('Add a beat to freestyle');
   await expectText('Nothing to record over yet', 'and so does the mic');
-  // With nothing to record over, the mic is not shown as live, and a tap goes to capture a beat.
-  const micColour = await page.evaluate(() => getComputedStyle([...document.querySelectorAll('[role=tab]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Capture a beat to freestyle').pop() ?? document.body).backgroundColor);
-  log(micColour === 'rgb(30, 30, 32)', 'the mic rests dark while there is no beat', micColour);
-  await tap('Capture a beat to freestyle');
-  log(await page.waitForFunction(() => location.pathname === '/capture', { timeout: 5000 }).then(() => true, () => false), 'and a tap on it opens capture');
+  // With nothing to record over, the mic is a tab like the others: a tap on it while its screen is open changes nothing.
   await tap('Add a beat to freestyle');
-  await expectText('Nothing to record over yet', 'and from there it leads back to the mic');
+  await sleep(400);
+  log(new URL(page.url()).pathname === '/vocals' && /Nothing to record over yet/.test(await text()), 'tapping the mic again on its own screen stays there');
   await tap('Try a demo song');
   await expectText('Ready-made beats', 'its tiles lead on, here to the demo songs');
 

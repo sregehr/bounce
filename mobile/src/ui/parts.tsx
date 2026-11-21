@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { redoSong, undoSong, useSongHistory } from '@/data/store';
-import { TAPS } from '@/dsp/latency';
+import { TAPS, analyseTaps } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
 
@@ -147,17 +147,24 @@ export function MiniTransport({ playing, position, duration, onToggle, onSeek, b
   );
 }
 
-export type ClapOutcome = { ms: number | null; matched: number; clicks: number };
+/** What a timing check by hand found. `by` is how it was done: clapped for the mic to hear, or tapped on the screen. */
+export type ClapOutcome = { ms: number | null; matched: number; clicks: number; by: 'claps' | 'taps' };
 
 /**
- * The timing check for earbuds, where the mic cannot hear the clicks: a pulse plays and the artist claps along.
- * The mic hears the claps, so the result covers both the delay to the ears and the mic's own delay.
+ * The timing check for earbuds, where the mic cannot hear the clicks: a pulse plays and the artist claps
+ * along, or taps the disc on each click. The mic hears claps, so they cover both the delay to the ears and
+ * the mic's own delay; taps time the delay to the ears. Three taps or more and the taps are what is used.
  */
 export function ClapCheck({ input, onDone, onCancel }: { input: EngineState['input']; onDone: (outcome: ClapOutcome) => void; onCancel: () => void }) {
   const [click, setClick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const done = useRef(onDone);
   done.current = onDone;
+  // When each tap on the disc landed, on the same clock as the clicks.
+  const taps = useRef<number[]>([]);
+  const [tapped, setTapped] = useState(0);
+  // A tap fills the circle at once and lets it drain, the way a clap swells it.
+  const fill = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     let over = false;
@@ -168,7 +175,13 @@ export function ClapCheck({ input, onDone, onCancel }: { input: EngineState['inp
         if (over) return r.stop();
         run = r;
         tick = setInterval(() => setClick(r.clicksAt.filter((t) => t <= performance.now()).length), 100);
-        void r.result.then((result) => !over && done.current({ ms: result.medianMs === null ? null : Math.round(result.medianMs), matched: result.matched, clicks: result.clicks }));
+        void r.result.then((heard) => {
+          if (over) return;
+          // Tapping is a choice: a few taps mean the taps are the answer, whatever the mic made of the noise.
+          const byTaps = taps.current.length >= 3;
+          const result = byTaps ? analyseTaps(r.clicksAt, taps.current) : heard;
+          done.current({ ms: result.medianMs === null ? null : Math.round(result.medianMs), matched: result.matched, clicks: result.clicks, by: byTaps ? 'taps' : 'claps' });
+        });
       })
       .catch((e) => !over && setError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -181,16 +194,33 @@ export function ClapCheck({ input, onDone, onCancel }: { input: EngineState['inp
   const level = Math.min(1, meterPct(Math.max(input.levelL, input.levelR)) / 100);
   return (
     <View style={{ gap: 14, alignItems: 'center' }}>
-      <Muted center>{error ?? 'Keep your earbuds in. Clap on every click, or say “ta”, right on the beat like you would rap it.'}</Muted>
-      <View accessibilityLabel="Listening for your claps" style={{ width: 148, height: 148, borderRadius: 74, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.accent }}>
+      <Muted center>{error ?? 'Keep your earbuds in. Clap on every click, or tap the circle on every click, right on the beat like you would rap it.'}</Muted>
+      {/* The tap is timed the instant the finger lands: a plain view takes the touch at once, where a button would wait to see if it is a press. */}
+      <View
+        accessibilityRole="button"
+        accessibilityLabel="Tap on every click"
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={() => {
+          taps.current.push(performance.now());
+          setTapped(taps.current.length);
+          tick();
+          fill.stopAnimation();
+          fill.setValue(1);
+          Animated.timing(fill, { toValue: 0, duration: reduceMotion() ? 200 : 320, useNativeDriver: NATIVE }).start();
+        }}
+        style={[{ width: 148, height: 148, borderRadius: 74, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.accent }, { cursor: 'pointer', userSelect: 'none', touchAction: 'manipulation' } as object]}
+      >
         {/* The disc swells with the mic, so a clap that registers can be seen. */}
         <View style={{ position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: C.accent, opacity: 0.85 * level, transform: [{ scale: 0.55 + 0.45 * level }] }} />
-        <Txt size={26} w="display" color={C.text}>
-          Clap
+        {/* And fills with a tap, so one that registers can be seen too. With motion reduced it only fades. */}
+        <Animated.View style={{ position: 'absolute', width: 140, height: 140, borderRadius: 70, backgroundColor: C.accent, opacity: fill.interpolate({ inputRange: [0, 1], outputRange: [0, 0.85] }), transform: [{ scale: reduceMotion() ? 1 : fill.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }] }} />
+        <Txt size={22} w="display" color={C.text} center>
+          {'Clap\nor tap'}
         </Txt>
       </View>
       <Txt size={13} color={C.muted}>
         {click === 0 ? 'Get ready…' : `Click ${Math.min(click, TAPS.count)} of ${TAPS.count}`}
+        {tapped > 0 ? ` · ${tapped} ${tapped === 1 ? 'tap' : 'taps'}` : ''}
       </Txt>
       <NavLink center size={14} onPress={onCancel}>
         Cancel

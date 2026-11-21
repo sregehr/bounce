@@ -214,10 +214,7 @@ export function TabBar() {
   const nav = useMic();
   const { path, library, tab, is } = nav;
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const bar = useBar();
-  // On a wider screen the capsule stays a comfortable size in the middle instead of stretching edge to edge.
-  const side = Math.max(14, Math.round((width - bar.max) / 2));
   const bottom = Math.max(bar.lift, insets.bottom);
   // While a take runs, or waits to be saved, or the phone is handed over in the artist view, the bar steps aside: a stray tap cannot end a take.
   if (!tab || hidesTabBar(path) || nav.booth) return null;
@@ -228,14 +225,18 @@ export function TabBar() {
     </View>
   );
 
+  // On a wider screen the capsule stays a comfortable size in the middle instead of stretching edge to edge.
+  // It is centred by the layout itself, not worked out from the window's width, which a scaled or split view can report wrongly.
   return (
-    <View accessibilityRole="tablist" style={[{ position: 'absolute', left: side, right: side, bottom, height: bar.height, borderRadius: bar.height / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, right: 14, bottom, alignItems: 'center' }}>
+    <View accessibilityRole="tablist" style={[{ width: '100%', maxWidth: bar.max, height: bar.height, borderRadius: bar.height / 2, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }, floating]}>
       <Item label="Home" on={is('home')} onPress={() => follow({ to: '/', id: null }, path)} Icon={HomeGlyph} />
       <Item label="Song" on={is('song')} onPress={() => follow(songLead(library), path)} Icon={SongGlyph} />
       {/* The mic sits in the middle, raised out of the capsule. */}
       {button}
       <Item label="Mix" on={is('mix')} onPress={() => follow(mixLead(library), path)} Icon={MixGlyph} />
       <Item label="Vault" on={is('vault')} onPress={() => follow({ to: '/vault' }, path)} Icon={VaultGlyph} />
+    </View>
     </View>
   );
 }

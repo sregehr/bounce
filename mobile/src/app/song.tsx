@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { Platform, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +28,8 @@ const TINTS = ['#ffb020', '#7cc4ff', '#9be28a', '#ff8fb1', '#c9a6ff', '#ffd66b']
 // Height of the pinned next step, above the floating bar.
 const NEXT_HEIGHT = 62;
 
+const SONG_TABS = ['Takes', 'Lyrics'] as const;
+
 /** The song being worked on: its beat, every take recorded over it, and its lyrics. Picking a take here is what Mix then shapes. */
 export default function Song() {
   const project = useProject();
@@ -39,6 +42,11 @@ export default function Song() {
   const gutter = useGutter();
   const tabBar = useBar();
   const [details, setDetails] = useState(false);
+  // The lyrics start as a button. Once there are some, or the button has been tapped, the editor is there instead.
+  const asked = useLocalSearchParams<{ lyrics?: string }>().lyrics;
+  const [writing, setWriting] = useState(!!asked);
+  // On a phone the takes and the lyrics are two tabs, so neither is a long scroll under the other.
+  const [tab, setTab] = useState<(typeof SONG_TABS)[number]>(asked ? 'Lyrics' : 'Takes');
   const wide = useWide();
   const history = useSongHistory(project?.id ?? null);
   const projectId = project?.id;
@@ -183,9 +191,20 @@ export default function Song() {
           </View>
         );
 
-  const beat = <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />;
+  // The beat's card is for a song with nothing recorded yet: playing the beat and mastering it alone. Once there
+  // are takes the song's own player is the one that matters, and the card steps back to a link that opens it.
+  const beat =
+    project.takes.length === 0 || details ? (
+      <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />
+    ) : (
+      <NavLink size={13} w="semi" style={{ minHeight: 44 }} onPress={() => setDetails(true)}>
+        Beat details ›
+      </NavLink>
+    );
 
-  const lyrics = (
+  const hasLyrics = project.lyrics.trim().length > 0;
+  const editing = hasLyrics || writing;
+  const lyrics = editing ? (
         <View style={[{ gap: 8 }, wide && { flex: 1 }]}>
           <View style={[s.row, s.between, { minHeight: 24 }]}>
             <Eyebrow>Lyrics</Eyebrow>
@@ -199,15 +218,28 @@ export default function Song() {
           <TextInput
             accessibilityLabel="Lyrics"
             multiline
+            autoFocus={writing && !hasLyrics}
             value={project.lyrics}
             onChangeText={(text) => setLyrics(project.id, text)}
+            // While it is being typed in the editor stays, even emptied to start again.
+            onFocus={() => setWriting(true)}
+            // Left empty, the editor steps back to the button it came from.
+            onBlur={() => !project.lyrics.trim() && (setWriting(false), setTab('Takes'))}
             placeholder="Write the bars here. They stay with the song when you finish it, and the first line can caption a snippet."
             placeholderTextColor={C.muted}
             selectionColor={C.accent}
-            style={[{ minHeight: 120, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, color: C.text, fontFamily: F.regular, fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }, wide && { flex: 1, borderRadius: 18, padding: 20, fontSize: 17, lineHeight: 27 }]}
+            style={[{ minHeight: wide ? 120 : 260, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, color: C.text, fontFamily: F.regular, fontSize: 15, lineHeight: 21, textAlignVertical: 'top' }, wide && { flex: 1, borderRadius: 18, padding: 20, fontSize: 17, lineHeight: 27 }]}
           />
         </View>
+  ) : (
+        <View style={{ gap: 8 }}>
+          <Btn kind="outline" label="Add lyrics" onPress={() => (setWriting(true), setTab('Lyrics'))} style={{ flex: 0, minHeight: 52 }} />
+          <Muted size={13}>They stay with the song when you finish it, show big on the mic screen while you rap, and the first line can caption a snippet.</Muted>
+        </View>
   );
+  // On a phone, lyrics get a tab of their own once there are some.
+  const tabbed = !wide && editing;
+  const onLyrics = tabbed && tab === 'Lyrics';
 
   // Wide: the takes and the beat on the left, the lyrics down the right, and the next step in the header.
   if (wide)
@@ -216,7 +248,7 @@ export default function Song() {
       <Screen gap={22}>
         <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
           <View style={{ flex: 1 }}>{header}</View>
-          {take && <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 32 }} />}
+          {take && <Btn label="Mix song" to="/playback" style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 32 }} />}
         </View>
         <Columns
           side={440}
@@ -241,18 +273,28 @@ export default function Song() {
       <Screen gap={20}>
         {header}
 
+        {tabbed && <Segmented options={SONG_TABS} value={tab} onChange={setTab} />}
+
+        {/* Undo and redo cover both tabs: a deleted take on one, a stretch of typing on the other. */}
         <SongUndo projectId={project.id} />
 
-        {takes}
+        {onLyrics ? (
+          lyrics
+        ) : (
+          <>
+            {takes}
 
-        {stack}
+            {stack}
 
-        {/* Until there is a take, the beat is the thing to play, so its card comes first. After that the lyrics do. */}
-        {!take && beat}
+            {/* Until there is a take, the beat is the thing to play, so its card comes first. */}
+            {!take && beat}
 
-        {lyrics}
+            {/* With no lyrics yet, this is the button that starts them. */}
+            {!tabbed && lyrics}
 
-        {take && beat}
+            {take && beat}
+          </>
+        )}
 
         {take && <View style={{ height: NEXT_HEIGHT }} />}
       </Screen>
@@ -260,7 +302,7 @@ export default function Song() {
       {/* The next step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
       {take && (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: tabBar.room + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
-          <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, minHeight: 52 }} />
+          <Btn label="Mix song" to="/playback" style={{ flex: 0, minHeight: 52 }} />
         </View>
       )}
       <UndoToast projectId={project.id} lift={take ? NEXT_HEIGHT + 4 : 0} />

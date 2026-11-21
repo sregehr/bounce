@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Animated, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,8 +15,9 @@ import { engineState, inputAllowed, openInput, play, startTake, stopTake, stopTr
 import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
 import { setArtistViewOpen } from '@/ui/artistViewOpen';
-import { Btn, Card, Chip, Disclosure, Eyebrow, Muted, NavLink, Option, Pulse, RoundPlay, Screen, SeekTrack, Segmented, StopButton, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Muted, NavLink, Option, Pulse, RoundPlay, Screen, SeekTrack, Segmented, StopButton, TopBar, Txt, s } from '@/ui/kit';
 import { MicSetup } from '@/ui/MicSetup';
+import { NATIVE, reduceMotion } from '@/ui/motion';
 import { OnTheMic } from '@/ui/OnTheMic';
 import { useTiming } from '@/ui/timing';
 import { success, thump } from '@/ui/haptics';
@@ -26,10 +27,45 @@ import { SongHeader } from '@/ui/SongHeader';
 import { C, clock, meterPct, plural } from '@/ui/theme';
 import { useRoomy, useWide } from '@/ui/wide';
 
+const RECORD_TABS = ['Record', 'Lyrics'] as const;
 const LENGTHS = ['8 bars', '16 bars', 'Whole beat'] as const;
 type Length = (typeof LENGTHS)[number];
 const toBars = (l: Length): LoopChoice['bars'] => (l === '8 bars' ? 8 : l === '16 bars' ? 16 : 0);
 const toLength = (b: LoopChoice['bars']): Length => (b === 8 ? '8 bars' : b === 16 ? '16 bars' : 'Whole beat');
+
+/** A row that leads one step further in: its name, what is set there now, and a chevron. */
+function Drill({ title, summary, onPress }: { title: string; summary: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${summary}`} onPress={onPress} style={({ pressed }) => [s.row, s.between, { minHeight: 56, gap: 12, borderTopWidth: 1, borderTopColor: C.line, borderBottomWidth: 1, borderBottomColor: C.line, opacity: pressed ? 0.6 : 1 }]}>
+      <Txt size={15} w="semi">
+        {title}
+      </Txt>
+      <View style={[s.row, { gap: 8, flexShrink: 1 }]}>
+        <Txt size={13} color={C.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
+          {summary}
+        </Txt>
+        <Txt size={20} color={C.muted} lh={1}>
+          ›
+        </Txt>
+      </View>
+    </Pressable>
+  );
+}
+
+/** A page stepping in from the right as it is opened. With motion reduced it only fades. */
+function SlideIn({ children }: { children: ReactNode }) {
+  const at = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(at, { toValue: 1, duration: reduceMotion() ? 100 : 200, useNativeDriver: NATIVE }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // The page is clipped while it moves, so it never makes the screen wider than it is.
+  return (
+    <View style={{ overflow: 'hidden' }}>
+      <Animated.View style={{ gap: 14, opacity: at, transform: [{ translateX: reduceMotion() ? 0 : at.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) }] }}>{children}</Animated.View>
+    </View>
+  );
+}
 
 /** A recording on its way into the song, with what is needed to store it. */
 type Pending = { recorded: RecordedTake; origin: 'kept' | 'recorded'; punchAtSec?: number; layer?: boolean; note?: string; /** The take this one is a redo of, which it takes the place of once it is saved. */ replaces?: { id: string; number: number } };
@@ -50,9 +86,10 @@ export default function Vocals() {
   const [parked, setParked] = useState<RecordedTake | null>(null);
   // A take that could not be written to storage. It stays here until it is saved, exported or dropped.
   const [unsaved, setUnsaved] = useState<Pending | null>(null);
-  const [setup, setSetup] = useState(false);
-  // The row of things set once for a session: who is on the mic, punch-in, layers, the count-in, the microphone.
-  const [setupOpen, setSetupOpen] = useState(false);
+  // Which page of this screen is showing: recording, the session's setup one step in, or the microphone a step further.
+  const [page, setPage] = useState<'record' | 'setup' | 'mic'>('record');
+  // On a phone, a song with lyrics has them on a tab of their own, with a small record button under them.
+  const [tab, setTab] = useState<(typeof RECORD_TABS)[number]>('Record');
   const finishing = useRef(false);
   // Set while a take is being redone: the take the new one will replace.
   const redoing = useRef<{ id: string; number: number } | null>(null);
@@ -80,6 +117,8 @@ export default function Vocals() {
     void inputAllowed().then((ok) => void (ok && engineState().input.status !== 'ready' && openInput(settings.inputId, 'mic')));
     if (project) void loadPcm(project.beat.key).catch(() => {});
     setOnScreen(true);
+    // Coming back from elsewhere, such as the guided setup, lands on recording again.
+    setPage('record');
     return () => {
       setOnScreen(false);
       setRecordControl(null);
@@ -341,8 +380,8 @@ export default function Vocals() {
       ) : (
         // Leaving for Song mid-take would drop the take, so the link waits, in its place.
         <View pointerEvents={active || unsaved ? 'none' : 'auto'} style={{ opacity: active || unsaved ? 0.35 : 1 }}>
-          <NavLink size={13} to="/song" style={{ minHeight: 28 }}>
-            Write your bars on Song to read them here
+          <NavLink size={14} to="/song?lyrics=1" style={{ minHeight: 28 }}>
+            Add lyrics to read them here while you rap
           </NavLink>
         </View>
       );
@@ -444,38 +483,48 @@ export default function Vocals() {
         </View>
       );
 
-  // Everything that is set once for a session and then left alone, behind one row.
-  const sessionSetup = !booth && !active && !unsaved && (
-    <Disclosure title="Session setup" summary={[who ?? 'No one picked', countIn ? 'count-in on' : 'count-in off', live ? `${latencyMs} ms` : null].filter(Boolean).join(' · ')} open={setupOpen} onToggle={() => setSetupOpen(!setupOpen)} last size={15}>
-      <View style={{ paddingTop: 4 }}>
-        <OnTheMic project={project} />
-        {canPunch && (
-          <Option label={`Punch in at bar ${first + punchBar}`} sub={`Keeps bars ${first}–${first + punchBar - 1} from take ${previous?.number}`} checked={punch} onChange={(v) => (setPunch(v), v && setLayering(false))} divided minHeight={56} />
-        )}
-        {live && canLayer && (
-          <Option label={`Record as a layer on take ${previous?.number}`} sub="That take plays along. The new one is stacked on it, for doubles and ad-libs." checked={layering} onChange={(v) => (setLayering(v), v && setPunch(false))} divided minHeight={56} />
-        )}
-        <Option label="Count-in" sub={bar ? 'One bar of clicks before recording starts' : 'Four clicks before recording starts'} checked={countIn} onChange={(v) => setSettings({ countIn: v })} divided minHeight={56} />
-        {/* Handing the phone over: this screen with the navigation and the setup put away. */}
-        <View style={[s.row, s.between, s.divided, { minHeight: 56, gap: 12 }]}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Txt size={15} w="semi">
-              Artist view
-            </Txt>
-            <Txt size={13} color={C.muted}>
-              For handing the phone over: hides the tabs and this setup, so nothing can be changed by mistake.
-            </Txt>
-          </View>
-          <Chip label="Open artist view" style={{ paddingHorizontal: 16, borderColor: C.text }} onPress={() => (setSaved(null), task.setError(null), setSetupOpen(false), setBooth(true))} />
-        </View>
-        {live && (
-          <Disclosure title="Microphone and timing" summary={`${input.label} · ${latencyMs} ms ${timing.measured ? 'measured' : 'estimated'}`} open={setup} onToggle={() => setSetup(!setup)} last size={15}>
-            <MicSetup />
-          </Disclosure>
-        )}
-      </View>
-    </Disclosure>
-  );
+  // Everything that is set once for a session and then left alone is one step in from this screen, with the microphone a step further.
+  const summary = [who ?? 'No one picked', countIn ? 'count-in on' : 'count-in off', live ? `${latencyMs} ms` : null].filter(Boolean).join(' · ');
+  const sessionSetup = !booth && !active && !unsaved && <Drill title="Session setup" summary={summary} onPress={() => setPage('setup')} />;
+
+  if (page !== 'record' && !booth && !active && !unsaved)
+    return (
+      <Screen gap={14}>
+        <SlideIn key={page}>
+          {page === 'setup' ? (
+            <>
+              <TopBar back={{ onBack: () => setPage('record'), label: 'Back to recording' }} left="Session setup" />
+              <OnTheMic project={project} />
+              {canPunch && (
+                <Option label={`Punch in at bar ${first + punchBar}`} sub={`Keeps bars ${first}–${first + punchBar - 1} from take ${previous?.number}`} checked={punch} onChange={(v) => (setPunch(v), v && setLayering(false))} divided minHeight={56} />
+              )}
+              {live && canLayer && (
+                <Option label={`Record as a layer on take ${previous?.number}`} sub="That take plays along. The new one is stacked on it, for doubles and ad-libs." checked={layering} onChange={(v) => (setLayering(v), v && setPunch(false))} divided minHeight={56} />
+              )}
+              <Option label="Count-in" sub={bar ? 'One bar of clicks before recording starts' : 'Four clicks before recording starts'} checked={countIn} onChange={(v) => setSettings({ countIn: v })} divided minHeight={56} />
+              {/* Handing the phone over: the recording screen with the navigation and this setup put away. */}
+              <View style={[s.row, s.between, s.divided, { minHeight: 56, gap: 12, paddingVertical: 8 }]}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Txt size={15} w="semi">
+                    Artist view
+                  </Txt>
+                  <Txt size={13} color={C.muted}>
+                    For handing the phone over: hides the tabs and this setup, so nothing can be changed by mistake.
+                  </Txt>
+                </View>
+                <Chip label="Open artist view" style={{ paddingHorizontal: 16, borderColor: C.text }} onPress={() => (setSaved(null), task.setError(null), setPage('record'), setBooth(true))} />
+              </View>
+              <Drill title="Microphone and timing" summary={live ? `${input.label} · ${latencyMs} ms ${timing.measured ? 'measured' : 'estimated'}` : 'Not connected'} onPress={() => setPage('mic')} />
+            </>
+          ) : (
+            <>
+              <TopBar back={{ onBack: () => setPage('setup'), label: 'Back to session setup' }} left="Microphone and timing" />
+              <MicSetup />
+            </>
+          )}
+        </SlideIn>
+      </Screen>
+    );
 
   const micNote = active ? (
     <Muted size={13} center>
@@ -491,20 +540,35 @@ export default function Vocals() {
 
   // Wide: the words down the left, and the player, the record button and the setup beside them.
   if (wide) {
-    const body = (
+    const hasWords = project.lyrics.trim().length > 0;
+    const recorder = (
+      <View style={{ width: 420, gap: 16 }}>
+        {message}
+        {player}
+        {status}
+        {meter}
+        {recordButton}
+        {after}
+        {micNote}
+        {/* With no lyrics there is no column for them, only the way to add some. It waits while a take runs. */}
+        {!hasWords && !booth && (
+          <View pointerEvents={active || unsaved ? 'none' : 'auto'} style={{ opacity: active || unsaved ? 0.35 : 1 }}>
+            <NavLink size={14} to="/song?lyrics=1" style={{ minHeight: 28 }}>
+              Add lyrics to read them here while you rap
+            </NavLink>
+          </View>
+        )}
+        {sessionSetup}
+      </View>
+    );
+    // Words down the left when the song has them; without any, the recorder has the middle of the screen to itself.
+    const body = hasWords ? (
       <View style={{ flex: 1, flexDirection: 'row', gap: 40, minHeight: 0 }}>
         {lyrics}
-        <View style={{ width: 420, gap: 16 }}>
-          {message}
-          {player}
-          {status}
-          {meter}
-          {recordButton}
-          {after}
-          {micNote}
-          {sessionSetup}
-        </View>
+        {recorder}
       </View>
+    ) : (
+      <View style={{ flex: 1, alignItems: 'center' }}>{recorder}</View>
     );
     return booth ? (
       <View style={[{ flex: 1, backgroundColor: C.bg, gap: 20 }, pad]}>
@@ -519,18 +583,49 @@ export default function Vocals() {
     );
   }
 
+  // In the artist view the words stay on the one screen, for whoever is at the mic. Otherwise, on a phone, they are a tab.
+  const hasLyrics = project.lyrics.trim().length > 0;
+  const tabbed = !booth && hasLyrics;
+  const onLyrics = tabbed && tab === 'Lyrics';
   const column = (
     <>
       {header}
       {message}
-      {player}
-      {lyrics}
-      {status}
-      {meter}
-      {recordButton}
-      {after}
-      {micNote}
-      {sessionSetup}
+      {tabbed && <Segmented options={RECORD_TABS} value={tab} onChange={setTab} />}
+      {onLyrics ? (
+        <>
+          <View style={{ borderRadius: 24, borderWidth: 1, borderColor: C.border, padding: 16 }}>
+            <ScrollView nestedScrollEnabled style={{ maxHeight: Math.max(160, height - 520) }} showsVerticalScrollIndicator={false}>
+              <Txt size={22} lh={1.45}>
+                {project.lyrics}
+              </Txt>
+            </ScrollView>
+          </View>
+          {/* The take can be started and stopped from here too, so the words stay in view while it runs. */}
+          {live ? (
+            <View style={[s.row, { gap: 16, justifyContent: 'center', minHeight: 96 }]}>
+              <StopButton size={76} halo={recording} recording={recording} disabled={task.busy || !!unsaved} label={recording ? 'Stop recording' : 'Start recording'} onPress={record} />
+              <Txt size={recording && !counting ? 32 : 17} w={recording ? 'display' : 'semi'} color={recording ? C.text : C.muted} style={{ fontVariant: ['tabular-nums'], minWidth: 120 }}>
+                {counting ? `Get ready · ${count}` : recording ? clock(take.elapsed) : (option ?? 'Tap to record')}
+              </Txt>
+            </View>
+          ) : (
+            recordButton
+          )}
+          {meter}
+        </>
+      ) : (
+        <>
+          {player}
+          {!tabbed && lyrics}
+          {status}
+          {meter}
+          {recordButton}
+          {after}
+          {micNote}
+          {sessionSetup}
+        </>
+      )}
     </>
   );
   // The artist view fills the screen with the navigation put away; otherwise the page scrolls above the bar as the other tabs do.

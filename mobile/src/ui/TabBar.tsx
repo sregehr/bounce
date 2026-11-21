@@ -166,25 +166,24 @@ function useMic() {
   const mic = micLead(library);
   const beat = mic.id ? library.projects.find((p) => p.id === mic.id) : null;
   const is = (t: Tab) => tab === t;
-  // On the mic screen with no beat there is nothing to record over: a tap goes to capture one.
-  const empty = path === '/vocals' && !beat;
-  const lit = is('mic') && !empty;
-  return { path, library, tab, mic, beat, is, lit, booth, empty };
+  // Like the tabs beside it, it is lit while its screen is the one in view, and a tap there changes nothing.
+  const lit = is('mic');
+  return { path, library, tab, mic, beat, is, lit, booth };
 }
 
 // The mic at rest: a dark disc, so the yellow is kept for when it is selected.
 const REST = 'rgb(30,30,32)';
 
 function MicButton({ nav, style }: { nav: ReturnType<typeof useMic>; style?: ViewStyle }) {
-  const { path, mic, beat, is, lit, empty } = nav;
+  const { path, mic, beat, is, lit } = nav;
   const { mic: MIC } = useBar();
   return (
     <Pressable
       accessibilityRole="tab"
-      accessibilityLabel={beat ? `Freestyle over ${beat.name}` : empty ? 'Capture a beat to freestyle' : 'Add a beat to freestyle'}
+      accessibilityLabel={beat ? `Freestyle over ${beat.name}` : 'Add a beat to freestyle'}
       accessibilityState={{ selected: is('mic') }}
       hitSlop={6}
-      onPress={() => (empty ? router.push('/capture') : follow(mic, path))}
+      onPress={() => follow(mic, path)}
       style={({ pressed }) => ({
         width: MIC,
         height: MIC,

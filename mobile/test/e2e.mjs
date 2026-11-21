@@ -278,6 +278,10 @@ const asksBeforeLeaving = () =>
 async function openSetup() {
   if (!/clicks before recording starts/.test(await text())) await tap('Session setup', { exact: false });
 }
+/** Steps back from Session setup to the recording screen, if it is open. */
+async function closeSetup() {
+  if (await showing('Back to recording')) await tap('Back to recording');
+}
 /** Whether a control with this label is on screen. */
 const showing = (label, role) => page.evaluate((label, role) => [...document.querySelectorAll(role ? `[role=${role}]` : '[role=button],[role=link],[role=tab],[role=radio],[role=switch],button')].some((n) => n.getBoundingClientRect().width > 0 && (n.getAttribute('aria-label') ?? n.textContent ?? '').trim() === label), label, role);
 const trackAt = (label) => page.evaluate((label) => Number([...document.querySelectorAll('[role=slider]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === label).pop()?.getAttribute('aria-valuenow') ?? NaN), label);
@@ -325,11 +329,28 @@ async function onboarding() {
   await shot('04-timing');
 
   // The earbud route: clap along to the pulse while the mic listens. Nobody claps here, so it only has to finish cleanly.
-  await tap('Wearing earbuds? Clap along instead');
+  await tap('Wearing earbuds? Clap or tap along instead');
   await expectText('Clap on every click', 'the clap-along check opens');
   await sleep(2500);
   await shot('04b-clap-along');
   await expectText(/Measured from \d of 8 claps|claps lined up/, 'the clap-along check finishes', 12000);
+  // The same check by tapping the circle on each click, for when clapping is not an option.
+  await tap('Wearing earbuds? Clap or tap along instead');
+  await expectText('Click 1 of 8', 'the check starts again', 8000);
+  const disc = await page.evaluate(() => {
+    const r = [...document.querySelectorAll('[role=button]')].find((n) => n.getAttribute('aria-label') === 'Tap on every click').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  // Steady taps, one a click: what matters is that they keep the pulse, as a person would.
+  const firstTap = Date.now();
+  for (let k = 0; k < 7; k++) {
+    await sleep(Math.max(0, firstTap + k * 600 - Date.now()));
+    await page.mouse.move(disc.x, disc.y);
+    await page.mouse.down();
+    await sleep(40);
+    await page.mouse.up();
+  }
+  await expectText(/Measured from \d of 8 taps/, 'tapping the circle on each click sets the timing', 12000);
   await tap('Run it again');
   await expectText(/Heard all the clicks|clicks came back/i, 'the click check still runs afterwards', 12000);
 
@@ -483,6 +504,8 @@ async function song() {
   await expectText('Always listening');
   await openSetup();
   await tap('Punch in at bar 5', { exact: false });
+  await closeSetup();
+  await expectText('Punching in at bar 5', 'the recording screen says a punch-in is set');
   await tap('Start recording');
   await counted();
   await sleep(4500);
@@ -558,6 +581,9 @@ async function song() {
   await expectText('3 takes', 'and Undo on the song page steps back through edits');
   await tap('Take 1');
   await expectText('Take 1, polished over the beat', 'the first take is picked again', 30000);
+  // Lyrics start as a button; tapping it opens the editor.
+  log(!(await state(() => !!document.querySelector('textarea[aria-label=Lyrics]'))), 'with no lyrics yet there is a button, not an empty box');
+  await tap('Add lyrics');
   await type('Lyrics', 'Night bus rolling, city on mute\nEvery red light is a breath I use');
   // Typing is undone a line at a time, not a letter at a time.
   const lyricsNow = () => state(() => [...document.querySelectorAll('textarea')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Lyrics').pop()?.value ?? '');
@@ -565,10 +591,17 @@ async function song() {
   log((await lyricsNow()) === 'Night bus rolling, city on mute', 'Undo typing takes back the last line of lyrics', JSON.stringify(await lyricsNow()));
   await tap('Redo');
   log((await lyricsNow()) === 'Night bus rolling, city on mute\nEvery red light is a breath I use', 'and Redo puts it back', JSON.stringify(await lyricsNow()));
+  // On a phone the lyrics now have a tab of their own, beside the takes.
+  if (!WIDE) {
+    log((await showing('Takes')) && (await showing('Lyrics')), 'on a phone the takes and the lyrics are two tabs');
+    await tap('Takes');
+    await expectText('Take 1, polished over the beat', 'and the takes are a tap away', 30000);
+  }
   await tap('Pause', { optional: true });
   log(!(await showing('Repeat')) && !(await showing('8 bars')), 'the Song tab has no Repeat or bars either');
   await tap('Pause', { optional: true });
-  await tap('Mix take 1');
+  log(!(await showing('Master the beat')), 'with takes on the song, the beat card steps back to a link');
+  await tap('Mix song');
   await expectText(/Polished\s/, 'the mix opens with those bars', 30000);
   await sleep(400);
   await tap('Pause', { optional: true });
@@ -701,13 +734,17 @@ async function finish() {
   await expectText('Not in the Vault yet', 'the Vault leads to the song, which says it is not finished');
   await expectText('Has lyrics');
   await shot('13b-song-transport');
-  await tap('Mix take 1');
+  await tap('Mix song');
   await expectText(/Polished\s/, 'the mix opens from the song', 30000);
   await shot('13c-mix');
   await expectText(/Reverb 60% · Echo off/i, 'the vocal reverb starts where the style puts it');
   await tap('Reverb and echo', { exact: false, optional: WIDE });
   await expectText('Room cut', 'reverb, echo and room cut are on the mix page');
+  // The section eases open; a drag begun while it is still moving lands on the wrong thing.
+  await sleep(600);
   await slide('Echo', 0.3);
+  // The page can still be settling from the section opening when the drag starts; a drag that did not take is made again.
+  if (!(await waitFor(/Echo (29|30|31)%/i, 1500))) await slide('Echo', 0.3);
   // The wide layout's sliders are shorter, so the same drag lands a step either side.
   await expectText(WIDE ? /Echo (29|30|31)%/i : /Echo 30%/i, 'echo can be added to the vocal');
   await expectText(/Polished\s/, 'and the mix renders with it', 30000);
@@ -993,6 +1030,15 @@ async function library() {
 
   // The microphone and its timing are set where recording happens, with the guided setup one tap away.
   await tap('Freestyle over Night bus');
+  // On a phone the mic screen has the lyrics on a tab, with a record button under them.
+  if (!WIDE) {
+    await expectText('Tap to record', 'the mic screen opens', 10000);
+    await tap('Lyrics');
+    await expectText('Every red light is a breath I use', 'on a phone the mic screen has the lyrics on a tab');
+    log(await showing('Start recording'), 'with a record button under them');
+    await shot('24-mic-lyrics');
+    await tap('Record');
+  }
   await openSetup();
   await tap('Microphone and timing', { exact: false });
   await expectText('Play the clicks', 'the mic screen holds the microphone and timing');
@@ -1277,6 +1323,8 @@ async function failures() {
   await tap('Song');
   await expectText('Lyrics', 'Song opens');
   await sleep(1000);
+  await tap('Add lyrics', { optional: true });
+  await tap('Lyrics', { optional: true });
   await type('Lyrics', 'Saved in the last moment');
   await page.reload({ waitUntil: 'networkidle2' });
   await sleep(600);
@@ -1386,6 +1434,7 @@ async function failures() {
   await expectText('Always listening');
   await openSetup();
   await tap('Record as a layer on take 1');
+  await closeSetup();
   await recordTake();
   await expectText('Take 2 level', 'a take recorded as a layer opens Song, under Layers', 20000);
   await expectText('2 takes');

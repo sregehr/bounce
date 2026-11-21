@@ -38,11 +38,12 @@ export function MicSetup() {
   const clapped = (outcome: ClapOutcome) => {
     setTapping(false);
     if (outcome.ms === null) {
-      setHeard(`Only ${outcome.matched} of ${outcome.clicks} claps lined up, so nothing was changed. Try again, clapping right on each click.`);
+      setHeard(`Only ${outcome.matched} of ${outcome.clicks} ${outcome.by} lined up, so nothing was changed. Try again, right on each click.`);
       return;
     }
-    timing.set(outcome.ms);
-    setHeard(`Measured ${Math.min(500, outcome.ms)} ms from ${outcome.matched} claps. Nudge it with −5 and +5 if takes still sit early or late.`);
+    timing.set(Math.min(500, outcome.ms));
+    // Taps time the delay to the ears; the microphone's own small delay is not in them.
+    setHeard(`Measured ${Math.min(500, outcome.ms)} ms from ${outcome.matched} ${outcome.by}. ${outcome.by === 'taps' ? 'Tapping leaves out the microphone’s own delay, so nudge' : 'Nudge'} it with −5 and +5 if takes still sit early or late.`);
   };
 
   // Each setup keeps its own figure, so switching to a wireless speaker and back needs no re-check.
@@ -93,10 +94,10 @@ export function MicSetup() {
         <>
           <View style={[s.row, { gap: 10 }]}>
             <Btn kind="outline" label="Play the clicks" busy={check.busy} disabled={!live} onPress={runCheck} style={{ flex: 1 }} />
-            <Btn kind="outline" label="Clap along" disabled={!live || check.busy} onPress={() => (setHeard(null), setTapping(true))} style={{ flex: 1 }} />
+            <Btn kind="outline" label="Clap or tap along" disabled={!live || check.busy} onPress={() => (setHeard(null), setTapping(true))} style={{ flex: 1 }} />
           </View>
           <Muted size={13}>Each microphone and speaker keeps its own timing, and Bounce switches between them as you connect them.</Muted>
-          <Muted size={13}>{live ? 'Wearing earbuds? The mic cannot hear the clicks through them, so clap along instead.' : 'Connect a microphone to run a check.'}</Muted>
+          <Muted size={13}>{live ? 'Wearing earbuds? The mic cannot hear the clicks through them, so clap or tap along instead.' : 'Connect a microphone to run a check.'}</Muted>
           {timing.measured && (
             <NavLink size={14} onPress={() => (timing.set(null), setHeard(null))}>
               Use the estimate

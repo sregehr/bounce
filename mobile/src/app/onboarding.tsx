@@ -92,7 +92,7 @@ function Onboarding() {
   const leave = () => (sheet ? sheet.close() : router.canGoBack() ? router.back() : router.replace('/'));
   const [artist, setArtist] = useState(profile.artist);
   const [producer, setProducer] = useState(profile.producer);
-  const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number; of: number; taps?: boolean } | null>(null);
+  const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number; of: number; /** Done by hand, and how: clapped or tapped. */ by?: 'claps' | 'taps' } | null>(null);
   const [tapping, setTapping] = useState(false);
   const check = useTask();
   const start = useTask();
@@ -119,7 +119,7 @@ function Onboarding() {
     setTapping(false);
     const ms = outcome.ms !== null ? Math.min(500, outcome.ms) : estimate;
     route.set(outcome.ms !== null ? ms : null);
-    setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, taps: true });
+    setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, by: outcome.by });
   };
   const finish = (work?: () => Promise<Project | null>, to: '/song' | '/capture' | '/demos' | '/' = '/song') =>
     start.run(async () => {
@@ -265,17 +265,17 @@ function Onboarding() {
                   {check.error ??
                     (timing
                       ? timing.measured
-                        ? timing.taps
-                          ? `Measured from ${timing.heard} of ${timing.of} claps. Your takes will be moved ${timing.ms} ms earlier.`
+                        ? timing.by
+                          ? `Measured from ${timing.heard} of ${timing.of} ${timing.by}. Your takes will be moved ${timing.ms} ms earlier.`
                           : `Heard all the clicks it needed (${timing.heard} of ${timing.of}). Your takes will be moved ${timing.ms} ms earlier.`
-                        : timing.taps
-                          ? `Only ${timing.heard} of ${timing.of} claps lined up, so the estimate for this setup is used. Try again, clapping right on each click.`
-                          : `Only ${timing.heard} of ${timing.of} clicks came back, so the estimate for this setup is used. With headphones on, hold one ear cup to the mic and try again, or clap along instead.`
+                        : timing.by
+                          ? `Only ${timing.heard} of ${timing.of} ${timing.by} lined up, so the estimate for this setup is used. Try again, right on each click.`
+                          : `Only ${timing.heard} of ${timing.of} clicks came back, so the estimate for this setup is used. With headphones on, hold one ear cup to the mic and try again, or clap or tap along instead.`
                       : `${route.measured ? `Measured for ${setupName}.` : `An estimate for ${setupName}.`} For an exact figure, turn the volume up and take your headphones off, or hold one ear cup to the mic. The clicks are short and loud.`)}
                 </Muted>
                 <Btn kind={timing ? 'outline' : 'primary'} label={timing ? 'Run it again' : 'Play the clicks'} busy={check.busy} onPress={runCheck} style={timing ? { flex: 0 } : undefined} />
                 <NavLink center size={14} onPress={() => !check.busy && setTapping(true)}>
-                  Wearing earbuds? Clap along instead
+                  Wearing earbuds? Clap or tap along instead
                 </NavLink>
               </>
             )}

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Platform, Pressable, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Layer, Take } from '@/data/model';
 import { LAYER_START } from '@/data/model';
@@ -11,22 +10,20 @@ import { barSeconds, compOf, layersOf } from '@/data/studio';
 import { useSong } from '@/data/song';
 import { NoSong } from '@/ui/AddBeat';
 import { BeatCard } from '@/ui/BeatDetails';
-import { Btn, Chip, Eyebrow, Muted, NavLink, Screen, Segmented, SliderRow, Txt, s } from '@/ui/kit';
+import { DotMenu } from '@/ui/DotMenu';
+import { Btn, Chip, Eyebrow, Muted, NavLink, RowLink, Screen, Segmented, SliderRow, TickIcon, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTwoFingerUndo } from '@/ui/hooks';
-import { SongUndo, Status, SwipeRow, UndoToast } from '@/ui/parts';
+import { SongUndo, StatusLine, SwipeRow, UndoToast } from '@/ui/parts';
 import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, F, clock, dayLabel, plural } from '@/ui/theme';
-import { Columns, useBar, useGutter, useWide } from '@/ui/wide';
+import { Columns, useWide } from '@/ui/wide';
 
 const ROLES = ['Double', 'Ad-lib', 'Hook'] as const;
 const ROLE_OF = { Double: 'double', 'Ad-lib': 'adlib', Hook: 'hook' } as const;
 const ROLE_LABEL = { double: 'Double', adlib: 'Ad-lib', hook: 'Hook' } as const;
 // One colour per take, so a bar borrowed from another take reads at a glance.
 const TINTS = ['#ffb020', '#7cc4ff', '#9be28a', '#ff8fb1', '#c9a6ff', '#ffd66b'];
-
-// Height of the pinned next step, above the floating bar.
-const NEXT_HEIGHT = 62;
 
 const SONG_TABS = ['Takes', 'Lyrics'] as const;
 
@@ -38,9 +35,6 @@ export default function Song() {
   const song = useSong(take ? project : null, { autoplay: false, repeat });
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
   const library = useLibrary((l) => l);
-  const insets = useSafeAreaInsets();
-  const gutter = useGutter();
-  const tabBar = useBar();
   const [details, setDetails] = useState(false);
   // The lyrics start as a button. Once there are some, or the button has been tapped, the editor is there instead.
   const asked = useLocalSearchParams<{ lyrics?: string }>().lyrics;
@@ -86,9 +80,15 @@ export default function Song() {
 
   const header = (
         <SongHeader project={project}>
-          <Status label={project.takes.length ? plural(project.takes.length, 'take') : 'No takes yet'} tone={project.takes.length ? 'plain' : 'todo'} />
-          {project.lyrics.trim() ? <Status label="Has lyrics" /> : null}
-          <Status label={vaulted === 0 ? 'Not in the Vault yet' : vaulted === 1 ? 'In the Vault' : `${vaulted} in the Vault`} tone={vaulted ? 'good' : 'todo'} />
+          <StatusLine
+            done={vaulted > 0}
+            parts={[
+              project.takes.length ? plural(project.takes.length, 'take') : 'No takes yet',
+              take ? `take ${take.number} picked` : null,
+              project.lyrics.trim() ? 'has lyrics' : null,
+              vaulted === 0 ? 'not in the Vault yet' : vaulted === 1 ? 'in the Vault' : `${vaulted} in the Vault`,
+            ].filter((part): part is string => !!part)}
+          />
         </SongHeader>
   );
 
@@ -102,20 +102,38 @@ export default function Song() {
               const on = k.id === take.id;
               return (
                 <SwipeRow key={k.id} once label={`Delete take ${k.number}`} onDelete={() => deleteTake(project.id, k.id)}>
-                <Pressable accessibilityRole="radio" accessibilityLabel={`Take ${k.number}`} accessibilityState={{ checked: on }} onPress={() => pick(k)} style={[s.row, s.between, { minHeight: 48 }, s.divided]}>
-                  <Txt size={15} w="semi" color={on ? C.accent : C.text}>
-                    Take {k.number}
-                  </Txt>
-                  <Txt size={13} color={on ? C.accent : C.muted}>
+                <View style={[s.row, { gap: 4 }, s.divided]}>
+                <Pressable accessibilityRole="radio" accessibilityLabel={`Take ${k.number}`} accessibilityState={{ checked: on }} onPress={() => pick(k)} style={[s.row, s.between, { flex: 1, minHeight: 48, gap: 12 }]}>
+                  {/* The picked take carries a check mark as well as the colour. */}
+                  <View style={[s.row, { gap: 8 }]}>
+                    <Txt size={15} w="semi" color={on ? C.accent : C.text}>
+                      Take {k.number}
+                    </Txt>
+                    {on && <TickIcon />}
+                  </View>
+                  <Txt size={13} color={on ? C.accent : C.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
                     {on ? `${about(k)} · picked` : about(k)}
                   </Txt>
                 </Pressable>
+                <DotMenu
+                  label={`More for take ${k.number}`}
+                  items={[
+                    ...(on ? [] : [{ label: 'Pick this take', onPress: () => pick(k) }]),
+                    { label: `Delete take ${k.number}`, danger: true, onPress: () => deleteTake(project.id, k.id) },
+                  ]}
+                />
+                </View>
                 </SwipeRow>
               );
             })}
+            {/* The next step sits right under the takes, named for the one it will mix. */}
+            {!wide && <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flex: 0, minHeight: 52, marginTop: 16 }} />}
           </View>
         ) : (
-          <Muted>Nothing recorded over this beat yet. Tap the mic below to record a take, and it shows up here.</Muted>
+          <View style={{ gap: 10 }}>
+            <Muted>Nothing recorded over this beat yet. Record a take and it shows up here.</Muted>
+            <Btn label="Record a take" to="/vocals" style={{ flex: 0, minHeight: 52 }} />
+          </View>
         );
 
   // More takes stacked on the picked one, and bars of it swapped for bars of another take.
@@ -197,9 +215,7 @@ export default function Song() {
     project.takes.length === 0 || details ? (
       <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />
     ) : (
-      <NavLink size={13} w="semi" style={{ minHeight: 44 }} onPress={() => setDetails(true)}>
-        Beat details ›
-      </NavLink>
+      <RowLink first title="Beat details" summary="Tempo, level, and the beat by itself" onPress={() => setDetails(true)} />
     );
 
   const hasLyrics = project.lyrics.trim().length > 0;
@@ -248,7 +264,7 @@ export default function Song() {
       <Screen gap={22}>
         <View style={[s.row, s.between, { alignItems: 'flex-start', gap: 32 }]}>
           <View style={{ flex: 1 }}>{header}</View>
-          {take && <Btn label="Mix song" to="/playback" style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 32 }} />}
+          {take && <Btn label={`Mix take ${take.number}`} to="/playback" style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 32 }} />}
         </View>
         <Columns
           side={440}
@@ -295,17 +311,8 @@ export default function Song() {
             {take && beat}
           </>
         )}
-
-        {take && <View style={{ height: NEXT_HEIGHT }} />}
       </Screen>
-
-      {/* The next step stays in reach however far the page is scrolled. Its strip runs down behind the floating bar. */}
-      {take && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: tabBar.room + insets.bottom, paddingHorizontal: gutter, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
-          <Btn label="Mix song" to="/playback" style={{ flex: 0, minHeight: 52 }} />
-        </View>
-      )}
-      <UndoToast projectId={project.id} lift={take ? NEXT_HEIGHT + 4 : 0} />
+      <UndoToast projectId={project.id} />
     </View>
   );
 }

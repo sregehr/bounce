@@ -3,7 +3,7 @@ import { TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 
 import type { Project } from '@/data/model';
-import { deleteProject, patchProject } from '@/data/store';
+import { patchProject, removeProject } from '@/data/store';
 import { barsIn } from '@/data/studio';
 
 import { BeatPlayer } from './BeatPlayer';
@@ -25,23 +25,26 @@ export function BeatCard({ project, open, onToggle, note }: { project: Project; 
     <Card style={{ padding: 16, gap: 16 }}>
       <View style={[s.row, s.between]}>
         <Eyebrow>{beat.source === 'capture' ? 'Beat captured' : beat.source === 'import' ? 'Beat imported' : 'Demo beat'}</Eyebrow>
-        <NavLink size={13} w="semi" style={{ minHeight: 24 }} onPress={onToggle}>
+        <NavLink size={13} w="semi" tone={open ? 'quiet' : 'accent'} style={{ minHeight: 24 }} onPress={onToggle}>
           {open ? 'Hide beat details' : 'Beat details ›'}
         </NavLink>
       </View>
       {/* With a take, the song's own player is the one in view, so the beat alone plays from the open card. */}
       {(open || !hasTake) && <BeatPlayer project={project} note={hasTake ? undefined : note} />}
+      {open && (
       <View style={{ gap: 6 }}>
         <Btn
           kind="outline"
           label="Master the beat"
           onPress={() => {
             patchProject(project.id, { takeId: null }, false);
-            router.push('/master');
+            // The beat alone is mixed on the Mix page, like a song, without the vocal's controls.
+            router.push('/playback');
           }}
         />
         <Muted size={13}>Instrumental only: pick a style and export it without a vocal.</Muted>
       </View>
+      )}
       {open && <Details project={project} />}
     </Card>
   );
@@ -49,7 +52,6 @@ export function BeatCard({ project, open, onToggle, note }: { project: Project; 
 
 function Details({ project }: { project: Project }) {
   const beat = project.beat;
-  const [armed, arm] = useArmed();
   const [tempoText, setTempoText] = useState<string | null>(null);
 
   const setBpm = (bpm: number | null) => patchProject(project.id, { beat: { ...beat, bpm: bpm && bpm >= 40 && bpm <= 240 ? Math.round(bpm * 100) / 100 : null } });
@@ -110,14 +112,9 @@ function Details({ project }: { project: Project }) {
         ) : (
           <View />
         )}
-        <NavLink
-          size={14}
-          onPress={() => {
-            if (!armed) return arm();
-            void deleteProject(project.id).then(() => router.replace('/'));
-          }}
-        >
-          {armed ? `Tap again to delete this beat${project.takes.length ? ' and its takes' : ''}` : 'Delete this beat'}
+        {/* One tap, like every delete: it lands on Home, where it can be taken back for a few seconds. */}
+        <NavLink size={14} tone="danger" onPress={() => (removeProject(project.id), router.replace('/'))}>
+          {`Delete this beat${project.takes.length ? ' and its takes' : ''}`}
         </NavLink>
       </View>
     </>

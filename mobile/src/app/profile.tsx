@@ -28,8 +28,8 @@ function ArtistRow({ artist, songs }: { artist: Artist; songs: number }) {
             Forget their vocal sound
           </NavLink>
         )}
-        <NavLink size={14} onPress={() => (armed ? removeArtist(artist.id) : arm())}>
-          {armed ? `Tap again to remove ${artist.name}` : 'Remove this artist'}
+        <NavLink tone="danger" size={14} onPress={() => (armed ? removeArtist(artist.id) : arm())}>
+          {armed ? `Tap again to delete ${artist.name}` : 'Delete this artist'}
         </NavLink>
       </View>
     </View>
@@ -39,6 +39,7 @@ function ArtistRow({ artist, songs }: { artist: Artist; songs: number }) {
 /** The sections of the Profile screen, for it and for the wide page it shares with Settings. */
 export function ProfileBody() {
   const artist = useLibrary((l) => l.profile.artist);
+  const producer = useLibrary((l) => l.profile.producer);
   const library = useLibrary((l) => l);
   const artists = artistsIn(library);
   const [name, setName] = useState('');
@@ -49,6 +50,12 @@ export function ProfileBody() {
         <Eyebrow>Your name</Eyebrow>
         <Field label="Artist name" value={artist} onChangeText={(name) => setProfile({ artist: name })} placeholder="Artist name" maxLength={40} autoCapitalize="words" />
         <Muted size={13}>Used on a song when no other artist is named on it.</Muted>
+      </View>
+
+      <View style={{ gap: 8 }}>
+        <Eyebrow>Who makes your beats?</Eyebrow>
+        <Field label="Producer name" value={producer} onChangeText={(name) => setProfile({ producer: name })} placeholder="Optional. Leave empty if it's you" maxLength={40} autoCapitalize="words" />
+        <Muted size={13}>Credited as the producer on songs you finish. You can change it on each song.</Muted>
       </View>
 
       <View style={{ gap: 10 }}>

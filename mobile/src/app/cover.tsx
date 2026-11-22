@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
 import { backendAvailable } from '@/auth/backend';
@@ -10,13 +11,16 @@ import { blobUrl, blobs } from '@/data/db';
 import { newId, SCENES, type SceneId } from '@/data/model';
 import { artistNamed, artistsIn } from '@/data/artists';
 import { dropBlob, finishSong, patchProject, saveArtist, setProfile, setSongArtist, update, useLibrary, useProject } from '@/data/store';
-import { Btn, Chip, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Field, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
 import { asSheet, useSheet } from '@/ui/nav';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
 const LABEL: Record<SceneId | 'ai', string> = { photo: 'As taken', studio: 'Studio', stage: 'Stage', rooftop: 'Rooftop', ai: 'AI scene' };
+
+// Room the pinned button and the line under it take at the foot of the sheet.
+const PIN_ROOM = 104;
 
 type Picture = { blob: Blob; url: string };
 type Made = Record<SceneId, Picture>;
@@ -53,6 +57,7 @@ function Cover() {
   const [stage, setStage] = useState('');
   const urls = useRef<string[]>([]);
   const wide = useWide();
+  const insets = useSafeAreaInsets();
 
   const build = async (photo: Blob, cutout: Blob | null) => {
     setStage('Building the scenes');
@@ -292,6 +297,39 @@ function Cover() {
   // Making a scene with AI stays out of the way until it is asked for, from the buttons on the picture.
   const aiScene = hasAi && aiOpen && <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} made={!!ai} onMade={showAi} onClose={() => setAiOpen(false)} />;
 
+  // Finishing a song, the cover is optional, so until one is started it is a single row and not half the sheet.
+  const compact = finishing && !wide && !shown && !working && !aiOpen;
+  const coverRow = (
+    <View style={{ gap: 8 }}>
+      <Card style={{ padding: 14, gap: 12, flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ width: 56, height: 56, borderRadius: 12, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' }}>
+          <Txt size={24} color={C.muted} lh={1}>
+            +
+          </Txt>
+        </View>
+        <View style={{ flex: 1, gap: 8 }}>
+          <View style={[s.row, { gap: 8 }]}>
+            <Txt size={16} w="semi">
+              Cover
+            </Txt>
+            <Muted size={13}>optional</Muted>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Chip label="Choose a photo" onPress={() => pick()} style={{ paddingHorizontal: 14, borderColor: C.text }} />
+            {hasAi && <Chip label="Create with AI" onPress={() => setAiOpen(true)} style={{ paddingHorizontal: 14, borderColor: C.accent }} />}
+          </View>
+        </View>
+      </Card>
+      <Muted size={13}>{task.error ?? `A photo of ${who}, head and shoulders in plain light, gets placed in a studio, on a stage and on a rooftop. ${hasAi ? 'It only goes to AI if you choose that.' : 'It never leaves this device.'}`}</Muted>
+      {lastPhoto && lastPhoto !== cover.photoKey && (
+        <NavLink size={14} onPress={reuse} style={{ minHeight: 44 }}>
+          Use the photo from the last cover
+        </NavLink>
+      )}
+    </View>
+  );
+  const save = <Btn label={finishing ? 'Save to the Vault' : 'Set as cover and backdrop'} disabled={!shown && !finishing} busy={working && (!!shown || finishing)} onPress={apply} style={{ flex: 0, minHeight: 56 }} />;
+
   const foot = (
       <Foot gap={8}>
         <Muted size={13} lh={1.4}>
@@ -325,23 +363,40 @@ function Cover() {
       </Screen>
     );
 
+  // The button that finishes the sheet stays at its foot, in reach however long the sheet above it grows.
   return (
-    <Screen>
-      {top}
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <Screen padBottom={PIN_ROOM + Math.max(16, insets.bottom + 12)}>
+        {top}
 
-      {fields}
+        {fields}
 
-      {preview}
+        {compact ? (
+          coverRow
+        ) : (
+          <>
+            {preview}
 
-      {about}
+            {about}
 
-      {scenes}
-      {add}
+            {scenes}
+            {add}
 
-      {aiScene}
+            {aiScene}
 
-      {foot}
-    </Screen>
+            {shown && <Muted size={13} lh={1.4}>{`The cover goes out with the song when you share it, so pick one ${who} is happy with.`}</Muted>}
+          </>
+        )}
+      </Screen>
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, gap: 6, paddingTop: 10, paddingHorizontal: 24, paddingBottom: Math.max(16, insets.bottom + 12), backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
+        {save}
+        {finishing && (
+          <Muted size={13} center>
+            {shown ? 'You can change the cover later.' : 'You can add or change the cover later.'}
+          </Muted>
+        )}
+      </View>
+    </View>
   );
 }
 

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { redoSong, undoSong, useSongHistory } from '@/data/store';
+import { REMOVED_SHOWN_MS, redoSong, restoreProject, undoSong, useRemoved, useSongHistory } from '@/data/store';
 import { TAPS, analyseTaps } from '@/dsp/latency';
 import { startClapCheck } from '@/engine/engine';
 import type { ClapRun, EngineState } from '@/engine/types';
@@ -253,6 +253,19 @@ export function Status({ label, tone = 'plain', onPress, expanded, hint }: { lab
   );
 }
 
+/** Where a song stands, as one line of plain text behind a dot. It states; it is not something to tap. */
+export function StatusLine({ parts, done }: { parts: string[]; done?: boolean }) {
+  const label = parts.join(' · ');
+  return (
+    <View accessible accessibilityRole="text" accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+      <View style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, backgroundColor: done ? C.text : C.accent }} />
+      <Txt size={13} lh={1.5} color={C.muted} style={{ flex: 1 }}>
+        {label}
+      </Txt>
+    </View>
+  );
+}
+
 const DELETE_WIDTH = 92;
 // In a browser, dragging with a mouse would otherwise start selecting the row's text, which ends the swipe.
 const NO_SELECT = { userSelect: 'none' } as object;
@@ -367,6 +380,41 @@ export function UndoToast({ projectId, lift = 0 }: { projectId: string | null; l
           {undo.label}
         </Txt>
         <Pressable accessibilityRole="button" accessibilityLabel={`Undo: ${undo.label}`} onPress={() => (tick(), undoSong(projectId))} hitSlop={4} style={({ pressed }) => ({ minHeight: 44, minWidth: 64, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+          <Txt size={15} w="semi" color={C.accent}>
+            Undo
+          </Txt>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Says a beat or a finished song was just deleted and offers to undo it, at the foot of the screen for a few seconds.
+ * It goes on the screens a delete lands on: Home and the Vault.
+ */
+export function DeletedToast() {
+  const gone = useRemoved();
+  const insets = useSafeAreaInsets();
+  const bar = useBar();
+  const gutter = useGutter();
+  const [, again] = useState(0);
+  const left = gone ? gone.at + REMOVED_SHOWN_MS - Date.now() : 0;
+  useEffect(() => {
+    if (left <= 0) return;
+    const timer = setTimeout(() => again((n) => n + 1), left + 30);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gone?.at]);
+  if (!gone || left <= 0) return null;
+  const label = `${gone.name} deleted`;
+  return (
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: gutter, right: gutter, bottom: bar.room + insets.bottom + 8, alignItems: 'center' }}>
+      <View accessibilityRole="alert" style={[s.row, { gap: 6, maxWidth: 460, alignSelf: 'stretch', marginHorizontal: 'auto', minHeight: 52, paddingLeft: 16, paddingRight: 6, borderRadius: 16, backgroundColor: C.surface, borderWidth: 1, borderColor: C.borderStrong, boxShadow: '0 10px 28px rgba(0,0,0,0.5)' }]}>
+        <Txt size={15} w="medium" numberOfLines={1} style={{ flex: 1 }}>
+          {label}
+        </Txt>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Undo: ${label}`} onPress={() => (tick(), restoreProject())} hitSlop={4} style={({ pressed }) => ({ minHeight: 44, minWidth: 64, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
           <Txt size={15} w="semi" color={C.accent}>
             Undo
           </Txt>

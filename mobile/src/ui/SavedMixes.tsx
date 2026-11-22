@@ -51,7 +51,7 @@ function Row({ project, mix, last }: { project: Project; mix: MixSnapshot; last:
             Rename
           </NavLink>
         )}
-        <NavLink size={14} onPress={() => (armed ? deleteSnapshot(project.id, mix.id) : arm())}>
+        <NavLink tone="danger" size={14} onPress={() => (armed ? deleteSnapshot(project.id, mix.id) : arm())}>
           {armed ? `Tap again to delete ${mix.name}` : 'Delete'}
         </NavLink>
       </View>

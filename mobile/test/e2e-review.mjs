@@ -127,30 +127,22 @@ const library = () =>
   );
 /** Clicks a control that opens a file picker and answers it with a file. */
 async function choose(label, file) {
+  // On a Home that already has beats, the ways to add one are behind this button.
+  await tap('New beat', { optional: true });
   const [chooser] = await Promise.all([page.waitForFileChooser({ timeout: 10000 }), tap(label)]);
   await chooser.accept([file]);
 }
 
-/** The shortest way through first launch, ending on the Song tab with the built-in demo beat. */
+/** The shortest way through first launch, ending on the mic screen with the built-in demo beat. */
 async function start() {
   await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 120000 });
   await expectText('Capture a beat. Freestyle over it.', 'onboarding opens on first launch', 60000);
-  await tap('Get started');
-  await type('Artist name', 'Kai Rivers');
-  await tap('Continue');
-  if (await waitFor('Keep it yours', 3000)) await tap('Not now');
-  await expectText('Sound check');
-  await tap('Connect an input');
-  await expectText('Connected', 'input connects');
-  await tap('Continue');
-  await expectText('Line up your takes');
-  await tap('Continue');
-  await expectText('Ready, Kai Rivers.');
-  await tap('Try a demo song');
+  await tap('Try a demo beat');
   await expectText('Ready-made beats');
   await tap('Built in', { optional: true });
   await tap('Add Night bus');
-  await expectText('No takes yet', 'a demo beat opens on the Song tab', 20000);
+  await expectText('On the mic', 'a demo beat opens on the mic screen', 20000);
+  await tap('Connect a microphone', { optional: true });
 }
 
 async function counted() {
@@ -162,7 +154,7 @@ async function counted() {
 
 async function mic() {
   await tap('Freestyle over Night bus');
-  await expectText('Always listening', 'the mic screen opens');
+  await expectText('On the mic', 'the mic screen opens');
   await expectText('Tap to record', 'the microphone connects', 8000);
 
   // Muted on the device, or taken by a call: the track stays, but sends silence.
@@ -236,7 +228,7 @@ async function imports() {
   const demo = path.join(FILES, 'Sky at forty four.m4a');
   fs.copyFileSync(path.resolve('public/demo/a-little-more-sky.m4a'), demo);
   await choose('Import a file', demo);
-  await expectText('Nothing recorded over this beat yet', 'a 44.1 kHz M4A is imported', 30000);
+  await expectText('On the mic', 'a 44.1 kHz M4A is imported', 30000);
   const sky = await beatNamed('Sky at forty four');
   log(sky?.sampleRate === 44100, 'and kept at 44.1 kHz, not the live clock\'s rate', `${sky?.sampleRate} Hz`);
   log(Math.abs((sky?.durationSec ?? 0) - 45) < 1.5, 'at its full length', `${sky?.durationSec?.toFixed(1)} s`);
@@ -246,7 +238,7 @@ async function imports() {
   else {
     await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
     await choose('Import a file', mp3);
-    await expectText('Nothing recorded over this beat yet', 'a 48 kHz MP3 is imported', 30000);
+    await expectText('On the mic', 'a 48 kHz MP3 is imported', 30000);
     const tone = await beatNamed('Tone at forty eight');
     log(tone?.sampleRate === 48000, 'and kept at 48 kHz', `${tone?.sampleRate} Hz`);
   }
@@ -306,20 +298,38 @@ async function memory() {
   await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
   console.log(`     the page is a ${(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) ? 'touch device (phone budget)' : 'computer'}`);
   await choose('Import a file', file);
-  await expectText('Nothing recorded over this beat yet', `a ${minutes}-minute beat is imported`, 180000);
+  await expectText('On the mic', `a ${minutes}-minute beat is imported`, 180000);
   await tap(`Freestyle over Long song ${minutes}`);
   await expectText('Whole beat · once through', 'the mic screen opens on the whole beat');
   await expectText('Tap to record', 'the microphone connects', 8000);
+  // A loop shorter than the beat is a window on the whole waveform, and moves four bars at a time.
+  await tap('8 bars');
+  await expectText(/Loop · bars 1–8 of \d+/i, 'a loop says where it sits in the beat');
+  await expectText('Drag to move');
+  const slider = '[role=slider][aria-label="Where the loop sits in the beat"]';
+  await page.focus(slider);
+  await page.keyboard.press('ArrowRight');
+  await expectText(/Loop · bars 5–12 of/i, 'moving the window moves the loop four bars on');
+  const box = await (await page.$(slider)).boundingBox();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.02, box.y + box.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expectText(/Loop · bars 1–8 of/i, 'and dragging it to the start puts the loop back on bar 1');
+  await shot('loop-window');
+  await tap('Whole beat');
+  await expectText('Whole beat · once through');
   await tap('Start recording');
-  // The beat plays through once, and the take is saved and opened when it ends.
-  await expectText('Take 1', 'a take the length of the beat is recorded', (minutes * 60 + 90) * 1000);
+  // The beat plays through once, and the take is saved when it ends. It stays on the mic screen, one tap from the mix.
+  await expectText('Take 1 saved', 'a take the length of the beat is recorded', (minutes * 60 + 90) * 1000);
+  await tap('Mix it');
   await expectText(/Polished\s/, 'and polished', 300000);
   await go('/export');
-  await expectText('Loud, for socials and demos', 'Share opens');
+  await expectText('What is it for?', 'Share opens');
   // What plays on this screen is rendered at the export loudness; let it finish, as someone choosing options would.
   for (let i = 0; i < 600 && !(await has('Play')); i++) await sleep(500);
   await sleep(2000);
-  await tap('Vocals only');
+  await tap('Send to an engineer');
   await sleep(500);
 
   const downloadsTo = path.join(SHOTS, 'review-downloads-' + Date.now());

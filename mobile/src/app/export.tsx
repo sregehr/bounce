@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Redirect } from 'expo-router';
 
 import { creditsOf, exportFiles, LOUDNESS } from '@/data/exporting';
@@ -11,7 +12,7 @@ import { linkNotes, linksAvailable, makeLink, removeLink, type Note } from '@/da
 import { useSong } from '@/data/song';
 import { aacSupported } from '@/dsp/aac';
 import { stopTransport } from '@/engine/engine';
-import { Btn, Card, Chip, Eyebrow, Field, Foot, Muted, NavLink, Option, RoundPlay, Screen, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Field, Foot, Muted, Option, RoundPlay, RowLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask } from '@/ui/hooks';
 import { asSheet } from '@/ui/nav';
 import { useRowLines } from '@/ui/type';
@@ -19,6 +20,18 @@ import { C, clock, lufs, plural } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
 const ROLES = ['Writer', 'Producer', 'Performer'] as const;
+
+// Room the pinned button, the line under it and a line of progress take at the foot of the sheet.
+const PIN_ROOM = 128;
+
+/** What the song is being shared for. Each sets the loudness, the format and the extra files together. */
+const INTENTS = [
+  { id: 'friend', label: 'Send to a friend', about: 'Small file that plays anywhere.', choice: { loudness: 'streaming', format: 'm4a', instrumental: false, vocals: false } },
+  { id: 'post', label: 'Post or upload', about: 'Full quality, loud enough for socials and demos.', choice: { loudness: 'loud', format: 'wav16', instrumental: false, vocals: false } },
+  { id: 'engineer', label: 'Send to an engineer', about: 'Song, instrumental and vocals, at the level it was mastered.', choice: { loudness: 'mastered', format: 'wav24', instrumental: true, vocals: true } },
+] as const satisfies readonly { id: string; label: string; about: string; choice: ExportChoice }[];
+
+const FORMAT = { wav24: 'WAV 24-bit', wav16: 'WAV 16-bit', m4a: 'M4A' } as const;
 
 function Export() {
   const project = useProject();
@@ -33,7 +46,12 @@ function Export() {
   // Files that are rendered and waiting for a tap: the share sheet only opens straight from one.
   const [ready, setReady] = useState<OutFile[] | null>(null);
   const wide = useWide();
+  const insets = useSafeAreaInsets();
   const lines = useRowLines();
+  // The settings behind the three choices, and the two extras, are each one row that opens.
+  const [custom, setCustom] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [splitsOpen, setSplitsOpen] = useState(false);
   useStopOnLeave();
   // Whether this browser can make the small format, at this beat's sample rate.
   const [small, setSmall] = useState(false);
@@ -69,6 +87,47 @@ function Export() {
       }
     });
   const asMastered = project.stats ? lufs(project.stats.lufs) : 'as it is';
+
+  // Sending to a friend wants the small format, which not every browser can make; there it is the smaller WAV.
+  const intents = INTENTS.map((i) => (i.id === 'friend' && !small ? { ...i, choice: { ...i.choice, format: 'wav16' as const } } : i));
+  // With no take there are no extras to choose, so only the loudness and the format tell the choices apart.
+  const fits = (c: ExportChoice) => c.loudness === choice.loudness && c.format === choice.format && (!take || (c.instrumental === choice.instrumental && c.vocals === choice.vocals));
+  const intent = intents.find((i) => fits(i.choice));
+  // Exactly what the button will send, in one line.
+  const seconds = song.mix?.durationSec ?? project.stats?.durationSec ?? project.beat.durationSec;
+  const megabytes = (seconds * project.beat.sampleRate * 2 * (choice.format === 'wav24' ? 3 : 2)) / (choice.format === 'm4a' ? 10 : 1) / 1e6;
+  const extras = take ? [choice.instrumental ? 'instrumental' : null, choice.vocals ? 'vocals' : null].filter(Boolean).join(' and ') : '';
+  const summary = [
+    plural(count, 'file'),
+    FORMAT[choice.format],
+    choice.loudness === 'streaming' ? 'streaming, −14 LUFS' : choice.loudness === 'loud' ? 'loud, −9 LUFS' : 'as mastered',
+    extras || null,
+    count === 1 ? `about ${megabytes < 1 ? megabytes.toFixed(1) : Math.round(megabytes)} MB` : null,
+    creditsOf(project).length ? 'split sheet' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const purpose = (
+    <View style={{ gap: 8 }}>
+      <Eyebrow>What is it for?</Eyebrow>
+      <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
+        {intents.map((i) => {
+          const on = intent?.id === i.id;
+          return (
+            <Pressable key={i.id} accessibilityRole="radio" accessibilityLabel={i.label} accessibilityState={{ checked: on }} onPress={() => set(i.choice)} style={({ pressed }) => ({ gap: 2, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 16, borderWidth: on ? 1.5 : 1, borderColor: on ? C.accent : C.border, backgroundColor: C.surface, opacity: pressed ? 0.7 : 1 })}>
+              <Txt size={16} w="semi" color={on ? C.accent : C.text}>
+                {i.label}
+              </Txt>
+              <Txt size={13} color={C.muted}>
+                {i.about}
+              </Txt>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
 
   const top = <TopBar back left="Share" />;
 
@@ -136,9 +195,6 @@ function Export() {
   }, [project.id]);
   const listening = linksAvailable && (
       <View style={{ gap: 8 }}>
-        <View style={{ paddingBottom: 2 }}>
-          <Eyebrow>Listening link</Eyebrow>
-        </View>
         <Muted size={13}>{link ? 'Anyone with this link can hear the song and leave notes at a moment in it. Make it again after a new mix and the same link plays the new one.' : 'A private link to a simple player page. Friends tap the waveform and leave a note at that moment; the notes show up here.'}</Muted>
         {link && <Field label="Listening link" value={link} editable={false} selectTextOnFocus />}
         <View style={[s.row, { gap: 8, flexWrap: 'wrap' }]}>
@@ -199,9 +255,6 @@ function Export() {
   const total = credits.reduce((n, c) => n + c.share, 0);
   const splits = (
       <View style={{ gap: 8 }}>
-        <View style={{ paddingBottom: 2 }}>
-          <Eyebrow>Credits and splits</Eyebrow>
-        </View>
         {credits.length === 0 ? (
           <View style={{ gap: 8 }}>
             <Muted size={13}>Say who wrote, produced and performed, and how it is split. A split sheet then goes out with the song.</Muted>
@@ -238,21 +291,46 @@ function Export() {
       </View>
   );
 
-  const foot = (
-      <Foot>
-        {(task.error || done || task.busy) && (
-          <Txt size={13} color={task.error ? C.recText : C.muted} center>
-            {task.error ?? (task.busy ? `${stage || 'Working'}…` : done)}
-          </Txt>
-        )}
-        <Btn label={canShareFiles() ? (ready ? 'Share now' : 'Share') : `Save ${plural(count, 'file')}`} busy={task.busy} onPress={() => run(canShareFiles() ? 'share' : 'save')} />
-        {canShareFiles() && <Btn kind="outline" label="Save to Files" size={16} disabled={task.busy} onPress={() => run('save')} style={{ flex: 0 }} />}
-        {project.saved && (
-          <NavLink to="/cover" center>
-            Change the cover art
-          </NavLink>
-        )}
-      </Foot>
+  const status = (task.error || done || task.busy) && (
+    <Txt size={13} color={task.error ? C.recText : C.muted} center>
+      {task.error ?? (task.busy ? `${stage || 'Working'}…` : done)}
+    </Txt>
+  );
+  const send = (
+    <>
+      {status}
+      <View style={[s.row, { gap: 10 }]}>
+        <Btn label={canShareFiles() ? (ready ? 'Share now' : `Share ${plural(count, 'file')}`) : `Save ${plural(count, 'file')}`} busy={task.busy} onPress={() => run(canShareFiles() ? 'share' : 'save')} style={{ flex: 2, minHeight: 56 }} />
+        {canShareFiles() && <Btn kind="outline" label="Save to Files" size={15} disabled={task.busy} onPress={() => run('save')} style={{ flex: 1, minHeight: 56 }} />}
+      </View>
+      <Muted size={13} center>
+        {summary}
+      </Muted>
+    </>
+  );
+
+  // Everything past the three choices: today's settings, the link and the credits, each behind its own row.
+  const more = (
+    <View>
+      <Disclosure title="Custom loudness and format" summary={intent ? 'As chosen above' : 'Set by hand'} open={custom} onToggle={() => setCustom(!custom)}>
+        <View style={{ gap: 18, paddingTop: 6, paddingBottom: 14 }}>
+          {loudness}
+          {format}
+          {include}
+        </View>
+      </Disclosure>
+      {linksAvailable && (
+        <Disclosure title="Listening link" summary={link ? (notes.length ? plural(notes.length, 'note') : 'On') : 'Off'} open={linkOpen} onToggle={() => setLinkOpen(!linkOpen)}>
+          <View style={{ paddingBottom: 14 }}>{listening}</View>
+        </Disclosure>
+      )}
+      <Disclosure title="Credits and splits" summary={credits.length ? plural(credits.length, 'person', 'people') : 'None'} open={splitsOpen} onToggle={() => setSplitsOpen(!splitsOpen)} last>
+        <View style={{ paddingBottom: 14 }}>{splits}</View>
+      </Disclosure>
+      {project.saved && (
+        <RowLink title="Change the cover art" to="/cover" />
+      )}
+    </View>
   );
 
   // Wide: the choices on the left; the song, and sending it, on the right.
@@ -266,41 +344,34 @@ function Export() {
           inner={22}
           left={
             <>
-              {loudness}
-              {format}
-              {include}
-              {listening}
-              {splits}
+              {purpose}
+              {more}
             </>
           }
           right={
             <>
               {card}
-              {foot}
+              <Foot>{send}</Foot>
             </>
           }
         />
       </Screen>
     );
 
+  // The button stays at the foot of the sheet, with a line under it that says exactly what it will send.
   return (
-    <Screen>
-      {top}
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <Screen padBottom={PIN_ROOM + Math.max(16, insets.bottom + 12)}>
+        {top}
 
-      {card}
+        {card}
 
-      {loudness}
+        {purpose}
 
-      {format}
-
-      {include}
-
-      {listening}
-
-      {splits}
-
-      {foot}
-    </Screen>
+        {more}
+      </Screen>
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, gap: 6, paddingTop: 10, paddingHorizontal: 24, paddingBottom: Math.max(16, insets.bottom + 12), backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>{send}</View>
+    </View>
   );
 }
 

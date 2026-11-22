@@ -7,7 +7,7 @@ import { useOauth, useSignInWithGoogle, type OauthFlowError } from '@convex-dev/
 import { useConvexAuth, useQuery } from 'convex/react';
 
 import { api } from '../../convex/_generated/api';
-import { Btn, Card, Foot, Muted, NavLink, Txt } from '@/ui/kit';
+import { Btn, Card, Muted, NavLink, Txt } from '@/ui/kit';
 import { useTask } from '@/ui/hooks';
 import { C } from '@/ui/theme';
 
@@ -88,24 +88,5 @@ export function AccountPanel({ returnTo }: { returnTo?: string }) {
         Sign out
       </NavLink>
     </Card>
-  );
-}
-
-/** The optional account step of the welcome. */
-export function AccountStep({ onNext }: { onNext: () => void }) {
-  const { signedIn, me } = useAccount();
-  return (
-    <>
-      <View style={{ gap: 8, paddingTop: 24 }}>
-        <Txt size={34} w="display" lh={1.05}>
-          {signedIn ? `Signed in${me?.name ? `, ${me.name.split(' ')[0]}` : ''}.` : 'Keep it yours'}
-        </Txt>
-        <Muted size={15}>An account lets you make cover art with AI and puts your name on your backup. Recording, mixing and exporting all work without one.</Muted>
-      </View>
-      <AccountPanel returnTo="/onboarding?step=account" />
-      <Foot>
-        {signedIn ? <Btn label="Continue" onPress={onNext} /> : <Btn kind="outline" label="Not now" onPress={onNext} />}
-      </Foot>
-    </>
   );
 }

@@ -8,10 +8,11 @@ import { useBackup } from '@/data/backup';
 import { CoverImage } from '@/cover/CoverImage';
 import type { Project } from '@/data/model';
 import { songLead, songsIn } from '@/data/songs';
-import { deleteProject, openSong, setCurrent, useLibrary } from '@/data/store';
+import { openSong, removeProject, setCurrent, useLibrary } from '@/data/store';
 import { DotMenu } from '@/ui/DotMenu';
 import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTransport } from '@/ui/hooks';
+import { DeletedToast } from '@/ui/parts';
 import { Scrubber, SkipPlay, useNowPlaying } from '@/ui/NowPlaying';
 import { C, clock, dayLabel, lufs } from '@/ui/theme';
 import { useRowLines } from '@/ui/type';
@@ -35,7 +36,7 @@ function OpenTag({ id, tag: line }: { id: string; tag: string }) {
  * The open song, playing beside the list in the wide layout. It is mounted once per song, so
  * leaving the Vault, opening another song or removing this one stops it.
  */
-function Docked({ project, autoplay, open, toggleRef, sure, onRemove }: { project: Project; autoplay: boolean; open: (id: string) => void; toggleRef: RefObject<(() => void) | null>; sure: boolean; onRemove: () => void }) {
+function Docked({ project, autoplay, open, toggleRef, onRemove }: { project: Project; autoplay: boolean; open: (id: string) => void; toggleRef: RefObject<(() => void) | null>; onRemove: () => void }) {
   const now = useNowPlaying(project, { autoplay, open });
   const { song } = now;
   useStopOnLeave();
@@ -93,8 +94,8 @@ function Docked({ project, autoplay, open, toggleRef, sure, onRemove }: { projec
               {now.againLabel}
             </NavLink>
           )}
-          <NavLink size={14} onPress={onRemove}>
-            {sure ? 'Sure?' : 'Remove'}
+          <NavLink size={14} tone="danger" onPress={onRemove}>
+            Delete
           </NavLink>
         </View>
       </Foot>
@@ -107,7 +108,6 @@ export default function Vault() {
   const library = useLibrary((l) => l);
   const backup = useBackup();
   const [query, setQuery] = useState('');
-  const [removing, setRemoving] = useState<string | null>(null);
   const wide = useWide();
   // With large text a song's name and details wrap instead of being cut short.
   const lines = useRowLines();
@@ -139,11 +139,6 @@ export default function Vault() {
     openSong(p.id);
     router.push('/cover');
   };
-  const remove = (p: Project) => {
-    if (removing !== p.id) return setRemoving(p.id);
-    setRemoving(null);
-    void deleteProject(p.id);
-  };
   // With nothing finished yet, the Vault points at the step that gets a song here.
   const next = songLead(library);
   const start = () => {
@@ -171,7 +166,7 @@ export default function Vault() {
   const foot = (
       <Foot gap={12}>
         <Muted size={13}>
-          {all.length > 0 ? 'Removing a song here leaves its beat and takes where they are. ' : ''}
+          {all.length > 0 ? 'Deleting a song here leaves its beat and takes where they are. ' : ''}
           {backup.status === 'full' ? 'The backup is full; newer work is only on this device.' : backup.status === 'done' && backup.skipped ? 'Backed up, except files too big to back up.' : backup.status === 'done' ? 'Everything is backed up.' : backup.status === 'working' ? `Backing up${backup.pending ? ` (${backup.pending} left)` : ''}…` : backup.status === 'unreachable' ? 'Backup server not reachable; your work is safe on this device.' : backup.status === 'off' ? 'Backup is off.' : ''}
         </Muted>
       </Foot>
@@ -217,7 +212,7 @@ export default function Vault() {
                       <Txt size={13} color={C.muted} numberOfLines={lines}>
                         {meta(p)}
                       </Txt>
-                      <Txt size={12} w="semi" color={C.accent} numberOfLines={1}>
+                      <Txt size={12} w="semi" color={C.accent} numberOfLines={2}>
                         {on ? <OpenTag id={p.id} tag={tag(p)} /> : tag(p)}
                       </Txt>
                     </View>
@@ -238,7 +233,7 @@ export default function Vault() {
             showsVerticalScrollIndicator={false}
           >
             {docked ? (
-              <Docked key={docked.id} project={docked} autoplay={asked === docked.id} open={play} toggleRef={toggleRef} sure={removing === docked.id} onRemove={() => remove(docked)} />
+              <Docked key={docked.id} project={docked} autoplay={asked === docked.id} open={play} toggleRef={toggleRef} onRemove={() => removeProject(docked.id)} />
             ) : (
               <View style={{ flex: 1, justifyContent: 'center', gap: 8 }}>
                 <Txt size={22} w="display" center>
@@ -249,11 +244,13 @@ export default function Vault() {
             )}
           </ScrollView>
         )}
+        <DeletedToast />
       </Screen>
     );
   }
 
   return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
     <Screen gap={16}>
       <TopBar left="Vault" />
 
@@ -283,7 +280,8 @@ export default function Vault() {
                 <Txt size={13} color={C.muted} numberOfLines={lines}>
                   {meta(p)}
                 </Txt>
-                <Txt size={12} w="semi" color={C.accent} numberOfLines={1}>
+                {/* The details wrap onto a second line instead of being cut off part-way through a value. */}
+                <Txt size={12} w="semi" color={C.accent} numberOfLines={2}>
                   {library.songId === p.id ? `Last played · ${tag(p)}` : tag(p)}
                 </Txt>
               </View>
@@ -292,7 +290,7 @@ export default function Vault() {
               label={`More for ${p.name}`}
               items={[
                 { label: 'Edit image', onPress: () => editImage(p) },
-                { label: 'Remove', confirm: true, onPress: () => void deleteProject(p.id) },
+                { label: 'Delete', danger: true, onPress: () => removeProject(p.id) },
               ]}
             />
           </View>
@@ -302,5 +300,7 @@ export default function Vault() {
 
       {foot}
     </Screen>
+    <DeletedToast />
+    </View>
   );
 }

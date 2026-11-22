@@ -16,6 +16,20 @@ export function activeBeats(projects: Project[]): Project[] {
     return at === undefined || beat.takes.some((take) => take.createdAt > at);
   });
 }
+/**
+ * Where a beat stands, in a few words: what Home's rows and the song switcher say about it.
+ * A beat with a song in the Vault only counts as having new work when a take is newer than that song.
+ */
+export function stageOf(beat: Project, projects: Project[]): string {
+  const n = beat.takes.length;
+  if (n === 0) return 'No takes yet';
+  const takes = `${n} ${n === 1 ? 'take' : 'takes'}`;
+  const saved = projects.filter((p) => p.saved?.from === beat.id).map((p) => p.saved!.at);
+  if (saved.length === 0) return `${takes} · ready to mix`;
+  const last = Math.max(...saved);
+  return beat.takes.some((take) => take.createdAt > last) ? 'In the Vault · new takes' : 'In the Vault';
+}
+
 export const songsIn = (projects: Project[]) => projects.filter((p) => p.saved).sort((a, b) => b.saved!.at - a.saved!.at);
 
 /**
@@ -95,10 +109,8 @@ export function songLead(l: Library): Lead {
   return beat ? { to: '/song', id: beat.id } : { to: '/song', id: null };
 }
 
-/** Mix always works: it opens the mix of a beat with takes. With no take or no beat, its own screen says what is missing and leads to it. */
+/** Mix always works, and always on the song being worked on: its takes, or its beat alone when nothing is recorded yet. With no beat, its screen offers the ways to add one. */
 export function mixLead(l: Library): Lead {
   const beat = workBeat(l);
-  const recorded = beat?.takes.length ? beat : beatsIn(l.projects).find((p) => p.takes.length);
-  if (recorded) return { to: '/playback', id: recorded.id };
   return { to: '/playback', id: beat?.id ?? null };
 }

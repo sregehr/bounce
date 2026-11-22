@@ -68,7 +68,7 @@ export function AiScene({ photoKey, cutoutKey, who, disabled, made, onMade, onCl
           </Txt>
         </View>
         {onClose && (
-          <NavLink size={13} style={{ minHeight: 24 }} onPress={onClose}>
+          <NavLink tone="quiet" size={13} style={{ minHeight: 24 }} onPress={onClose}>
             Hide
           </NavLink>
         )}

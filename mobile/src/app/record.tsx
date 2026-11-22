@@ -52,7 +52,8 @@ export default function Record() {
     try {
       await addBeat({ channels: captured.channels, sampleRate: captured.sampleRate }, { source: 'capture', label: captured.label, name: nextBeatName(), clipped: captured.clipped });
       success();
-      router.replace('/song');
+      // A new beat goes straight to the mic: recording over it is the next thing to do.
+      router.replace('/vocals');
     } catch (e) {
       setSaving(false);
       if (e instanceof TooShort) {

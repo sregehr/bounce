@@ -90,19 +90,25 @@ function useFileDrop(onFile: (file: File) => void) {
 
 /**
  * The three ways to bring a beat in, as a row of tiles. Home leads with it while there is no beat, and so does any
- * screen with no song to show. With `fold`, for a Home that already has beats, it is one "New beat" button that opens the tiles.
+ * screen with no song to show. With `fold`, for a Home that already has beats, it is one "New beat" button that opens the tiles;
+ * on a phone that button is a link in the heading of the list, and this stays mounted under it so a dropped file is still caught.
  */
-export function AddBeat({ fold }: { fold?: boolean }) {
-  const [open, setOpen] = useState(false);
+export function AddBeat({ fold, open: shown, onOpen }: { fold?: boolean; /** Given, the tiles are opened from somewhere else, and folded it shows nothing. */ open?: boolean; onOpen?: (open: boolean) => void }) {
+  const [own, setOwn] = useState(false);
+  const led = shown !== undefined;
+  const open = shown ?? own;
+  const setOpen = (next: boolean) => (onOpen ? onOpen(next) : setOwn(next));
   const any = useLibrary((l) => beatsIn(l.projects).length > 0);
   const task = useTask();
   const add = () => task.run(async () => void ((await importBeat()) && router.push('/song')));
   const wide = useWide();
   useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, file)) && router.push('/song'))));
   // An import that is running or has failed keeps the tiles in view, so its progress and its error are seen.
-  if (fold && !open && !task.busy && !task.error) return <Btn kind="outline" label="New beat" onPress={() => setOpen(true)} style={{ flex: 0 }} />;
+  if (fold && !open && !task.busy && !task.error) return led ? null : <Btn kind="outline" label="New beat" onPress={() => setOpen(true)} style={{ flex: 0 }} />;
   return (
     <View style={{ gap: 10 }}>
+      {/* Opened from a heading elsewhere, that heading is its title and holds the way to close it. */}
+      {!led && (
       <View style={[s.row, s.between, { minHeight: 20 }]}>
         <Eyebrow>{fold ? 'New beat' : 'Add a beat'}</Eyebrow>
         {fold && (
@@ -111,6 +117,7 @@ export function AddBeat({ fold }: { fold?: boolean }) {
           </NavLink>
         )}
       </View>
+      )}
       <View style={[s.row, { gap: 10 }]}>
         <Create icon="capture" label="Capture" name="Capture from your gear" to="/capture" disabled={task.busy} />
         <Create icon="file" label="Import" name="Import a file" busy={task.busy} onPress={add} />

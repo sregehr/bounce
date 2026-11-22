@@ -1081,7 +1081,7 @@ async function library() {
   log((await showing('Record over Night bus')) && (await showing('Open song Night bus')), 'with a button for the mic and one for the song');
   await shot('23-home');
   // With a beat to carry on with, adding another is one button that opens the three ways in.
-  log((await showing('New beat')) && !(await showing('Add a demo song')), 'home offers a new beat under the ones in progress');
+  log((await showing('New beat')) && !(await showing('Add a demo song')), 'home offers a new beat with the ones in progress');
   await tap('New beat');
   await tap('Add a demo song');
   await expectText('Ready-made beats', 'and leads into the demo songs');
@@ -1090,7 +1090,7 @@ async function library() {
   await tap('Close');
   await sleep(500);
   log(await state(() => !document.querySelector('[role=dialog]')), 'closing the sheet puts it away');
-  await expectText('New beat');
+  await expectText('Your beats');
   await tap('Open Night bus');
   await expectText('Mix take', 'a beat opens its song', 10000);
   log(!/Beat details/i.test(await text()), 'with takes on the song, the beat details are not shown');

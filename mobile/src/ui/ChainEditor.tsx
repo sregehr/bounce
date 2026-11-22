@@ -160,7 +160,8 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const artist = useLibrary((l) => artistById(l, project.artistId));
   const wide = useWide();
   const take = activeTake(project);
-  const tabs: Tab[] = take ? ['Vocal', 'Beat', 'Master'] : ['Beat', 'Master'];
+  // With no vocal on it the beat is the whole track, so the master is the one place it is shaped: a Beat tab beside it would be the same audio twice.
+  const tabs: Tab[] = take ? ['Vocal', 'Beat', 'Master'] : ['Master'];
   // Which tab and section were open is kept past leaving the page, so Mix comes back as it was left.
   const leftFor = `${project.id}:${take?.id ?? ''}`;
   const kept = left?.id === leftFor ? left : null;
@@ -219,7 +220,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const ready = chain && sums && b ? { chain, sums, b } : null;
 
   // Each piece is built once and laid out twice: one at a time on the phone, all open as cards when wide.
-  const tabBar = <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setSpaceDraft(null), setLevel(null), keep({ tab: v }), setTab(v))} />;
+  const tabBar = tabs.length > 1 && <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setSpaceDraft(null), setLevel(null), keep({ tab: v }), setTab(v))} />;
 
   const polish = project.polish;
   const setPolish = (patch: Partial<Polish>) => (setLevel(null), patchProject(project.id, (p) => ({ polish: { ...p.polish, ...patch } })));
@@ -359,7 +360,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
     return (
       <View style={{ gap: 12 }}>
         <View style={[s.row, { gap: 16 }]}>
-          <View style={{ width: 300 }}>{tabBar}</View>
+          {tabBar && <View style={{ width: 300 }}>{tabBar}</View>}
           {from}
         </View>
         {vocalSound && <View style={{ maxWidth: 460 }}>{vocalSound}</View>}

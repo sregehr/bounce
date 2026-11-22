@@ -1181,9 +1181,9 @@ async function library() {
   // The beat alone is mixed on the Mix page, with the navigation still there and none of the vocal's controls.
   await expectText('Beat only', 'mastering the beat opens the Mix page', 30000);
   await expectText(/Mastered\s/, 'an instrumental can be mastered on its own', 30000);
-  log((await showing('Master')) && (await showing('Beat')) && !(await showing('Vocal')), 'with the Beat and Master chains, and no Vocal one');
-  log(!(await showing('Upfront')) && !/Vocal level|Double the vocal/.test(await text()), 'and none of the vocal controls');
-  log(/Beat sound/i.test(await text()) && !/Beat level/.test(await text()), 'the beat has its sound, and no level of its own with nothing to balance it against');
+  // With no vocal the beat is the whole track, so there is the master alone and no tabs to choose between.
+  log(/Starting from the \w+ master/.test(await text()) && !(await showing('Beat')) && !(await showing('Vocal')), 'with the master chain alone, and no Vocal or Beat tab');
+  log(!(await showing('Upfront')) && !/Vocal level|Double the vocal|Beat sound|Beat level/i.test(await text()), 'and none of the vocal or beat controls');
   log((await showing('Finish song')) && (await showing('Home', 'tab')) && (await showing('Vault', 'tab')), 'the navigation stays at the bottom, and the song can be finished from here');
   await shot('26b-beat-on-mix');
   await tap('Pause', { optional: true });

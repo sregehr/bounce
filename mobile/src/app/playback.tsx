@@ -135,7 +135,7 @@ export default function Playback() {
           {/* The beat by itself: what that means, and the way to put a vocal on it. */}
           {!take && (
             <View style={{ gap: 10 }}>
-              <Muted size={14}>{newest ? `The beat by itself, with take ${newest.number} set aside. Its sound is shaped under Beat and Master.` : 'The beat by itself. Shape its sound under Beat and Master, or record a take and it joins the mix.'}</Muted>
+              <Muted size={14}>{newest ? `The beat by itself, with take ${newest.number} set aside. Its sound is shaped by the master below.` : 'The beat by itself. Shape its sound with the master below, or record a take and it joins the mix.'}</Muted>
               {newest ? <Btn kind="outline" label={`Mix with take ${newest.number}`} onPress={() => patchProject(project.id, { takeId: newest.id }, false)} style={{ flex: 0 }} /> : <Btn kind="outline" label="Record a take" to="/vocals" style={{ flex: 0 }} />}
             </View>
           )}

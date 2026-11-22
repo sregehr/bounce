@@ -13,7 +13,7 @@ export type RenderInput = {
   take: { mono: Float32Array; phase: number } | null;
   /**
    * More vocals stacked on the lead: doubles, ad-libs, a hook. Each is lined up like the lead,
-   * with its own level (68 is balanced against the beat, as for the lead) and pan (-100 left to 100 right).
+   * with its own level (68 is balanced against the beat, as for the lead; the vocal level then moves it with the lead) and pan (-100 left to 100 right).
    */
   layers?: { mono: Float32Array; level: number; pan: number }[];
   polish: Polish;
@@ -240,9 +240,12 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   let vocalGainDb = 0;
   if (vocal && vocal.body > -70) vocalGainDb = clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - vocal.body, -24, 24);
   // Then the vocal level slider, shaped like a fader: 68 is the automatic balance, 100 is about
-  // 7 dB above it, half way down is 12 dB below, and the bottom is silence.
+  // 7 dB above it, half way down is 12 dB below, and the bottom is silence. It moves the whole
+  // vocal stack: the lead and every layer on it.
   const level = clamp(input.polish.vocalLevel, 0, 100);
-  vocalGainDb = level > 0 ? vocalGainDb + 40 * Math.log10(level / LEVEL_REST) : -120;
+  const faderDb = level > 0 ? 40 * Math.log10(level / LEVEL_REST) : -120;
+  const fader = level > 0 ? fromDb(faderDb) : 0;
+  vocalGainDb = level > 0 ? vocalGainDb + faderDb : -120;
   const vocalGain = level > 0 ? fromDb(vocalGainDb) : 0;
 
   // ----- Mix -----
@@ -256,14 +259,15 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
     for (const ch of full) for (let i = 0; i < ch.length; i++) ch[i] *= beatGain;
   }
   // Each layer is balanced against the beat the way the lead is, set by its own level, and
-  // placed left or right at equal power. The lead's level slider does not move them.
+  // placed left or right at equal power. Its own level places it within the stack; the vocal
+  // level slider then moves it with the lead.
   // Every buffer here is as long as the song, so none is made that will not be used.
   const stack: Stereo | null = vocal ? [new Float32Array(length), new Float32Array(length)] : null;
   if (vocal && stack) addInto(stack, vocal.bus, vocalGain);
   for (const layer of vocal?.layers ?? []) {
     const at = clamp(layer.level, 0, 100);
-    if (at <= 0 || layer.body <= -70) continue;
-    const gain = fromDb(clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - layer.body, -24, 24) + 40 * Math.log10(at / 68));
+    if (at <= 0 || fader <= 0 || layer.body <= -70) continue;
+    const gain = fader * fromDb(clamp(beatStage.level + 3 + vocalExtras(input.polish.style).lift - layer.body, -24, 24) + 40 * Math.log10(at / 68));
     const angle = ((clamp(layer.pan, -100, 100) + 100) / 200) * (Math.PI / 2);
     const left = gain * Math.cos(angle) * Math.SQRT2, right = gain * Math.sin(angle) * Math.SQRT2;
     for (let i = 0; stack && i < length; i++) {

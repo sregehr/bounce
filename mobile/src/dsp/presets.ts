@@ -96,14 +96,16 @@ export function vocalExtras(style: VocalStyle): VocalExtras {
  * A beat sound other than Auto leans it one way from there.
  */
 export function autoBeatChain(beatRmsDb: number, hasVocal: boolean, style: BeatStyle = 'Auto'): Chain {
+  // `squeeze` is how far below its usual place the compressor starts, in dB, with that much of the level given back.
+  // The moves are large on purpose: the master evens out small ones, so a sound has to lean hard to be heard.
   const shape = {
-    Auto: { low: 0, mud: 0, presence: 0, air: 0, ratio: 2, attack: 30, release: 150 },
+    Auto: { low: 0, mud: 0, presence: 0, air: 0, ratio: 2, attack: 30, release: 150, squeeze: 0 },
     // Further out of the voice's way: less of the range where the words sit.
-    Tucked: { low: 0, mud: -1.5, presence: -2, air: -1, ratio: 2, attack: 30, release: 150 },
+    Tucked: { low: 0, mud: -3, presence: -4.5, air: -2, ratio: 2, attack: 30, release: 150, squeeze: 0 },
     // A slower attack lets the drums through before the compressor closes, with more weight underneath.
-    Punchy: { low: 2, mud: 0, presence: 1, air: 0.5, ratio: 3, attack: 45, release: 120 },
-    Warm: { low: 1, mud: 1, presence: 0, air: -2.5, ratio: 2, attack: 30, release: 150 },
-    Bright: { low: 0, mud: -0.5, presence: 1, air: 2.5, ratio: 2, attack: 30, release: 150 },
+    Punchy: { low: 4, mud: -1.5, presence: 2.5, air: 1.5, ratio: 4, attack: 60, release: 100, squeeze: 8 },
+    Warm: { low: 2.5, mud: 2.5, presence: -2, air: -6, ratio: 2.5, attack: 30, release: 180, squeeze: 3 },
+    Bright: { low: -1, mud: -2, presence: 3, air: 6, ratio: 2, attack: 30, release: 150, squeeze: 0 },
   }[style];
   return {
     eq: [
@@ -112,7 +114,7 @@ export function autoBeatChain(beatRmsDb: number, hasVocal: boolean, style: BeatS
       { type: 'peaking', freq: 3200, gain: (hasVocal ? -1.5 : 0) + shape.presence, q: 0.9 },
       { type: 'highshelf', freq: 10000, gain: shape.air, q: 0.7 },
     ],
-    comp: { threshold: clamp(Math.round(beatRmsDb + 8), -30, -2), ratio: shape.ratio, attack: shape.attack, release: shape.release, makeup: 0 },
+    comp: { threshold: clamp(Math.round(beatRmsDb + 8 - shape.squeeze), -36, -2), ratio: shape.ratio, attack: shape.attack, release: shape.release, makeup: round1(shape.squeeze * (1 - 1 / shape.ratio) * 0.5) },
     deess: { freq: 6500, amount: 0 },
     limiter: { ceiling: -1, release: 80 },
   };

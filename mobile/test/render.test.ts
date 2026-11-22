@@ -82,6 +82,14 @@ const run = async () => {
     check('layer is heard on its side', leftGain > 1.3 && rightGain < 1.15, `left energy x${leftGain.toFixed(2)}, right x${rightGain.toFixed(2)}`);
     const off = await renderMix({ ...base, include: 'vocals', layers: [{ mono: adlib, level: 0, pan: 0 }] });
     check('a layer at zero is silent', Math.abs(energy(off.channels[0]) / energy(alone.channels[0]) - 1) < 0.02, `x${(energy(off.channels[0]) / energy(alone.channels[0])).toFixed(3)}`);
+    // The vocal level moves the whole stack: a layer keeps its place against the lead, and goes silent with it.
+    const stackAt = (vocalLevel: number) => renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel }, include: 'vocals', layers: [{ mono: adlib, level: 68, pan: -100 }] });
+    const aloneAt = (vocalLevel: number) => renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel }, include: 'vocals' });
+    const share = async (vocalLevel: number) => energy((await stackAt(vocalLevel)).channels[0]) / energy((await aloneAt(vocalLevel)).channels[0]);
+    // Both levels are low enough that the stem is not turned down to keep it from clipping, which would hide the balance.
+    const [shareLow, shareMid] = [await share(20), await share(40)];
+    check('vocal level moves the layers with the lead', Math.abs(shareLow / shareMid - 1) < 0.02, `layer adds x${shareMid.toFixed(2)} at 40, x${shareLow.toFixed(2)} at 20`);
+    check('vocal level at 0 silences the layers too', peakOf((await stackAt(0)).channels) === 0, `peak ${peakOf((await stackAt(0)).channels)}`);
     const whole = await renderMix({ ...base, layers: [{ mono: adlib, level: 68, pan: 40 }] });
     check('mix with a layer stays clean', finite(whole.channels) && whole.truePeakDb <= -0.95, `${whole.lufs.toFixed(1)} LUFS, true peak ${whole.truePeakDb.toFixed(2)} dB`);
   }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, View } from 'react-native';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -220,7 +220,7 @@ function Cover() {
             {/* The photo is added or changed from the picture itself. The phone's picker offers the camera too. */}
             {!working && (
               <View style={{ position: 'absolute', right: 12, bottom: 12, flexDirection: 'row', gap: 8 }}>
-                {hasAi && !aiOpen && (
+                {hasAi && (
                   <Pressable accessibilityRole="button" accessibilityLabel="Create with AI" onPress={() => setAiOpen(true)} style={({ pressed }) => [pill, { borderColor: C.accent, flexDirection: 'row', alignItems: 'center', gap: 6, opacity: pressed ? 0.7 : 1 }]}>
                     <Sparkle size={15} />
                     <Txt size={14} w="semi" color={C.accent}>
@@ -245,7 +245,7 @@ function Cover() {
             {!working && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 4 }}>
                 <Btn label="Choose a photo" onPress={() => pick()} style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', paddingHorizontal: 22 }} />
-                {hasAi && !aiOpen && (
+                {hasAi && (
                   <Pressable accessibilityRole="button" accessibilityLabel="Create with AI" onPress={() => setAiOpen(true)} style={({ pressed }) => ({ minHeight: 56, paddingHorizontal: 20, borderRadius: 16, borderWidth: 1, borderColor: C.accent, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.7 : 1 })}>
                     <Sparkle />
                     <Txt size={16} w="semi" color={C.accent}>
@@ -294,40 +294,23 @@ function Cover() {
     </NavLink>
   );
 
-  // Making a scene with AI stays out of the way until it is asked for, from the buttons on the picture.
-  const aiScene = hasAi && aiOpen && <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} made={!!ai} onMade={showAi} onClose={() => setAiOpen(false)} />;
-
-  // Finishing a song, the cover is optional, so until one is started it is a single row and not half the sheet.
-  const compact = finishing && !wide && !shown && !working && !aiOpen;
-  const coverRow = (
-    <View style={{ gap: 8 }}>
-      <Card style={{ padding: 14, gap: 12, flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ width: 56, height: 56, borderRadius: 12, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' }}>
-          <Txt size={24} color={C.muted} lh={1}>
-            +
-          </Txt>
-        </View>
-        <View style={{ flex: 1, gap: 8 }}>
-          <View style={[s.row, { gap: 8 }]}>
-            <Txt size={16} w="semi">
-              Cover
-            </Txt>
-            <Muted size={13}>optional</Muted>
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Chip label="Choose a photo" onPress={() => pick()} style={{ paddingHorizontal: 14, borderColor: C.text }} />
-            {hasAi && <Chip label="Create with AI" onPress={() => setAiOpen(true)} style={{ paddingHorizontal: 14, borderColor: C.accent }} />}
+  // Making a scene with AI opens over the page, from the button on the picture, so there is nothing to scroll down to.
+  // It closes once the scene is made, to show it; the button on the picture opens it again for another.
+  const closeAi = () => setAiOpen(false);
+  const aiScene = hasAi && (
+    <Modal visible={aiOpen} transparent animationType="fade" onRequestClose={closeAi}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        {/* A tap outside the card puts it away. */}
+        <Pressable accessibilityLabel="Close Create with AI" onPress={closeAi} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.7)' }} />
+        <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, paddingTop: 20 + insets.top, paddingBottom: 20 + insets.bottom }}>
+          <View accessibilityRole={Platform.OS === 'web' ? ('dialog' as never) : undefined} accessibilityLabel="Create with AI" style={{ width: '100%', maxWidth: 460, borderRadius: 20, backgroundColor: C.bg, boxShadow: '0 16px 48px rgba(0,0,0,0.6)' }}>
+            <AiScene photoKey={cover.photoKey} cutoutKey={cover.cutoutKey} who={who} disabled={working} made={!!ai} onMade={(blob) => (showAi(blob), closeAi())} onClose={closeAi} />
           </View>
         </View>
-      </Card>
-      <Muted size={13}>{task.error ?? `A photo of ${who}, head and shoulders in plain light, gets placed in a studio, on a stage and on a rooftop. ${hasAi ? 'It only goes to AI if you choose that.' : 'It never leaves this device.'}`}</Muted>
-      {lastPhoto && lastPhoto !== cover.photoKey && (
-        <NavLink size={14} onPress={reuse} style={{ minHeight: 44 }}>
-          Use the photo from the last cover
-        </NavLink>
-      )}
-    </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
+
   const save = <Btn label={finishing ? 'Save to the Vault' : 'Set as cover and backdrop'} disabled={!shown && !finishing} busy={working && (!!shown || finishing)} onPress={apply} style={{ flex: 0, minHeight: 56 }} />;
 
   const foot = (
@@ -371,22 +354,17 @@ function Cover() {
 
         {fields}
 
-        {compact ? (
-          coverRow
-        ) : (
-          <>
-            {preview}
+        {/* Finishing a song opens on the same picture as Cover art, asking for a photo, though the cover is optional. */}
+        {preview}
 
-            {about}
+        {about}
 
-            {scenes}
-            {add}
+        {scenes}
+        {add}
 
-            {aiScene}
+        {aiScene}
 
-            {shown && <Muted size={13} lh={1.4}>{`The cover goes out with the song when you share it, so pick one ${who} is happy with.`}</Muted>}
-          </>
-        )}
+        {shown && <Muted size={13} lh={1.4}>{`The cover goes out with the song when you share it, so pick one ${who} is happy with.`}</Muted>}
       </Screen>
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, gap: 6, paddingTop: 10, paddingHorizontal: 24, paddingBottom: Math.max(16, insets.bottom + 12), backgroundColor: C.bg, borderTopWidth: 0.5, borderTopColor: C.border }}>
         {save}

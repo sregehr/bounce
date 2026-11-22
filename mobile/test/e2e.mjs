@@ -828,13 +828,12 @@ async function finish() {
   // Finish song goes straight to naming it; there is no second mixing step in between.
   await tap('Finish song');
   await expectText('Save to the Vault', 'Finish song opens the last step directly');
-  await expectText('A photo of the artist', 'the cover is one row, marked optional');
-  // The wide layout has room for the cover beside the fields, so it keeps the full picture there.
-  log(WIDE || (/optional/.test(await text()) && !/Add a photo of/.test(await text())), 'and does not read as something that must be added');
+  await expectText('Add a photo of the artist', 'the cover opens on the picture, asking for a photo');
+  log(/You can add or change the cover later/.test(await text()) || WIDE, 'and says it can wait');
   log(await state(() => { const r = [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0 && n.innerText?.trim() === 'Save to the Vault').pop()?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= window.innerHeight; }), 'Save to the Vault is in view without scrolling');
   await type('Song title', 'Night bus');
   await type('Artist on this song', 'Mina Cole');
-  await expectText('A photo of Mina Cole', 'the photo is asked for by the artist\'s name');
+  await expectText('Add a photo of Mina Cole', 'the photo is asked for by the artist\'s name');
   await expectText('Choose a photo', 'with one button to choose or take it');
   await shot('15-cover-empty');
   await choose('Choose a photo', PHOTO);

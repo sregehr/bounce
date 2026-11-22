@@ -28,7 +28,7 @@ export function Sparkle({ size = 18, color = C.accent }: { size?: number; color?
   );
 }
 
-/** `made` says a scene is already showing, so the button offers another. `onClose` puts the card away. */
+/** `made` says a scene is already showing, so the button offers another. `onClose` closes the dialog it is shown in. */
 export function AiScene({ photoKey, cutoutKey, who, disabled, made, onMade, onClose }: { photoKey: string | null; cutoutKey: string | null; who: string; disabled?: boolean; made?: boolean; onMade: (cover: Blob) => void; onClose?: () => void }) {
   const { loading, signedIn, me } = useAccount();
   const make = useAction(api.ai.cover);
@@ -69,7 +69,7 @@ export function AiScene({ photoKey, cutoutKey, who, disabled, made, onMade, onCl
         </View>
         {onClose && (
           <NavLink tone="quiet" size={13} style={{ minHeight: 24 }} onPress={onClose}>
-            Hide
+            Close
           </NavLink>
         )}
       </View>

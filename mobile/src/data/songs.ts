@@ -66,6 +66,23 @@ export function mendSongs(l: Library): Library {
   return mended ? { ...l, projects } : l;
 }
 
+/**
+ * A song used to be able to hold a second mix to compare with, and mixes saved by name. It has one mix now,
+ * the one in use, so what is left of the others is dropped from a library saved back then.
+ */
+export function oneMix(l: Library): Library {
+  const old = (p: Project) => 'mixAlt' in p || 'mixSide' in p || 'mixAltLoud' in p || 'snapshots' in p;
+  if (!l.projects.some(old)) return l;
+  return {
+    ...l,
+    projects: l.projects.map((p) => {
+      if (!old(p)) return p;
+      const { mixAlt, mixSide, mixAltLoud, snapshots, ...rest } = p as Project & Record<'mixAlt' | 'mixSide' | 'mixAltLoud' | 'snapshots', unknown>;
+      return rest as Project;
+    }),
+  };
+}
+
 /** The name a song goes out under: the artist it features, or else the name in Settings. */
 export const artistOf = (project: Pick<Project, 'artist'>, profile: Pick<Profile, 'artist'>) => project.artist?.trim() || profile.artist || 'You';
 

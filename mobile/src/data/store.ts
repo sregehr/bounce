@@ -4,9 +4,8 @@ import { DEFAULT_MASTER, DEFAULT_POLISH, type Chain, type VocalStyle } from '@/d
 
 import { adopts, artistNamed, artistsIn, sessionArtist, withArtist } from './artists';
 import { blobs, kv, persist } from './db';
-import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type Loudness, type MixSettings, type MixSnapshot, type Profile, type Project, type Settings, type Take } from './model';
-import { matchKey, soundKey } from './match';
-import { carryOver, makeSong, mendSongs } from './songs';
+import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
+import { carryOver, makeSong, mendSongs, oneMix } from './songs';
 
 let library: Library = emptyLibrary();
 let ready = false;
@@ -34,6 +33,8 @@ export async function loadLibrary() {
     if (!library.vault) update(carryOver);
     // Finished songs that lost their layered takes get them back from their beat, where it still has them.
     if (mendSongs(library) !== library) update(mendSongs);
+    // A song has one mix now. A second mix or mixes saved by name, from when it could have them, are let go; the mix in use stays as it is.
+    if (oneMix(library) !== library) update(oneMix);
     // A library from before backups were locked to their device gets its secret now, and keeps it.
     if (saved && !saved.settings?.deviceSecret) update((l) => ({ ...l }));
     void persist();
@@ -342,67 +343,6 @@ async function emptyBin() {
   await Promise.all(waiting.map(dropBlob));
   // Anything binned while that ran is kept on the list.
   await kv.set('bin', bin).catch(() => {});
-}
-
-/**
- * Switches between two mixes of the same song. The first switch to B starts it as a copy of A,
- * so the two can then be taken in different directions and compared.
- */
-export function switchMix(id: string, side: 'A' | 'B') {
-  const project = getProject(id);
-  if (!project || (project.mixSide ?? 'A') === side) return;
-  // How loud the mix being left measured goes with it, so the two can be matched while comparing.
-  patchProject(id, { ...(project.mixAlt ?? mixOf(project)), mixAlt: mixOf(project), mixAltLoud: loudnessOf(project), mixSide: side });
-}
-
-/** How loud a song's mix measured, if it has been rendered as it is now. */
-export function loudnessOf(project: Project): Loudness | undefined {
-  return project.stats && project.statsOf === soundKey(project) ? { lufs: project.stats.lufs, ctx: matchKey(project) } : undefined;
-}
-
-// ---------- Saved mixes ----------
-
-/** The most mixes kept by name on one song. */
-export const SNAPSHOT_LIMIT = 20;
-
-/** The next free "Mix N" on a song. */
-function nextMixName(project: Project) {
-  const used = new Set((project.snapshots ?? []).map((m) => m.name));
-  for (let n = (project.snapshots?.length ?? 0) + 1; ; n++) if (!used.has(`Mix ${n}`)) return `Mix ${n}`;
-}
-
-/** Keeps the mix as it is now under a name. Returns it, or null when the song already holds as many as it can. */
-export function saveSnapshot(id: string, name?: string): MixSnapshot | null {
-  const project = getProject(id);
-  if (!project || (project.snapshots?.length ?? 0) >= SNAPSHOT_LIMIT) return null;
-  const snapshot: MixSnapshot = { id: newId(), name: name?.trim().slice(0, 40) || nextMixName(project), at: Date.now(), mix: mixOf(project), loud: loudnessOf(project) };
-  // Newest first, as they are listed.
-  patchProject(id, (p) => ({ snapshots: [snapshot, ...(p.snapshots ?? [])] }));
-  return snapshot;
-}
-
-export function renameSnapshot(id: string, snapshotId: string, name: string) {
-  const trimmed = name.trim().slice(0, 40);
-  if (trimmed) patchProject(id, (p) => ({ snapshots: (p.snapshots ?? []).map((m) => (m.id === snapshotId ? { ...m, name: trimmed } : m)) }));
-}
-
-export function deleteSnapshot(id: string, snapshotId: string) {
-  patchProject(id, (p) => ({ snapshots: (p.snapshots ?? []).filter((m) => m.id !== snapshotId) }));
-}
-
-/** Makes a saved mix the mix in use. It is a change to the mix like any other, so Undo takes it back. */
-export function restoreSnapshot(id: string, snapshotId: string) {
-  const snapshot = getProject(id)?.snapshots?.find((m) => m.id === snapshotId);
-  if (!snapshot) return;
-  // Its own step to undo, even right after a nudge of a control.
-  historyOf(id).at = 0;
-  patchProject(id, { ...snapshot.mix });
-}
-
-/** Puts a saved mix on the other side of Mix A and Mix B, to flip to and compare with the mix in use. */
-export function compareSnapshot(id: string, snapshotId: string) {
-  const snapshot = getProject(id)?.snapshots?.find((m) => m.id === snapshotId);
-  if (snapshot) patchProject(id, { mixAlt: snapshot.mix, mixAltLoud: snapshot.loud });
 }
 
 export function patchProject(id: string, patch: Partial<Project> | ((p: Project) => Partial<Project>), touch = true) {

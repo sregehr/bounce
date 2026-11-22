@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
@@ -7,7 +8,7 @@ import { activeBeats, beatsIn, stageOf } from '@/data/songs';
 import { removeProject, setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { AddBeat } from '@/ui/AddBeat';
 import { EmptyBeats } from '@/ui/EmptyBeats';
-import { Eyebrow, Foot, MicIcon, Muted, Screen, Txt, s } from '@/ui/kit';
+import { Eyebrow, Foot, MicIcon, Muted, NavLink, Screen, Txt, s } from '@/ui/kit';
 import { DotMenu } from '@/ui/DotMenu';
 import { DeletedToast, SwipeRow } from '@/ui/parts';
 import { useLargeText, useRowLines } from '@/ui/type';
@@ -22,6 +23,7 @@ export default function Home() {
   const saveError = useSaveError();
   const latest = projects[0];
   const wide = useWide();
+  const [adding, setAdding] = useState(false);
   const large = useLargeText();
   const lines = useRowLines();
 
@@ -36,7 +38,7 @@ export default function Home() {
       accessibilityRole="button"
       accessibilityLabel={name}
       onPress={() => open(latest, to)}
-      style={({ pressed }) => ({ flex: 1, minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: solid ? C.bg : 'transparent', borderWidth: 1.5, borderColor: C.bg, opacity: pressed ? 0.8 : 1 })}
+      style={({ pressed }) => ({ flex: 1, minHeight: wide ? 52 : 46, borderRadius: wide ? 16 : 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: solid ? C.bg : 'transparent', borderWidth: 1.5, borderColor: C.bg, opacity: pressed ? 0.8 : 1 })}
     >
       {solid && <MicIcon size={18} />}
       <Txt size={16} w="display" color={solid ? C.accent : C.bg}>
@@ -45,19 +47,20 @@ export default function Home() {
     </Pressable>
   );
 
+  // On a phone the card is kept short, so the beats under it start higher up the screen.
   const hero = latest ? (
-        <View style={{ backgroundColor: C.accent, borderRadius: 28, padding: wide ? 32 : 22, gap: 18, ...(wide && { flex: 1, justifyContent: 'space-between' }) }}>
-          <View style={{ gap: 6 }}>
-            <Txt size={12} w="semi" ls={0.1} color={C.bg}>
+        <View style={{ backgroundColor: C.accent, borderRadius: wide ? 28 : 22, padding: wide ? 32 : 16, gap: wide ? 18 : 12, ...(wide && { flex: 1, justifyContent: 'space-between' }) }}>
+          <View style={{ gap: wide ? 6 : 4 }}>
+            <Txt size={wide ? 12 : 11} w="semi" ls={0.1} color={C.bg}>
               PICK UP WHERE YOU LEFT OFF
             </Txt>
-            <Txt size={wide ? 72 : 38} w="display" ls={-0.03} lh={1} color={C.bg} numberOfLines={2}>
+            <Txt size={wide ? 72 : 26} w="display" ls={-0.03} lh={wide ? 1 : 1.1} color={C.bg} numberOfLines={2}>
               {latest.name}
             </Txt>
           </View>
           {/* Where the beat stands and the two buttons stay together at the foot of the card when it is tall. */}
-          <View style={{ gap: 16 }}>
-            <Txt size={15} w="medium" lh={1.4} color={C.bg}>
+          <View style={{ gap: wide ? 16 : 10 }}>
+            <Txt size={wide ? 15 : 14} w="medium" lh={1.4} color={C.bg}>
               {[tempoLine(latest), stageOf(latest, all)].filter(Boolean).join(' · ')}
             </Txt>
             <View style={[s.row, { gap: 10 }]}>
@@ -80,11 +83,22 @@ export default function Home() {
         </View>
       );
 
+  // On a phone, adding a beat starts from the heading of the list, where it stays in reach however long the list grows, and its tiles open just under it.
   const beats = projects.length > 0 && (
         <View>
-          <View style={{ paddingBottom: 2 }}>
+          <View style={[s.row, s.between, { paddingBottom: 2, minHeight: 20 }]}>
             <Eyebrow>Your beats</Eyebrow>
+            {!wide && (
+              <NavLink tone={adding ? 'quiet' : 'accent'} size={14} w="semi" style={{ minHeight: 44, marginVertical: -12 }} onPress={() => setAdding(!adding)}>
+                {adding ? 'Close' : 'New beat'}
+              </NavLink>
+            )}
           </View>
+          {!wide && (
+            <View style={adding && { paddingTop: 12, paddingBottom: 14 }}>
+              <AddBeat fold open={adding} onOpen={setAdding} />
+            </View>
+          )}
           {projects.map((p, i) => (
             // Deleting is one tap, from the menu or a swipe, and can be taken back for a few seconds.
             <SwipeRow key={p.id} once label={`Delete ${p.name}${p.takes.length ? ' and its takes' : ''}`} onDelete={() => removeProject(p.id)}>
@@ -167,11 +181,10 @@ export default function Home() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
     <Screen gap={20}>
-      {/* Continuing leads. With no beat yet, the card says where to start and the ways to add one follow it; once there are beats, adding is one button under them. */}
+      {/* Continuing leads. With no beat yet, the card says where to start and the ways to add one follow it; once there are beats, adding is a link in their heading. */}
       {hero}
       {none && <AddBeat />}
       {beats}
-      {!none && <AddBeat fold />}
       {none && <EmptyBeats width={240} />}
       {finished}
       {notes}

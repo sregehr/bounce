@@ -1,7 +1,7 @@
 import { measureVoice, tonalBalance, type VoiceStats } from './analysis';
 import { clamp, finaliseGently, fromDb, integratedLufs, peakOf, reduceNoise, rmsDb, toDb, truePeakDb, type Stereo } from './core';
 import { doubleTrack, echo, highpass, lowpass, reverb, runChain, saturate, wobble } from './effects';
-import { autoBeatChain, autoVocalChain, DEFAULT_ROOM_CUT, masterPlan, styleReverb, vocalExtras, type Chain, type MasterPlan, type MasterSettings, type Polish, type Send, type Space } from './presets';
+import { autoBeatChain, autoVocalChain, DEFAULT_ROOM_CUT, LEVEL_REST, masterPlan, styleReverb, vocalExtras, type Chain, type MasterPlan, type MasterSettings, type Polish, type Send, type Space } from './presets';
 
 export type RenderInput = {
   sampleRate: number;
@@ -221,7 +221,7 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   } else {
     onStage?.('Balancing the beat');
     const beat = arrangeBeat(input);
-    const chain = input.overrides?.beat ?? autoBeatChain(rmsDb(beat), !!input.take);
+    const chain = input.overrides?.beat ?? autoBeatChain(rmsDb(beat), !!input.take, input.polish.beatStyle);
     const bus: Float32Array[] = [beat[0], beat[1]];
     runChain(bus, sr, chain);
     addSpace([bus[0], bus[1]], () => monoOf([bus[0], bus[1]]), input.space?.beat, input, true);
@@ -242,12 +242,19 @@ export async function renderMix(input: RenderInput, onStage?: (stage: string) =>
   // Then the vocal level slider, shaped like a fader: 68 is the automatic balance, 100 is about
   // 7 dB above it, half way down is 12 dB below, and the bottom is silence.
   const level = clamp(input.polish.vocalLevel, 0, 100);
-  vocalGainDb = level > 0 ? vocalGainDb + 40 * Math.log10(level / 68) : -120;
+  vocalGainDb = level > 0 ? vocalGainDb + 40 * Math.log10(level / LEVEL_REST) : -120;
   const vocalGain = level > 0 ? fromDb(vocalGainDb) : 0;
 
   // ----- Mix -----
   // The stages above may be shared with later renders, so everything from here works on copies.
   const full: Stereo = [beatBus[0].slice(), beatBus[1].slice()];
+  // The beat's own fader, on the same travel as the vocal's. The voices are balanced against the
+  // beat as it was before the fader, so moving it moves the beat alone.
+  const beatLevel = clamp(input.polish.beatLevel ?? LEVEL_REST, 0, 100);
+  if (beatLevel !== LEVEL_REST) {
+    const beatGain = beatLevel > 0 ? fromDb(40 * Math.log10(beatLevel / LEVEL_REST)) : 0;
+    for (const ch of full) for (let i = 0; i < ch.length; i++) ch[i] *= beatGain;
+  }
   // Each layer is balanced against the beat the way the lead is, set by its own level, and
   // placed left or right at equal power. The lead's level slider does not move them.
   // Every buffer here is as long as the song, so none is made that will not be used.

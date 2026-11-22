@@ -3,15 +3,14 @@ import { Platform, Pressable, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { activeTake, deleteTake, patchProject, setSettings, useLibrary, useProject, redoMix, undoMix, useMixHistory } from '@/data/store';
+import { activeTake, deleteTake, patchProject, useLibrary, useProject, redoMix, undoMix, useMixHistory } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
 import { useSong } from '@/data/song';
 import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
-import { VOCAL_STYLES, type Polish } from '@/dsp/presets';
 import { NoSong } from '@/ui/AddBeat';
-import { Btn, Chips, Eyebrow, Muted, Option, Screen, Segmented, SliderRow, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Muted, Screen, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTask, useTwoFingerUndo } from '@/ui/hooks';
 import { DotMenu, type MenuItem } from '@/ui/DotMenu';
 import { ChainEditor } from '@/ui/ChainEditor';
@@ -23,7 +22,7 @@ import { useBar, useGutter, useWide } from '@/ui/wide';
 
 // Height of the pinned last step, above the floating bar.
 const FINISH_HEIGHT = 62;
-// Width of the left pane in the wide layout: the transport and the broad strokes.
+// Width of the left pane in the wide layout: the transport.
 const LISTEN_WIDTH = 400;
 
 /** Undo or redo as a small arrow, beside the menu: there when wanted, without competing with the mix's own controls. */
@@ -44,13 +43,11 @@ export default function Playback() {
   // The mix keeps coming round while it is being shaped, unless Repeat is turned off.
   const repeat = useRepeat();
   // With no take picked it is the beat alone that is mixed: the same page, without the vocal's controls.
-  const song = useSong(project && !project.saved ? project : null, { compare: true, repeat });
+  // Like the other tabs, nothing plays until Play is pressed.
+  const song = useSong(project && !project.saved ? project : null, { autoplay: false, compare: true, repeat });
   const insets = useSafeAreaInsets();
   const gutter = useGutter();
   const bar = useBar();
-  const [level, setLevel] = useState<number | null>(null);
-  // Mix has two levels on a phone: the sound, and the fine-tuning one step in. It opens on whichever was open last.
-  const tuning = useLibrary((l) => !!l.settings.fineTune);
   const stems = useTask();
   // How many finished songs in the Vault were made from this beat.
   const vaulted = useLibrary((l) => l.projects).filter((p) => p.saved?.from === project?.id).length;
@@ -76,8 +73,6 @@ export default function Playback() {
 
   if (!project || project.saved) return <NoSong title="Nothing to mix yet" about="Add a beat and record a take over it, and the mix opens here." />;
   const { mix } = song;
-  const polish = project.polish;
-  const setPolish = (patch: Partial<Polish>) => patchProject(project.id, { polish: { ...polish, ...patch } });
   const state = song.error ? 'Could not render' : song.busy ? (mix ? 'Updating…' : take ? 'Polishing…' : 'Mastering…') : take ? 'Polished' : 'Mastered';
   // The take set aside to mix the beat alone, if the song has any.
   const newest = project.takes[project.takes.length - 1];
@@ -144,19 +139,16 @@ export default function Playback() {
               {newest ? <Btn kind="outline" label={`Mix with take ${newest.number}`} onPress={() => patchProject(project.id, { takeId: newest.id }, false)} style={{ flex: 0 }} /> : <Btn kind="outline" label="Record a take" to="/vocals" style={{ flex: 0 }} />}
             </View>
           )}
-          {take && <Eyebrow>Vocal sound</Eyebrow>}
-          {take && <Chips options={VOCAL_STYLES} value={polish.style} onChange={(style) => patchProject(project.id, (p) => ({ polish: { ...p.polish, style }, overrides: { ...p.overrides, vocal: undefined }, space: p.space && { ...p.space, vocal: { ...p.space.vocal, reverb: undefined } } }))} />}
         </View>
   );
 
-  const double = take && <Option label="Double track" sub="A second copy, nudged and panned" w="regular" checked={polish.double} onChange={(double) => setPolish({ double })} minHeight={46} />;
-  const vocalLevel = take && <SliderRow label="Vocal level" value={level ?? polish.vocalLevel} onChange={setLevel} onCommit={(v) => (setLevel(null), setPolish({ vocalLevel: v }))} labelWidth={92} minHeight={44} fontSize={15} display={`${level ?? polish.vocalLevel}`} valueWidth={30} />;
-  const chains = <ChainEditor project={project} song={song} />;
+  // A new take starts the tabs afresh, on Vocal.
+  const chains = <ChainEditor key={take?.id ?? 'beat'} project={project} song={song} />;
 
   // A song has one mix, and it is kept as it is changed: nothing to save, and Undo for a step taken too far.
   const saving = <Muted size={13}>{take ? 'This mix is saved as you change it, and stays with the song. Undo steps back through your changes.' : 'This mix is saved as you change it, and stays with the beat. Undo steps back through your changes.'}</Muted>;
 
-  // Wide: listening and the broad strokes on the left, the chains open on the right, and the last step in the header.
+  // Wide: listening on the left, each part's sound and chain open on the right, and the last step in the header.
   if (wide)
     return (
       <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -169,10 +161,6 @@ export default function Playback() {
         <View style={{ flex: 1, flexDirection: 'row', gap: 36, minHeight: 0 }}>
           <View style={{ width: LISTEN_WIDTH, gap: 12 }}>
             {listen}
-            <View>
-              {vocalLevel}
-              {double}
-            </View>
             {saving}
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>{chains}</View>
@@ -182,47 +170,14 @@ export default function Playback() {
       </View>
     );
 
-  // The way one step in, saying what is there.
-  const toTune = (
-    <Pressable accessibilityRole="button" accessibilityLabel="Fine-tune. EQ, compressor, de-esser, limiter, reverb and echo" onPress={() => setSettings({ fineTune: true })} style={({ pressed }) => [s.row, s.between, { minHeight: 64, gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, opacity: pressed ? 0.7 : 1 }]}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Txt size={16} w="semi">
-          Fine-tune
-        </Txt>
-        <Txt size={13} color={C.muted}>
-          EQ, compressor, de-esser, limiter · reverb and echo
-        </Txt>
-      </View>
-      <Txt size={20} color={C.muted} lh={1}>
-        ›
-      </Txt>
-    </Pressable>
-  );
-
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <Screen gap={tuning ? 14 : 18}>
-        {tuning ? (
-          <>
-            {/* One step in: the chains for the vocal, the beat and the master, with the player still in reach. */}
-            <TopBar back={{ onBack: () => setSettings({ fineTune: false }), label: 'Back to the sound' }} left="Fine-tune" />
-            {standing}
-            <Transport project={project} take={take} song={song} compare />
-            {chains}
-            {saving}
-          </>
-        ) : (
-          <>
-            {header}
-            {listen}
-            <View>
-              {vocalLevel}
-              {double}
-            </View>
-            {toTune}
-            {saving}
-          </>
-        )}
+      <Screen gap={16}>
+        {/* One page: the player, then the vocal, the beat and the master, each with its sound and the chain under it. */}
+        {header}
+        {listen}
+        {chains}
+        {saving}
 
         {/* Room for the pinned step below. */}
         <View style={{ height: FINISH_HEIGHT }} />

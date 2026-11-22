@@ -243,7 +243,7 @@ export async function renderInput(project: Project, options: MixOptions = {}): P
     voice: take?.voice ?? undefined,
     stageKeys: {
       vocal: JSON.stringify([take?.id, take ? stackKey(project, take) : null, take?.loop, project.beat.bpm, project.polish.style, project.polish.double, project.overrides.vocal ?? null, project.space?.vocal ?? null, project.space?.roomCut ?? null]),
-      beat: JSON.stringify([project.beat.key, take?.id ?? null, take?.loop ?? null, project.beat.bpm, project.overrides.beat ?? null, project.space?.beat ?? null]),
+      beat: JSON.stringify([project.beat.key, take?.id ?? null, take?.loop ?? null, project.beat.bpm, project.polish.beatStyle ?? null, project.overrides.beat ?? null, project.space?.beat ?? null]),
     },
   };
 }

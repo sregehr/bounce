@@ -8,8 +8,8 @@ import { artistById } from '@/data/artists';
 import { activeTake, patchProject, setArtistSound, setSettings, useLibrary } from '@/data/store';
 import type { useSong } from '@/data/song';
 import { biquad, responseDb } from '@/dsp/core';
-import { DEFAULT_ROOM_CUT, MASTER_STYLES, styleReverb, summarise, type Band, type Chain, type MasterSettings, type Send } from '@/dsp/presets';
-import { Btn, Chip, Disclosure, Muted, NavLink, Segmented, SliderRow, Txt, s } from './kit';
+import { BEAT_STYLES, DEFAULT_ROOM_CUT, LEVEL_REST, MASTER_STYLES, VOCAL_STYLES, styleReverb, summarise, type Band, type Chain, type MasterSettings, type Polish, type Send } from '@/dsp/presets';
+import { Btn, Chip, Chips, Disclosure, Eyebrow, Muted, NavLink, Option, Segmented, SliderRow, Txt, s } from './kit';
 import { actionDir, stepFrequency, stepValue } from './spoken';
 import { C, db } from './theme';
 import { useWide } from './wide';
@@ -17,6 +17,8 @@ import { useWide } from './wide';
 type Tab = 'Vocal' | 'Beat' | 'Master';
 type Section = 'space' | 'eq' | 'comp' | 'deess' | 'lim' | '';
 const KEY = { Vocal: 'vocal', Beat: 'beat', Master: 'master' } as const;
+// The tab and section last open, and the song and take they were open for: a new take opens on Vocal.
+let left: { id: string; tab: Tab; open: Section } | null = null;
 
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')} kHz` : `${Math.round(v)} Hz`);
 // Frequency sliders move evenly by pitch: 20 Hz at one end, 20 kHz at the other.
@@ -150,6 +152,7 @@ function Panel({ title, summary, children }: { title: string; summary: string; c
 /**
  * The processing chains behind a mix, editable by hand: EQ, compressor, de-esser and limiter
  * for the vocal, the beat and the master. Each starts from what the automatic polish chose.
+ * Each tab opens on its broad strokes: the sound it starts from and, for the vocal and the beat, its level.
  */
 export function ChainEditor({ project, song }: { project: Project; song: Pick<ReturnType<typeof useSong>, 'mix' | 'error'> }) {
   const preset = useLibrary((l) => l.settings.vocalPreset);
@@ -158,12 +161,19 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const wide = useWide();
   const take = activeTake(project);
   const tabs: Tab[] = take ? ['Vocal', 'Beat', 'Master'] : ['Beat', 'Master'];
-  const [tab, setTab] = useState<Tab>(tabs[0]);
-  const [open, setOpen] = useState<Section>('eq');
+  // Which tab and section were open is kept past leaving the page, so Mix comes back as it was left.
+  const leftFor = `${project.id}:${take?.id ?? ''}`;
+  const kept = left?.id === leftFor ? left : null;
+  const [tab, setTab] = useState<Tab>(kept && tabs.includes(kept.tab) ? kept.tab : tabs[0]);
+  // Every section starts closed on a phone, so a tab opens on its sound and level.
+  const [open, setOpen] = useState<Section>(kept?.open ?? '');
+  // Kept when it is changed, not on every draw: a Mix page still alive underneath must not write its own over it.
+  const keep = (next: { tab?: Tab; open?: Section }) => void (left = { id: leftFor, tab, open, ...next });
   const [band, setBand] = useState(1);
   // Values being dragged: applied to the sound when the slider is let go.
   const [draft, setDraft] = useState<Chain | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
+  const [level, setLevel] = useState<number | null>(null);
   const [spaceDraft, setSpaceDraft] = useState<{ send: Send; roomCut: number } | null>(null);
 
   const key = KEY[tab];
@@ -197,7 +207,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const spaceRow = (label: string, value: number, display: string, apply: (v: number) => typeof space) => (
     <SliderRow key={`${tab}-space-${label}`} label={label} value={value} min={0} max={100} step={1} display={display} onChange={(v) => setSpaceDraft(apply(v))} onCommit={(v) => commitSpace(apply(v))} />
   );
-  const toggle = (sec: Section) => () => setOpen(open === sec ? '' : sec);
+  const toggle = (sec: Section) => () => (keep({ open: open === sec ? '' : sec }), setOpen(open === sec ? '' : sec));
 
   /** A slider bound to one value in the chain. */
   const row = (label: string, value: number, min: number, max: number, step: number, display: string, apply: (c: Chain, v: number) => Chain) =>
@@ -209,7 +219,33 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const ready = chain && sums && b ? { chain, sums, b } : null;
 
   // Each piece is built once and laid out twice: one at a time on the phone, all open as cards when wide.
-  const tabBar = <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setSpaceDraft(null), setTab(v))} />;
+  const tabBar = <Segmented options={tabs} value={tab} onChange={(v) => (setDraft(null), setSpaceDraft(null), setLevel(null), keep({ tab: v }), setTab(v))} />;
+
+  const polish = project.polish;
+  const setPolish = (patch: Partial<Polish>) => (setLevel(null), patchProject(project.id, (p) => ({ polish: { ...p.polish, ...patch } })));
+  const levelRow = (label: string, value: number, apply: (v: number) => Partial<Polish>) => (
+    <SliderRow key={label} label={label} value={level ?? value} reset={LEVEL_REST} onChange={setLevel} onCommit={(v) => setPolish(apply(v))} labelWidth={92} minHeight={44} fontSize={15} display={`${level ?? value}`} valueWidth={30} />
+  );
+  // The vocal's broad strokes. Choosing a sound replaces a vocal chain set by hand below, and puts the reverb back where that sound has it.
+  const vocalSound = tab === 'Vocal' && (
+    <View style={{ gap: 6 }}>
+      <Eyebrow>Vocal sound</Eyebrow>
+      <Chips wrap options={VOCAL_STYLES} value={polish.style} onChange={(style) => (setDraft(null), patchProject(project.id, (p) => ({ polish: { ...p.polish, style }, overrides: { ...p.overrides, vocal: undefined }, space: p.space && { ...p.space, vocal: { ...p.space.vocal, reverb: undefined } } })))} />
+      <View>
+        {levelRow('Vocal level', polish.vocalLevel, (vocalLevel) => ({ vocalLevel }))}
+        <Option label="Double the vocal" sub="A second copy of your voice, nudged and panned" w="regular" checked={polish.double} onChange={(double) => setPolish({ double })} minHeight={46} />
+      </View>
+    </View>
+  );
+  // The beat's. Under a vocal it has a level of its own; alone, the master sets how loud it is.
+  const beatStyle = polish.beatStyle ?? 'Auto';
+  const beatSound = tab === 'Beat' && (
+    <View style={{ gap: 6 }}>
+      <Eyebrow>Beat sound</Eyebrow>
+      <Chips wrap options={BEAT_STYLES} value={beatStyle} onChange={(next) => (setDraft(null), patchProject(project.id, (p) => ({ polish: { ...p.polish, beatStyle: next }, overrides: { ...p.overrides, beat: undefined } })))} />
+      {take && levelRow('Beat level', polish.beatLevel ?? LEVEL_REST, (beatLevel) => ({ beatLevel }))}
+    </View>
+  );
 
   const master = tab === 'Master' && (
     <View style={{ gap: 6 }}>
@@ -226,7 +262,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const from = (
     <View style={[s.row, s.between, { minHeight: 28 }, wide && { flex: 1 }]}>
       <Muted size={13} style={{ flex: 1 }}>
-        {song.error ?? (edited ? 'Set by hand. Reset goes back to what Auto chose.' : tab === 'Vocal' ? 'Starting from what Auto chose for this take' : tab === 'Beat' ? 'Starting from what Auto chose for this beat' : `Starting from the ${project.master.style} master`)}
+        {song.error ?? (edited ? 'Set by hand. Reset goes back to what Auto chose.' : tab === 'Vocal' ? 'Starting from what Auto chose for this take' : tab === 'Beat' ? (beatStyle === 'Auto' ? 'Starting from what Auto chose for this beat' : `Starting from the ${beatStyle} beat sound`) : `Starting from the ${project.master.style} master`)}
       </Muted>
       {edited && (
         <NavLink size={13} w="semi" style={{ minHeight: wide ? 44 : 28 }} onPress={reset}>
@@ -326,6 +362,8 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
           <View style={{ width: 300 }}>{tabBar}</View>
           {from}
         </View>
+        {vocalSound && <View style={{ maxWidth: 460 }}>{vocalSound}</View>}
+        {beatSound && <View style={{ maxWidth: 460 }}>{beatSound}</View>}
         {master}
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
           <View style={{ flex: 1, minWidth: 0, gap: 12 }}>
@@ -362,6 +400,8 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
     <View style={{ gap: 10 }}>
       {tabBar}
 
+      {vocalSound}
+      {beatSound}
       {master}
 
       {from}

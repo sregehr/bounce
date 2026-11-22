@@ -340,8 +340,10 @@ async function onboarding() {
   for (let i = 0; i < 40 && !previewing; i++) (previewing = await has('Pause Small Steps, Big City')) || (await sleep(500));
   log(previewing, 'a demo plays as a preview before it is added');
   await tap('Add Small Steps, Big City');
-  // A new beat goes straight to the mic, where the microphone is asked for.
-  await expectText('On the mic', 'a demo song opens on the mic screen', 30000);
+  // A new beat opens on its Song page; recording a take from there leads to the mic, where the microphone is asked for.
+  await expectText('Nothing recorded over this beat yet', 'a demo song opens on its Song page', 30000);
+  await tap('Record a take');
+  await expectText('On the mic', 'and Record a take leads to the mic screen', 10000);
   await expectText('Small Steps, Big City');
   await shot('02-mic-first');
   await tap('Connect a microphone', { optional: true });
@@ -416,7 +418,7 @@ async function onboarding() {
   // The wide layout shows one group of demos at a time; the built-in beat is behind its own chip.
   await tap('Built in', { optional: true });
   await tap('Add Night bus');
-  await expectText('On the mic', 'a demo beat opens on the mic screen', 20000);
+  await expectText('Nothing recorded over this beat yet', 'a demo beat opens on its Song page', 20000);
   await expectText('92 BPM', 'tempo detected');
   await expectText('F minor', 'key detected');
   await shot('06-beat');
@@ -476,7 +478,7 @@ async function song() {
   await page.mouse.up();
   await sleep(300);
   log(!/Playing it raw/.test(await text()) && /Hold to hear it raw/.test(await text()), 'and letting go brings the polish back');
-  log((WIDE || (!(await showing('Mix B')) && !(await showing('Save this mix')))) && (await showing('Undo')) && (await showing('More for this mix')), 'the first level is the sound alone, with undo and a menu beside its status');
+  log(!(await showing('Mix B')) && !(await showing('Save this mix')) && (await showing('Undo')) && (await showing('More for this mix')), 'the first level is the sound alone, with undo and a menu beside its status');
   await tap('Melodic');
   await expectText(/Updating…|Polishing…/, 'changing the style re-renders', 4000);
   await expectText(/Polished\s/, 'second polish finishes', 30000);
@@ -492,45 +494,17 @@ async function song() {
   await tap('Redo');
   await sleep(300);
   log((await trackAt('Vocal level')) === levelSet, 'and Redo sets it again', `${await trackAt('Vocal level')}`);
-  // Mix B starts as a copy of A; each then keeps its own settings. Comparing is one step in, under Fine-tune.
+  // A song has one mix. Fine-tune is the chains for it; there is no second mix to flip to and none to save by name.
   await openTune();
-  await expectText('Saved mixes', 'Fine-tune holds comparing, saved mixes and the chains');
+  await expectText('Starting from what Auto chose', 'Fine-tune holds the chains');
+  log(!(await showing('Mix A')) && !(await showing('Mix B')) && !(await showing('Save this mix')) && !/Saved mixes|Compare/i.test(await text()), 'with no second mix and no saved mixes');
   await shot('10-fine-tune');
-  await tap('Mix B');
   await closeTune();
-  log(await showing('Mix B'), 'with a second mix started, the switch between them shows beside the sound too');
-  await sleep(300);
-  log((await trackAt('Vocal level')) === levelSet, 'Mix B starts as a copy of Mix A');
-  await slide('Vocal level', 0.3);
-  await sleep(300);
-  const levelB = await trackAt('Vocal level');
-  await tap('Mix A');
-  await sleep(300);
-  log((await trackAt('Vocal level')) === levelSet && levelB !== levelSet, 'Mix A still has its own level', `A ${await trackAt('Vocal level')}, B ${levelB}`);
-  await expectText(/Polished\s/, 'and renders again', 30000);
-  // Once both mixes have played, the louder is turned down to the other while comparing.
-  await tap('Mix B');
-  await expectText(/Polished\s/, 'Mix B renders', 30000);
-  await tap('Mix A');
-  await expectText('Levels matched', 'with both mixes heard, their levels are matched', 30000);
-  await expectText(/Polished\s/, 'and Mix A is back', 30000);
-  // A mix kept by name can be gone back to, and going back can be undone.
-  await openTune();
-  await tap('Save this mix');
-  await expectText('In use on Mix A', 'a saved mix is listed, and marked as the one in use');
-  await shot('10a-saved-mixes');
-  await closeTune();
+  await expectText('saved as you change it', 'the page says the mix is kept as it is changed');
   await slide('Vocal level', 0.5);
   await sleep(900);
   const levelMoved = await trackAt('Vocal level');
-  await openTune();
-  await tap('Use Mix 1');
-  await sleep(300);
-  await closeTune();
-  log((await trackAt('Vocal level')) === levelSet && levelMoved !== levelSet, 'using the saved mix puts its settings back', `${levelMoved} -> ${await trackAt('Vocal level')}`);
-  await tap('Undo');
-  await sleep(300);
-  log((await trackAt('Vocal level')) === levelMoved, 'and Undo takes that back', `${await trackAt('Vocal level')}`);
+  log(levelMoved !== levelSet, 'a change is one more step to undo', `${levelSet} -> ${levelMoved}`);
   // A tap with two fingers undoes as well.
   const touch = await page.createCDPSession();
   const fingers = [{ x: 120, y: 300, id: 1 }, { x: 200, y: 310, id: 2 }];
@@ -543,7 +517,8 @@ async function song() {
   // Undo steps are still there after a reload.
   await sleep(600);
   await page.reload({ waitUntil: 'networkidle2' });
-  await expectText('Saved mixes', 'the Mix page opens again after a reload', 30000);
+  await expectText('Vocal level', 'the Mix page opens again after a reload', 30000);
+  log((await trackAt('Vocal level')) === levelSet, 'with the mix as it was left, saved without being asked', `${await trackAt('Vocal level')}`);
   await tap('Redo');
   await sleep(300);
   log((await trackAt('Vocal level')) === levelMoved, 'after a reload Redo still goes forward', `${await trackAt('Vocal level')}`);
@@ -1183,7 +1158,7 @@ async function library() {
   await sleep(600);
   log(new URL(page.url()).pathname === '/record' && /Recording/i.test(await text()), 'Back does not leave a capture that is running', page.url());
   await tap('Stop recording');
-  await expectText('On the mic', 'a captured beat opens on the mic screen', 20000);
+  await expectText('Nothing recorded over this beat yet', 'a captured beat opens on its Song page', 20000);
   await tap('Song');
   await expectText('Not in the Vault yet', 'and its song is on the Song tab');
   // Its details, where it is named and mastered alone, open in place.
@@ -1213,7 +1188,7 @@ async function library() {
 
   // Import one of the exported files as a new beat.
   await choose('Import a file', path.join(DOWNLOADS, 'Night bus.wav'));
-  await expectText('On the mic', 'an imported file opens on the mic screen', 30000);
+  await expectText('Nothing recorded over this beat yet', 'an imported file opens on its Song page', 30000);
   await tap('Song');
   await expectText('Not in the Vault yet', 'and its song is on the Song tab');
   await tap('Beat details', { exact: false });
@@ -1239,7 +1214,7 @@ async function library() {
   fs.writeFileSync(path.join(DOWNLOADS, 'Basement tape.wav'), wav48);
   await tap('Home');
   await choose('Import a file', path.join(DOWNLOADS, 'Basement tape.wav'));
-  await expectText('On the mic', 'a 48 kHz file is imported', 30000);
+  await expectText('Nothing recorded over this beat yet', 'a 48 kHz file is imported', 30000);
   await tap('Song');
   await expectText('100 BPM', 'its tempo is found');
   await tap('Beat details', { exact: false });
@@ -1517,7 +1492,7 @@ async function failures() {
   await expectText('Ready-made beats', 'the demo songs open');
   await tap('Built in', { optional: true });
   await tap('Add Night bus');
-  await expectText('On the mic', 'a fresh beat is added to record over', 20000);
+  await expectText('Nothing recorded over this beat yet', 'a fresh beat is added to record over', 20000);
   await sleep(600);
   // A second copy of a demo gets a number after its name.
   const beatName = await page.evaluate((saved) => saved.projects.find((p) => p.id === saved.currentId)?.name ?? '', JSON.parse(await stored('library')));
@@ -1633,7 +1608,7 @@ async function failures() {
   await expectText('That capture could not be saved', 'the next capture fails the same way', 30000);
   await setFault(null);
   await tap('Try again');
-  await expectText('On the mic', 'trying again once storage works saves the capture and opens it on the mic screen', 30000);
+  await expectText('Nothing recorded over this beat yet', 'trying again once storage works saves the capture and opens its Song page', 30000);
   log(!(await asksBeforeLeaving()), 'and the tab can be closed again');
   await tap('Song');
   await tap('Beat details', { exact: false });

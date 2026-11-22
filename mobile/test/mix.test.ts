@@ -1,9 +1,10 @@
-// Undo that survives a reload, mixes saved by name, and matching the level of two mixes being compared.
+// Undo that survives a reload, and the one mix a song has.
 // Runs against the in-memory stand-in for storage (`src/data/db.ts`).
 import { kv } from '../src/data/db';
-import { MATCH_LIMIT_DB, matchKey, matchNote, matchTrim, soundKey } from '../src/data/match';
+import { matchKey, soundKey } from '../src/data/match';
+import { oneMix } from '../src/data/songs';
 import { emptyLibrary, type Beat, type Library, type MixSettings, type Take } from '../src/data/model';
-import { SNAPSHOT_LIMIT, UNDO_STEPS, addTake, compareSnapshot, createProject, deleteProject, deleteSnapshot, flushHistories, getProject, loadLibrary, loudnessOf, patchProject, redoMix, renameSnapshot, restoreSnapshot, saveSnapshot, switchMix, undoMix } from '../src/data/store';
+import { UNDO_STEPS, addTake, createProject, deleteProject, flushHistories, getProject, loadLibrary, patchProject, redoMix, undoMix } from '../src/data/store';
 import { twoFingerTap } from '../src/ui/twoFingerTap';
 
 let failed = 0;
@@ -17,6 +18,8 @@ const take = (n: number): Take => ({ key: `take-${n}`, durationSec: 5, sampleRat
 const level = (id: string) => getProject(id)!.polish.vocalLevel;
 const setLevel = (id: string, vocalLevel: number) => patchProject(id, (p) => ({ polish: { ...p.polish, vocalLevel } }));
 /** Stands in for a render finishing: the loudness it measured, for the sound as it is now. */
+/** The vocal level as it is in storage, once the write has gone through. */
+const storedLevel = async (id: string) => (await sleep(1200), (await kv.get<Library>('library'))?.projects.find((p) => p.id === id)?.polish.vocalLevel);
 const rendered = (id: string, lufs: number) => patchProject(id, (p) => ({ stats: { lufs, truePeakDb: -1, durationSec: 30 }, statsOf: soundKey(p) }), false);
 
 const run = async () => {
@@ -64,58 +67,43 @@ const run = async () => {
   kept = (await kv.get<Kept>('undo:mix'))!;
   check(`no more than ${UNDO_STEPS} steps are kept for a song`, kept[id].past.length <= UNDO_STEPS && kept[id].past.length > 10, String(kept[id].past.length));
 
-  // ---------- Saved mixes ----------
+  // ---------- One mix ----------
   const song = createProject(beat, 'Low tide');
   addTake(song.id, take(1));
   setLevel(song.id, 50);
-  rendered(song.id, -10);
-  const first = saveSnapshot(song.id)!;
-  check('a saved mix gets the next free name', first.name === 'Mix 1', first.name);
-  check('and remembers how loud it measured', first.loud?.lufs === -10);
   await sleep(750);
   setLevel(song.id, 80);
-  const second = saveSnapshot(song.id, '  Loud vocal  ')!;
-  check('a name given to a saved mix is trimmed', second.name === 'Loud vocal');
-  check('a mix that has not been rendered yet is saved without a loudness', second.loud === undefined);
-  check('the newest saved mix is listed first', getProject(song.id)!.snapshots!.map((m) => m.name).join() === 'Loud vocal,Mix 1');
-  restoreSnapshot(song.id, first.id);
-  check('using a saved mix makes it the mix in use', level(song.id) === 50);
+  check('a change to the mix is kept on the song as it is made', level(song.id) === 80 && (await storedLevel(song.id)) === 80, String(await storedLevel(song.id)));
   undoMix(song.id);
-  check('and undo takes that back', level(song.id) === 80, String(level(song.id)));
-  renameSnapshot(song.id, first.id, 'Dry');
-  renameSnapshot(song.id, second.id, '   ');
-  check('a saved mix can be renamed, but not to nothing', getProject(song.id)!.snapshots!.map((m) => m.name).join() === 'Loud vocal,Dry');
-  compareSnapshot(song.id, first.id);
-  check('comparing puts the saved mix on the other side, with its loudness', getProject(song.id)!.mixAlt?.polish.vocalLevel === 50 && getProject(song.id)!.mixAltLoud?.lufs === -10 && level(song.id) === 80);
-  rendered(song.id, -8);
-  switchMix(song.id, 'B');
-  check('flipping to it plays the saved mix', level(song.id) === 50 && getProject(song.id)!.mixSide === 'B');
-  check('and the mix left behind takes its loudness with it', getProject(song.id)!.mixAltLoud?.lufs === -8);
-  deleteSnapshot(song.id, first.id);
-  check('deleting a saved mix leaves the mix in use alone', getProject(song.id)!.snapshots!.length === 1 && level(song.id) === 50);
-  for (let i = 0; i < SNAPSHOT_LIMIT + 3; i++) saveSnapshot(song.id);
-  check(`a song keeps at most ${SNAPSHOT_LIMIT} saved mixes`, getProject(song.id)!.snapshots!.length === SNAPSHOT_LIMIT && saveSnapshot(song.id) === null);
-  check('saved mixes get names that are not taken', new Set(getProject(song.id)!.snapshots!.map((m) => m.name)).size === SNAPSHOT_LIMIT);
+  check('and undo steps back to the mix before it', level(song.id) === 50);
+  redoMix(song.id);
+  // The beat by itself is the same song with no take picked: it has the same one mix, not a second.
+  patchProject(song.id, { takeId: null }, false);
+  check('mixing the beat alone keeps the same mix', level(song.id) === 80);
+  patchProject(song.id, (p) => ({ master: { ...p.master, amount: 33 } }));
+  patchProject(song.id, { takeId: 't1' }, false);
+  check('and what was changed there is heard with the take too', getProject(song.id)!.master.amount === 33 && level(song.id) === 80);
 
-  // ---------- Matching levels ----------
-  const now = getProject(song.id)!;
-  const ctx = matchKey(now);
-  check('the louder mix is turned down to the quieter one', matchTrim(-8, { lufs: -10, ctx }, ctx) === -2);
-  check('the quieter mix is left alone', matchTrim(-10, { lufs: -8, ctx }, ctx) === 0);
-  check('a difference too small to hear is left alone', matchTrim(-9.95, { lufs: -10, ctx }, ctx) === 0);
-  check('a mix is never turned down by more than the limit', matchTrim(-3, { lufs: -30, ctx }, ctx) === -MATCH_LIMIT_DB);
-  check('nothing is matched until both have been measured', matchTrim(-8, undefined, ctx) === null && matchTrim(null, { lufs: -10, ctx }, ctx) === null);
-  check('or when the other was measured with a different take', matchTrim(-8, { lufs: -10, ctx: 'other' }, ctx) === null);
-  check('silence is not something to match to', matchTrim(-8, { lufs: -Infinity, ctx }, ctx) === null);
-  addTake(song.id, take(2));
-  check('picking another take makes an earlier measurement stale', matchKey(getProject(song.id)!) !== ctx);
-  check('and the loudness of the mix in use is unknown until it renders again', loudnessOf(getProject(song.id)!) === undefined);
-  rendered(song.id, -9);
-  check('once rendered it is known again', loudnessOf(getProject(song.id)!)?.lufs === -9);
+  // A library from when a song could hold a second mix and mixes saved by name.
+  const lib = (projects: object[]) => ({ ...emptyLibrary(), projects } as unknown as Library);
+  const plain = getProject(song.id)!;
+  const old = { ...plain, id: 'old', mixAlt: { polish: { ...plain.polish, vocalLevel: 10 }, master: plain.master, overrides: {} }, mixSide: 'B', mixAltLoud: { lufs: -9, ctx: 'x' }, snapshots: [{ id: 's', name: 'Mix 1', at: 1, mix: {} }] };
+  const tidied = oneMix(lib([old, plain]));
+  const left = tidied.projects[0] as unknown as Record<string, unknown>;
+  check('a second mix and saved mixes are dropped from an older library', !('mixAlt' in left) && !('mixSide' in left) && !('mixAltLoud' in left) && !('snapshots' in left));
+  check('the mix that was in use stays as it was', tidied.projects[0].polish.vocalLevel === 80 && tidied.projects[0].master.amount === 33);
+  check('a song without them is left untouched', tidied.projects[1] === plain);
+  const clean = lib([plain]);
+  check('and a library with nothing to drop is returned as it is', oneMix(clean) === clean);
+
+  // ---------- A stale measurement ----------
+  const ctx = matchKey(getProject(song.id)!);
+  rendered(song.id, -10);
+  check('a loudness measured for the sound as it is now is current', getProject(song.id)!.statsOf === soundKey(getProject(song.id)!));
   setLevel(song.id, 51);
-  check('a change to the mix makes it unknown again', loudnessOf(getProject(song.id)!) === undefined);
-  check('the note says when levels are still to be matched', matchNote(null, 'A').startsWith('Play both mixes once'));
-  check('and by how much the louder one is turned down', matchNote(-1.5, 'B') === 'Levels matched: Mix B plays 1.5 dB quieter here. Exports are not changed.');
+  check('a change to the mix makes it stale', getProject(song.id)!.statsOf !== soundKey(getProject(song.id)!));
+  addTake(song.id, take(2));
+  check('and so does picking another take', matchKey(getProject(song.id)!) !== ctx);
 
   // ---------- Deleting a song ----------
   await deleteProject(id);

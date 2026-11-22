@@ -3,10 +3,9 @@ import { Platform, Pressable, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { activeTake, deleteTake, patchProject, setSettings, useLibrary, useProject, redoMix, switchMix, undoMix, useMixHistory } from '@/data/store';
+import { activeTake, deleteTake, patchProject, setSettings, useLibrary, useProject, redoMix, undoMix, useMixHistory } from '@/data/store';
 import { fileBase } from '@/data/exporting';
 import { saveFiles } from '@/data/files';
-import { matchNote } from '@/data/match';
 import { useSong } from '@/data/song';
 import { getMix, loadPcm } from '@/data/studio';
 import { encodeWav } from '@/dsp/wav';
@@ -17,7 +16,6 @@ import { useStopOnLeave, useTask, useTwoFingerUndo } from '@/ui/hooks';
 import { DotMenu, type MenuItem } from '@/ui/DotMenu';
 import { ChainEditor } from '@/ui/ChainEditor';
 import { StatusLine, UndoToast } from '@/ui/parts';
-import { SavedMixes } from '@/ui/SavedMixes';
 import { SongHeader } from '@/ui/SongHeader';
 import { Transport, useRepeat } from '@/ui/Transport';
 import { C, clock } from '@/ui/theme';
@@ -27,8 +25,6 @@ import { useBar, useGutter, useWide } from '@/ui/wide';
 const FINISH_HEIGHT = 62;
 // Width of the left pane in the wide layout: the transport and the broad strokes.
 const LISTEN_WIDTH = 400;
-
-const MIX_SIDES = ['Mix A', 'Mix B'] as const;
 
 /** Undo or redo as a small arrow, beside the menu: there when wanted, without competing with the mix's own controls. */
 function Step({ label, back, on, onPress }: { label: string; back?: boolean; on: boolean; onPress: () => void }) {
@@ -47,9 +43,8 @@ export default function Playback() {
   const take = activeTake(project);
   // The mix keeps coming round while it is being shaped, unless Repeat is turned off.
   const repeat = useRepeat();
-  // With a second mix to flip to, the louder of the two is turned down to the other while listening here.
   // With no take picked it is the beat alone that is mixed: the same page, without the vocal's controls.
-  const song = useSong(project && !project.saved ? project : null, { compare: true, repeat, match: project?.mixAlt ? project.mixAltLoud : undefined });
+  const song = useSong(project && !project.saved ? project : null, { compare: true, repeat });
   const insets = useSafeAreaInsets();
   const gutter = useGutter();
   const bar = useBar();
@@ -158,21 +153,8 @@ export default function Playback() {
   const vocalLevel = take && <SliderRow label="Vocal level" value={level ?? polish.vocalLevel} onChange={setLevel} onCommit={(v) => (setLevel(null), setPolish({ vocalLevel: v }))} labelWidth={92} minHeight={44} fontSize={15} display={`${level ?? polish.vocalLevel}`} valueWidth={30} />;
   const chains = <ChainEditor project={project} song={song} />;
 
-  // Two mixes to flip between while it plays.
-  const side = project.mixSide ?? 'A';
-  const compare = (
-    <View>
-      <View style={[s.row, s.between, { gap: 12, minHeight: 44 }]}>
-        <Eyebrow>Compare</Eyebrow>
-        <View style={{ width: 168 }}>
-          <Segmented options={MIX_SIDES} value={side === 'A' ? 'Mix A' : 'Mix B'} onChange={(v) => switchMix(project.id, v === 'Mix A' ? 'A' : 'B')} variant="compact" />
-        </View>
-      </View>
-      {/* Two mixes are only a fair comparison at the same level. */}
-      {project.mixAlt && <Muted size={13}>{matchNote(song.trimDb, side)}</Muted>}
-    </View>
-  );
-  const saved = <SavedMixes project={project} />;
+  // A song has one mix, and it is kept as it is changed: nothing to save, and Undo for a step taken too far.
+  const saving = <Muted size={13}>{take ? 'This mix is saved as you change it, and stays with the song. Undo steps back through your changes.' : 'This mix is saved as you change it, and stays with the beat. Undo steps back through your changes.'}</Muted>;
 
   // Wide: listening and the broad strokes on the left, the chains open on the right, and the last step in the header.
   if (wide)
@@ -190,9 +172,8 @@ export default function Playback() {
             <View>
               {vocalLevel}
               {double}
-              {compare}
-              {saved}
             </View>
+            {saving}
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>{chains}</View>
         </View>
@@ -203,13 +184,13 @@ export default function Playback() {
 
   // The way one step in, saying what is there.
   const toTune = (
-    <Pressable accessibilityRole="button" accessibilityLabel="Fine-tune. EQ, compressor, reverb, compare A and B, saved mixes" onPress={() => setSettings({ fineTune: true })} style={({ pressed }) => [s.row, s.between, { minHeight: 64, gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, opacity: pressed ? 0.7 : 1 }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Fine-tune. EQ, compressor, de-esser, limiter, reverb and echo" onPress={() => setSettings({ fineTune: true })} style={({ pressed }) => [s.row, s.between, { minHeight: 64, gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, opacity: pressed ? 0.7 : 1 }]}>
       <View style={{ flex: 1, gap: 2 }}>
         <Txt size={16} w="semi">
           Fine-tune
         </Txt>
         <Txt size={13} color={C.muted}>
-          EQ, compressor, reverb · compare A/B · saved mixes
+          EQ, compressor, de-esser, limiter · reverb and echo
         </Txt>
       </View>
       <Txt size={20} color={C.muted} lh={1}>
@@ -223,15 +204,12 @@ export default function Playback() {
       <Screen gap={tuning ? 14 : 18}>
         {tuning ? (
           <>
-            {/* One step in: comparing, keeping and the chains, with the player still in reach. */}
+            {/* One step in: the chains for the vocal, the beat and the master, with the player still in reach. */}
             <TopBar back={{ onBack: () => setSettings({ fineTune: false }), label: 'Back to the sound' }} left="Fine-tune" />
             {standing}
             <Transport project={project} take={take} song={song} compare />
-            <View>
-              {compare}
-              {saved}
-              <View style={{ paddingTop: 10, paddingBottom: 6 }}>{chains}</View>
-            </View>
+            {chains}
+            {saving}
           </>
         ) : (
           <>
@@ -240,10 +218,9 @@ export default function Playback() {
             <View>
               {vocalLevel}
               {double}
-              {/* Once there is a second mix, which one is playing is part of the sound, so the switch shows here too. */}
-              {project.mixAlt ? compare : null}
             </View>
             {toTune}
+            {saving}
           </>
         )}
 

@@ -141,7 +141,7 @@ async function start() {
   await expectText('Ready-made beats');
   await tap('Built in', { optional: true });
   await tap('Add Night bus');
-  await expectText('On the mic', 'a demo beat opens on the mic screen', 20000);
+  await expectText('Nothing recorded over this beat yet', 'a demo beat opens on its Song page', 20000);
   await tap('Connect a microphone', { optional: true });
 }
 
@@ -228,7 +228,7 @@ async function imports() {
   const demo = path.join(FILES, 'Sky at forty four.m4a');
   fs.copyFileSync(path.resolve('public/demo/a-little-more-sky.m4a'), demo);
   await choose('Import a file', demo);
-  await expectText('On the mic', 'a 44.1 kHz M4A is imported', 30000);
+  await expectText('Nothing recorded over this beat yet', 'a 44.1 kHz M4A is imported', 30000);
   const sky = await beatNamed('Sky at forty four');
   log(sky?.sampleRate === 44100, 'and kept at 44.1 kHz, not the live clock\'s rate', `${sky?.sampleRate} Hz`);
   log(Math.abs((sky?.durationSec ?? 0) - 45) < 1.5, 'at its full length', `${sky?.durationSec?.toFixed(1)} s`);
@@ -238,7 +238,7 @@ async function imports() {
   else {
     await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
     await choose('Import a file', mp3);
-    await expectText('On the mic', 'a 48 kHz MP3 is imported', 30000);
+    await expectText('Nothing recorded over this beat yet', 'a 48 kHz MP3 is imported', 30000);
     const tone = await beatNamed('Tone at forty eight');
     log(tone?.sampleRate === 48000, 'and kept at 48 kHz', `${tone?.sampleRate} Hz`);
   }
@@ -298,7 +298,7 @@ async function memory() {
   await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 120000 });
   console.log(`     the page is a ${(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) ? 'touch device (phone budget)' : 'computer'}`);
   await choose('Import a file', file);
-  await expectText('On the mic', `a ${minutes}-minute beat is imported`, 180000);
+  await expectText('Nothing recorded over this beat yet', `a ${minutes}-minute beat is imported`, 180000);
   await tap(`Freestyle over Long song ${minutes}`);
   await expectText('Whole beat · once through', 'the mic screen opens on the whole beat');
   await expectText('Tap to record', 'the microphone connects', 8000);

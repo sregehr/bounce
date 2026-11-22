@@ -655,7 +655,8 @@ async function song() {
   await tap('Pause', { optional: true });
   log(!(await showing('Repeat')) && !(await showing('8 bars')), 'the Song tab has no Repeat or bars either');
   await tap('Pause', { optional: true });
-  log(!(await showing('Master the beat')), 'with takes on the song, the beat card steps back to a link');
+  log(!(await showing('Master the beat')), 'with takes on the song, the beat card is gone');
+  log(!/Beat details/i.test(await text()), 'and so is the way into its details');
   await tap('Mix take', { exact: false });
   await expectText(/Polished\s/, 'the mix opens with those bars', 30000);
   await sleep(400);
@@ -1083,7 +1084,8 @@ async function library() {
   log(await state(() => !document.querySelector('[role=dialog]')), 'closing the sheet puts it away');
   await expectText('New beat');
   await tap('Open Night bus');
-  await expectText('Beat details', 'a beat opens its song', 10000);
+  await expectText('Mix take', 'a beat opens its song', 10000);
+  log(!/Beat details/i.test(await text()), 'with takes on the song, the beat details are not shown');
   await tap('Home');
   // The personal menu in the top bar holds Profile and Settings.
   await tap('Your menu');

@@ -133,7 +133,7 @@ export type Project = {
   saved?: { at: number; from: string };
 };
 
-export type Profile = { artist: string; producer: string; onboarded: boolean };
+export type Profile = { artist: string; producer: string; onboarded: boolean; /** The name has been asked for once, after the first take, whether or not one was given. */ nameAsked?: boolean };
 
 /** Someone who records here: their name, and the vocal sound that suits their voice. */
 export type Artist = {
@@ -154,9 +154,11 @@ export type Settings = {
   latencyMs: number | null;
   /** Delay measured for each setup, keyed by the microphone and what the beat plays out of. See data/timing. */
   timing?: Record<string, number>;
-  /** One bar of clicks before a take starts recording. On unless turned off. */
+  /** No longer read: every take has a count-in. Kept so a library saved with it still loads as typed. */
   countIn?: boolean;
   backup: boolean;
+  /** Mix was last left on its Fine-tune level, so it opens there again. */
+  fineTune?: boolean;
   /** Says which backup on the server is this device's. */
   deviceId: string;
   /** Proves to the backup server that a request comes from this device. Never shown or shared. */

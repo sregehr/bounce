@@ -97,11 +97,11 @@ function Demos() {
     if (task.busy) return;
     setPicked(id);
     stopTransport();
-    void task.run(async () => void ((await work()) && router.replace('/song')));
+    void task.run(async () => void ((await work()) && router.replace('/vocals')));
   };
 
   const title = <TopBar back left="Demo songs" />;
-  const intro = <Muted>Ready-made beats to freestyle over. Play one to hear it first; tap its name to add it to your library.</Muted>;
+  const intro = <Muted>Ready-made beats to freestyle over. Play one to hear it first; tap its name to add it and go to the mic.</Muted>;
   const error = task.error && (
     <Txt size={13} color={C.recText}>
       {task.error}

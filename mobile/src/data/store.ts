@@ -435,7 +435,8 @@ export function createProject(beat: Beat, name: string): Project {
     polish: DEFAULT_POLISH,
     master: DEFAULT_MASTER,
     overrides: {},
-    exporting: { loudness: 'streaming', format: 'wav24', instrumental: true, vocals: false },
+    // A new song starts on "Post or upload", the first of Share's choices that every browser can make.
+    exporting: { loudness: 'loud', format: 'wav16', instrumental: false, vocals: false },
     snippet: { lengthSec: 20, captions: true, credit: true, caption: '', made: false },
     cover: { scene: 'photo', photoKey: null, cutoutKey: null, imageKey: null },
     lyrics: '',
@@ -459,6 +460,72 @@ export async function deleteProject(id: string) {
   if (histories.delete(id)) keepHistories();
   update((l) => ({ ...l, projects: l.projects.filter((p) => p.id !== id), currentId: l.currentId === id ? null : l.currentId, songId: l.songId === id ? null : l.songId }));
   await Promise.all([...projectKeys(project), ...[...(held?.past ?? []), ...(held?.future ?? [])].flatMap((e) => e.holds ?? [])].map(dropBlob));
+}
+
+// ---------- Deleting a beat or a song, with a moment to take it back ----------
+
+/** How long a deleted beat or song can be brought back. Its files stay on the device until then. */
+export const REMOVED_SHOWN_MS = 7000;
+type Removed = { project: Project; index: number; current: boolean; song: boolean; at: number };
+let removed: Removed | null = null;
+let removedTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Lets go of the files of the beat or song deleted last, once it can no longer be brought back. */
+async function settleRemoved() {
+  const gone = removed;
+  if (!gone) return;
+  removed = null;
+  if (removedTimer) clearTimeout(removedTimer);
+  removedTimer = null;
+  notify();
+  const id = gone.project.id;
+  // A beat that is gone takes its undo steps with it, and the takes they were holding on to.
+  const held = songHistories.get(id);
+  songHistories.delete(id);
+  if (histories.delete(id)) keepHistories();
+  await Promise.all([...projectKeys(gone.project), ...[...(held?.past ?? []), ...(held?.future ?? [])].flatMap((e) => e.holds ?? [])].map(dropBlob));
+}
+
+/**
+ * Deletes a beat or a finished song at once, and keeps it in hand for a few seconds so the delete
+ * can be undone where it happened. If the app is closed first, its files are cleared out the next time it opens.
+ */
+export function removeProject(id: string) {
+  // Only the last delete can be taken back; an earlier one still waiting is finished first.
+  void settleRemoved();
+  const project = getProject(id);
+  if (!project) return;
+  removed = { project, index: library.projects.findIndex((p) => p.id === id), current: library.currentId === id, song: library.songId === id, at: Date.now() };
+  for (const key of projectKeys(project)) toBin(key);
+  update((l) => ({ ...l, projects: l.projects.filter((p) => p.id !== id), currentId: l.currentId === id ? null : l.currentId, songId: l.songId === id ? null : l.songId }));
+  removedTimer = setTimeout(() => void settleRemoved(), REMOVED_SHOWN_MS + 500);
+}
+
+/** Puts back the beat or song deleted last, where it was in the list. */
+export function restoreProject() {
+  const back = removed;
+  if (!back) return;
+  removed = null;
+  if (removedTimer) clearTimeout(removedTimer);
+  removedTimer = null;
+  update((l) => {
+    if (l.projects.some((p) => p.id === back.project.id)) return l;
+    const projects = [...l.projects];
+    projects.splice(Math.min(back.index, projects.length), 0, back.project);
+    return { ...l, projects, currentId: back.current ? back.project.id : l.currentId, songId: back.song ? back.project.id : l.songId };
+  });
+}
+
+/** The beat or song deleted last, while it can still be brought back. */
+export function useRemoved(): { name: string; finished: boolean; at: number } | null {
+  const key = useSyncExternalStore(
+    subscribe,
+    () => (removed ? JSON.stringify([removed.project.name, !!removed.project.saved, removed.at]) : ''),
+    () => '',
+  );
+  if (!key) return null;
+  const [name, finished, at] = JSON.parse(key) as [string, boolean, number];
+  return { name, finished, at };
 }
 
 /** Deletes a stored file unless something still uses it: a finished song shares its audio and cover with the beat it came from. */

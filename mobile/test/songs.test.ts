@@ -2,7 +2,7 @@ import { DEFAULT_MASTER, DEFAULT_POLISH } from '../src/dsp/presets';
 import { emptyLibrary, type Library, type Project, type Take } from '../src/data/model';
 import { routeKey, timingFor, withTiming } from '../src/data/timing';
 import { gearName } from '../src/data/labels';
-import { activeBeats, beatsIn, carryOver, loadedSong, makeSong, mendSongs, micLead, mixLead, songLead, songsIn, workBeat } from '../src/data/songs';
+import { activeBeats, beatsIn, carryOver, loadedSong, makeSong, mendSongs, micLead, mixLead, songLead, songsIn, stageOf, workBeat } from '../src/data/songs';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -67,6 +67,10 @@ check('a beat with nothing in the Vault is active', activeBeats([a, untouched]).
 check('a beat whose song is in the Vault leaves the list', activeBeats([song, a, untouched]).map((p) => p.id).join() === 'f');
 check('recording over it again brings it back', activeBeats([song, { ...a, takes: [...a.takes, { ...take(4), createdAt: 101 }] }]).length === 1);
 check('finished songs are never listed', activeBeats([song]).length === 0);
+check('a beat with nothing recorded says so', stageOf(beat('g'), [a]) === 'No takes yet');
+check('a beat with takes and no song is ready to mix', stageOf(a, [a]).endsWith('· ready to mix') && stageOf({ ...a, takes: [take(1)] }, [a]) === '1 take · ready to mix');
+check('a beat whose song is in the Vault says so', stageOf(a, [song, a]) === 'In the Vault');
+check('and says when takes are newer than that song', stageOf({ ...a, takes: [...a.takes, { ...take(4), createdAt: 101 }] }, [song, a]) === 'In the Vault · new takes');
 const older = makeSong(a, 'Older', 50);
 check('beats and songs are told apart', beatsIn([song, a, older]).length === 1 && songsIn([older, a, song]).map((p) => p.name).join() === 'Night bus,Older');
 
@@ -76,7 +80,7 @@ const bare = lib([beat('b')], { currentId: 'b' });
 check('with a beat and no takes, the mic records and Song opens it', micLead(bare).to === '/vocals' && songLead(bare).to === '/song' && songLead(bare).id === 'b');
 check('…and Mix stays on its own screen for that beat', mixLead(bare).to === '/playback' && mixLead(bare).id === 'b');
 const recorded = lib([beat('b'), a], { currentId: 'b' });
-check('Mix opens a beat that has takes when the current one has none', mixLead(recorded).to === '/playback' && mixLead(recorded).id === 'a');
+check('Mix keeps the song that is open, even when another beat has takes and it has none', mixLead(recorded).to === '/playback' && mixLead(recorded).id === 'b');
 const full = lib([song, older, a], { currentId: song.id, songId: older.id });
 check('the song played last is remembered', loadedSong(full)?.id === older.id);
 check('…or the newest when none has been', loadedSong({ ...full, songId: null })?.id === song.id);

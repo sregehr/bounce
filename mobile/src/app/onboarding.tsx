@@ -4,36 +4,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Rect } from 'react-native-svg';
 import { router, useLocalSearchParams } from 'expo-router';
 
-import { AccountStep } from '@/auth/account';
-import { backendAvailable } from '@/auth/backend';
 import { importBeat } from '@/data/beats';
 import type { Project } from '@/data/model';
 import { setProfile, setSettings, useLibrary } from '@/data/store';
 import { measureLatency, openInput, reportedLatencyMs, setPair, useEngine } from '@/engine/engine';
-import { Btn, Card, Eyebrow, Field, Foot, Muted, NavLink, Screen, TickIcon, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Card, Eyebrow, Foot, Muted, NavLink, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { Logo } from '@/ui/Logo';
 import { estimateMs } from '@/data/timing';
 import { useTiming } from '@/ui/timing';
 import { useTask } from '@/ui/hooks';
-import { BackButton, asSheet, useSheet } from '@/ui/nav';
+import { asSheet, useSheet } from '@/ui/nav';
 import { ClapCheck, InputPanel, type ClapOutcome } from '@/ui/parts';
 import { C } from '@/ui/theme';
 import { useWide } from '@/ui/wide';
 
-type StepId = 'welcome' | 'names' | 'account' | 'sound' | 'timing' | 'first';
-// The account step is only there when the build has a server to sign in to.
-const STEPS: StepId[] = backendAvailable ? ['welcome', 'names', 'account', 'sound', 'timing', 'first'] : ['welcome', 'names', 'sound', 'timing', 'first'];
-
-function Dots({ at }: { at: StepId }) {
-  const step = STEPS.indexOf(at);
-  return (
-    <View accessibilityLabel={`Step ${step + 1} of ${STEPS.length}`} style={[s.row, { gap: 6 }]}>
-      {STEPS.map((name, i) => (
-        <View key={name} style={{ height: 4, flex: 1, borderRadius: 2, backgroundColor: i <= step ? C.accent : C.dim }} />
-      ))}
-    </View>
-  );
-}
+// The first launch is one screen: what Bounce is, and the three ways to bring in a beat. Everything it used to ask first
+// (a name, an account, the microphone, the timing) is asked where it is needed. The two setup steps remain, as a sheet.
+type StepId = 'welcome' | 'sound' | 'timing';
 
 function Choice({ title, body, onPress, primary, disabled }: { title: string; body: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
   return (
@@ -80,30 +67,20 @@ function Brand() {
 function Onboarding() {
   const wide = useWide();
   const insets = useSafeAreaInsets();
-  const profile = useLibrary((l) => l.profile);
   const settings = useLibrary((l) => l.settings);
   const input = useEngine((e) => e.input);
-  // Opened from the mic screen, this is just the two setup steps (sound check, timing) and then back again.
-  const params = useLocalSearchParams<{ setup?: string; step?: string }>();
+  // Opened from the mic screen or Settings, this is just the two setup steps (sound check, timing) and then back again.
+  const params = useLocalSearchParams<{ setup?: string }>();
   const setup = !!params.setup;
-  // Signing in on the web leaves the page and comes back to the account step.
-  const [step, setStep] = useState<StepId>(setup ? 'sound' : params.step === 'account' && backendAvailable ? 'account' : 'welcome');
+  const [step, setStep] = useState<StepId>(setup ? 'sound' : 'welcome');
   const sheet = useSheet();
   const leave = () => (sheet ? sheet.close() : router.canGoBack() ? router.back() : router.replace('/'));
-  const [artist, setArtist] = useState(profile.artist);
-  const [producer, setProducer] = useState(profile.producer);
   const [timing, setTiming] = useState<{ ms: number; measured: boolean; heard: number; of: number; /** Done by hand, and how: clapped or tapped. */ by?: 'claps' | 'taps' } | null>(null);
   const [tapping, setTapping] = useState(false);
   const check = useTask();
   const start = useTask();
   const live = input.status === 'ready';
 
-  const next = () => setStep((at) => STEPS[Math.min(STEPS.length - 1, STEPS.indexOf(at) + 1)]);
-  const back = () => setStep((at) => STEPS[Math.max(0, STEPS.indexOf(at) - 1)]);
-  const saveNames = () => {
-    setProfile({ artist: artist.trim(), producer: producer.trim() });
-    next();
-  };
   const route = useTiming();
   // What this setup starts at before any check: 84 ms on a phone's own microphone, 230 ms on wireless earbuds, and so on.
   const estimate = estimateMs(route.route, reportedLatencyMs());
@@ -121,87 +98,64 @@ function Onboarding() {
     route.set(outcome.ms !== null ? ms : null);
     setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, by: outcome.by });
   };
-  const finish = (work?: () => Promise<Project | null>, to: '/song' | '/capture' | '/demos' | '/' = '/song') =>
+  const finish = (work?: () => Promise<Project | null>, to: '/vocals' | '/capture' | '/demos' | '/' = '/vocals') =>
     start.run(async () => {
       if (work && !(await work())) return;
       setProfile({ onboarded: true });
       router.replace(to);
     });
 
+  // Only the next useful action is amber: connecting, then continuing; a check that failed leads with the way that works.
+  const failed = !!timing && !timing.measured;
+  const measured = timing ? timing.measured : route.measured;
   const steps = (
     <>
-      {setup ? (
-        // The first of the two setup steps closes the sheet; the second steps back to the first.
-        <TopBar back={step === 'timing' ? { onBack: () => setStep('sound') } : true} left="Setup" />
-      ) : step === 'welcome' ? (
-        <Dots at={step} />
-      ) : (
-        <View style={[s.row, { gap: 4, minHeight: 44 }]}>
-          <BackButton onBack={back} />
-          <View style={{ flex: 1 }}>
-            <Dots at={step} />
-          </View>
-        </View>
-      )}
+      {/* The first of the two setup steps closes the sheet; the second steps back to the first. */}
+      {setup && <TopBar back={step === 'timing' ? { onBack: () => setStep('sound') } : true} left="Setup" />}
 
       {step === 'welcome' && (
         <>
           {/* In the wide layout the brand panel already says this. */}
           {!wide && (
-            <View style={{ gap: 12, paddingTop: 40 }}>
-              <Logo size={52} />
-              <Txt size={64} w="display" ls={-0.04} lh={1}>
+            <View style={{ gap: 12, paddingTop: 28 }}>
+              <Logo size={44} />
+              <Txt size={56} w="display" ls={-0.04} lh={1}>
                 Bounce
               </Txt>
-              <Txt size={22} w="displayMedium" lh={1.25}>
+              <Txt size={20} w="displayMedium" lh={1.25}>
                 Capture a beat. Freestyle over it. Hear it mastered in seconds.
               </Txt>
             </View>
           )}
-          <View style={{ gap: 14, paddingTop: wide ? 40 : 16 }}>
-            {['Record a beat straight from your MPC, or any sampler or audio interface', 'Loop a section and rap; every take is kept', 'One tap polishes the vocal and masters the song', 'Add a cover, cut a snippet, export the WAV'].map((line) => (
-              <View key={line} style={[s.row, { gap: 12, alignItems: 'flex-start' }]}>
-                <View style={{ paddingTop: 4 }}>
-                  <TickIcon size={16} />
-                </View>
-                <Txt size={16} lh={1.4} style={{ flex: 1 }}>
-                  {line}
-                </Txt>
-              </View>
-            ))}
+          <View style={{ gap: 8, paddingTop: wide ? 40 : 8 }}>
+            {wide ? (
+              <Txt size={34} w="display" lh={1.05}>
+                Pick a beat to start
+              </Txt>
+            ) : (
+              <Eyebrow>Pick a beat to start</Eyebrow>
+            )}
+          </View>
+          {start.error && (
+            <Txt size={14} color={C.recText}>
+              {start.error}
+            </Txt>
+          )}
+          <View style={{ gap: 12 }}>
+            <Choice primary title="Try a demo beat" body="No gear needed: pick a ready-made beat and go straight to the mic." disabled={start.busy} onPress={() => finish(undefined, '/demos')} />
+            <Choice title="Capture from your gear" body="Plug in your MPC, sampler or audio interface by USB and press play." disabled={start.busy} onPress={() => finish(undefined, '/capture')} />
+            <Choice title="Import a file" body="A WAV, MP3 or M4A of a beat you already have." disabled={start.busy} onPress={() => finish(importBeat)} />
           </View>
           <Foot>
-            <Btn label="Get started" onPress={next} />
+            <NavLink tone="quiet" center size={14} onPress={() => finish(undefined, '/')}>
+              Just look around first
+            </NavLink>
             <Muted size={13} center>
-              Everything is saved on this device. Backup can be turned off in Settings.
+              Everything is saved on this device. No account needed.
             </Muted>
           </Foot>
         </>
       )}
-
-      {step === 'names' && (
-        <>
-          <View style={{ gap: 8, paddingTop: 24 }}>
-            <Txt size={34} w="display" lh={1.05}>
-              What do you go by?
-            </Txt>
-            <Muted size={15}>Your name goes on the player and on snippets you share. You can change it later.</Muted>
-          </View>
-          <View style={{ gap: 6 }}>
-            <Eyebrow>Artist name</Eyebrow>
-            <Field label="Artist name" value={artist} onChangeText={setArtist} placeholder="Your name or alias" maxLength={40} autoCapitalize="words" returnKeyType="next" />
-          </View>
-          <View style={{ gap: 6 }}>
-            <Eyebrow>Who makes your beats?</Eyebrow>
-            <Field label="Producer name" value={producer} onChangeText={setProducer} placeholder="Optional. Leave empty if it's you" maxLength={40} autoCapitalize="words" onSubmitEditing={saveNames} />
-          </View>
-          <Foot>
-            <Btn label="Continue" onPress={saveNames} />
-          </Foot>
-        </>
-      )}
-
-      {step === 'account' && <AccountStep onNext={next} />}
 
       {step === 'sound' && (
         <>
@@ -209,7 +163,7 @@ function Onboarding() {
             <Txt size={34} w="display" lh={1.05}>
               Sound check
             </Txt>
-            <Muted size={15}>Bounce needs an audio input: your MPC, sampler or audio interface over USB to capture beats, and a microphone for vocals.</Muted>
+            <Muted size={15}>{live ? 'Make some noise: the meters should move. Wear headphones when you record vocals, so the beat stays out of the mic.' : 'Pick the input Bounce records from: a microphone for vocals, or your MPC, sampler or audio interface over USB.'}</Muted>
           </View>
           <Card>
             <View style={[s.row, { gap: 8 }]}>
@@ -232,11 +186,12 @@ function Onboarding() {
               </>
             )}
           </Card>
-          {live && <Muted size={13}>Make some noise: the meters should move. Wear headphones when you record vocals, so the beat stays out of the mic.</Muted>}
           <Foot>
-            <Btn label="Continue" onPress={() => (live ? setStep('timing') : setup ? leave() : setStep('first'))} disabled={input.status === 'opening' || (setup && !live)} />
-            {!live && !setup && (
-              <NavLink center size={14} onPress={() => setStep('first')}>
+            {/* Until an input is connected, connecting is the one thing to do here; the close button leaves. */}
+            {live ? (
+              <Btn label="Continue" onPress={() => setStep('timing')} />
+            ) : (
+              <NavLink tone="quiet" center size={14} onPress={leave}>
                 Skip for now
               </NavLink>
             )}
@@ -253,7 +208,7 @@ function Onboarding() {
             <Muted size={15}>Every setup hears itself a little late. Bounce plays six clicks and listens for them, then shifts your vocals by exactly that much so they land on the beat.</Muted>
           </View>
           <Card>
-            <Eyebrow accent={timing ? timing.measured : route.measured}>{(timing ? timing.measured : route.measured) ? 'Measured' : 'Using an estimate'}</Eyebrow>
+            <Eyebrow accent={measured}>{measured ? 'Measured' : 'Using an estimate'}</Eyebrow>
             <Txt size={44} w="display" lh={1}>
               {timing ? timing.ms : route.ms} ms
             </Txt>
@@ -273,46 +228,26 @@ function Onboarding() {
                           : `Only ${timing.heard} of ${timing.of} clicks came back, so the estimate for this setup is used. With headphones on, hold one ear cup to the mic and try again, or clap or tap along instead.`
                       : `${route.measured ? `Measured for ${setupName}.` : `An estimate for ${setupName}.`} For an exact figure, turn the volume up and take your headphones off, or hold one ear cup to the mic. The clicks are short and loud.`)}
                 </Muted>
-                <Btn kind={timing ? 'outline' : 'primary'} label={timing ? 'Run it again' : 'Play the clicks'} busy={check.busy} onPress={runCheck} style={timing ? { flex: 0 } : undefined} />
-                <NavLink center size={14} onPress={() => !check.busy && setTapping(true)}>
-                  Wearing earbuds? Clap or tap along instead
-                </NavLink>
+                {failed ? (
+                  // The clicks did not come back, which is what earbuds do: the way that works with them leads.
+                  <>
+                    <Btn label="Clap or tap along" disabled={check.busy} onPress={() => setTapping(true)} />
+                    <Btn kind="outline" label="Run it again" busy={check.busy} onPress={runCheck} style={{ flex: 0 }} />
+                  </>
+                ) : (
+                  <>
+                    <Btn kind={timing ? 'outline' : 'primary'} label={timing ? 'Run it again' : 'Play the clicks'} busy={check.busy} onPress={runCheck} style={timing ? { flex: 0 } : undefined} />
+                    <NavLink center size={14} onPress={() => !check.busy && setTapping(true)}>
+                      Wearing earbuds? Clap or tap along instead
+                    </NavLink>
+                  </>
+                )}
               </>
             )}
           </Card>
           <Foot>
-            <Btn label={setup ? 'Done' : 'Continue'} onPress={setup ? leave : next} disabled={check.busy || tapping} />
-            {!timing && !setup && (
-              <NavLink center size={14} onPress={next}>
-                Skip: use the estimate
-              </NavLink>
-            )}
-          </Foot>
-        </>
-      )}
-
-      {step === 'first' && (
-        <>
-          <View style={{ gap: 8, paddingTop: 24 }}>
-            <Txt size={34} w="display" lh={1.05}>
-              {artist.trim() ? `Ready, ${artist.trim()}.` : 'Ready.'}
-            </Txt>
-            <Muted size={15}>Start with a beat. Everything else follows from it.</Muted>
-          </View>
-          {start.error && (
-            <Txt size={14} color={C.recText}>
-              {start.error}
-            </Txt>
-          )}
-          <View style={{ gap: 12 }}>
-            <Choice primary title="Capture from your gear" body="Plug in your MPC, sampler or audio interface by USB and press play. Recording starts by itself." disabled={start.busy} onPress={() => finish(undefined, '/capture')} />
-            <Choice title="Import a file" body="A WAV, MP3 or M4A of a beat you already have." disabled={start.busy} onPress={() => finish(importBeat)} />
-            <Choice title="Try a demo song" body="No gear needed: pick a ready-made beat and go straight to the mic." disabled={start.busy} onPress={() => finish(undefined, '/demos')} />
-          </View>
-          <Foot>
-            <NavLink center size={14} onPress={() => finish(undefined, '/')}>
-              Just look around first
-            </NavLink>
+            {/* Done is the amber button only once there is a measured figure to be done with. */}
+            <Btn kind={timing?.measured ? 'primary' : 'outline'} label={timing?.measured ? 'Done' : 'Use the estimate'} onPress={leave} disabled={check.busy || tapping} />
           </Foot>
         </>
       )}

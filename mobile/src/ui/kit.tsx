@@ -253,7 +253,11 @@ export function go({ to, replace, back, home, onPress }: Nav) {
   else if (to) (replace || back ? router.replace : router.push)(to);
 }
 
-export function NavLink({ children, center, size = 15, w = 'medium', style, ...nav }: Nav & { children: ReactNode; center?: boolean; size?: number; w?: Weight; style?: StyleProp<ViewStyle> }) {
+/**
+ * A text link. Amber is for an action worth noticing; `quiet` is for stepping aside (skip, hide, not now)
+ * and `danger` for taking something away. Going somewhere is a `RowLink`, with a chevron.
+ */
+export function NavLink({ children, center, size = 15, w = 'medium', style, tone = 'accent', ...nav }: Nav & { children: ReactNode; center?: boolean; size?: number; w?: Weight; style?: StyleProp<ViewStyle>; tone?: 'accent' | 'quiet' | 'danger' }) {
   return (
     <Pressable
       accessibilityRole="link"
@@ -262,10 +266,31 @@ export function NavLink({ children, center, size = 15, w = 'medium', style, ...n
       style={[{ minHeight: 44, justifyContent: 'center', alignItems: center ? 'center' : 'flex-start' }, style]}
     >
       {(press) => (
-        <Txt size={size} w={w} color={(press as Hover).hovered ? C.accentHover : C.accent} style={{ textDecorationLine: 'underline' }}>
+        <Txt size={size} w={w} color={tone === 'danger' ? C.recText : tone === 'quiet' ? ((press as Hover).hovered ? C.text : C.muted) : (press as Hover).hovered ? C.accentHover : C.accent} style={{ textDecorationLine: 'underline' }}>
           {children}
         </Txt>
       )}
+    </Pressable>
+  );
+}
+
+/** A row that leads somewhere: its name, what is set there now, and a chevron. Rows stack, sharing the lines between them. */
+export function RowLink({ title, summary, first, danger, style, ...nav }: Nav & { title: string; summary?: string; first?: boolean; danger?: boolean; style?: StyleProp<ViewStyle> }) {
+  return (
+    <Pressable accessibilityRole="link" accessibilityLabel={summary ? `${title}. ${summary}` : title} onPress={() => go(nav)} style={({ pressed }) => [s.row, s.between, { minHeight: 52, gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.line, opacity: pressed ? 0.6 : 1 }, first && { borderTopWidth: 1, borderTopColor: C.line }, style]}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Txt size={15} w="semi" color={danger ? C.recText : C.text}>
+          {title}
+        </Txt>
+        {summary ? (
+          <Txt size={13} color={C.muted}>
+            {summary}
+          </Txt>
+        ) : null}
+      </View>
+      <Txt size={20} color={C.muted} lh={1}>
+        ›
+      </Txt>
     </Pressable>
   );
 }

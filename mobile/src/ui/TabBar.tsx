@@ -12,6 +12,7 @@ import { Btn, MicIcon, Muted, Txt } from './kit';
 import { Logo } from './Logo';
 import { Halo, Pop, useGlide } from './motion';
 import { PersonalMenu } from './PersonalMenu';
+import { SongSwitcher } from './SongSwitcher';
 import { useArtistViewOpen } from './artistViewOpen';
 import { useRecordControl } from './recordControl';
 import { TOP_NAV_HEIGHT, hidesTabBar, tabFor, type Tab } from './tabs';
@@ -133,9 +134,12 @@ function useNav() {
   return { path, library, tab: recording || holding || booth ? null : tab, booth };
 }
 
-/** The logo and the personal menu, above every screen after the welcome. */
+/**
+ * The top bar, above every screen after the welcome: the logo and the personal menu. On Song, the
+ * mic and Mix, which all work on one song, the logo gives way to that song's name, as the way to switch.
+ */
 export function TopNav() {
-  const { path, tab } = useNav();
+  const { path, tab, library } = useNav();
   const insets = useSafeAreaInsets();
   // The logo and the menu line up with the content below them: its column, or the margins of the two panes.
   const column = useGutter();
@@ -143,17 +147,23 @@ export function TopNav() {
   const gutter = wide ? 40 : column;
   const edge = wide ? { left: insets.left, right: insets.right } : { left: 0, right: 0 };
   if (!tab) return null;
+  // The song those three screens are showing. With no beat yet they have nothing to name, and the logo stays.
+  const current = tab === 'song' || tab === 'mic' || tab === 'mix' ? library.projects.find((p) => p.id === library.currentId && !p.saved) : undefined;
   return (
     <View style={[{ position: 'absolute', left: 0, right: 0, top: 0, paddingTop: insets.top, borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.14)' }, glass]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: TOP_NAV_HEIGHT, paddingLeft: gutter + edge.left, paddingRight: gutter - 12 + edge.right }}>
-        <Pressable accessibilityRole="link" accessibilityLabel="Bounce: home" onPress={() => follow({ to: '/', id: null }, path)} hitSlop={8}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-            <Logo size={20} />
-            <Txt size={20} w="display" ls={-0.02}>
-              Bounce
-            </Txt>
-          </View>
-        </Pressable>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, height: TOP_NAV_HEIGHT, paddingLeft: gutter + edge.left, paddingRight: gutter - 12 + edge.right }}>
+        {current ? (
+          <SongSwitcher library={library} beat={current} left={gutter + edge.left} onPick={setCurrent} onHome={() => follow({ to: '/', id: null }, path)} />
+        ) : (
+          <Pressable accessibilityRole="link" accessibilityLabel="Bounce: home" onPress={() => follow({ to: '/', id: null }, path)} hitSlop={8}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+              <Logo size={20} />
+              <Txt size={20} w="display" ls={-0.02}>
+                Bounce
+              </Txt>
+            </View>
+          </Pressable>
+        )}
         <PersonalMenu onNavigate={(to) => follow({ to }, path)} />
       </View>
     </View>

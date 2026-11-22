@@ -10,29 +10,36 @@ import { C } from './theme';
 /** A take keeps coming round when it reaches its end, on every page that plays one. Pass it to `useSong`. */
 export const useRepeat = () => true;
 
-function Pill({ label, name, on, solid, onPress }: { label: string; name: string; on: boolean; solid?: boolean; onPress: () => void }) {
-  const filled = on && solid;
+/**
+ * Held down, the raw take plays in place of the polished one; let go and the polish is back. It cannot be left on by mistake.
+ * A screen reader's double tap, which has no holding, flips it instead.
+ */
+function HoldRaw({ raw, set }: { raw: boolean; set: (raw: boolean) => void }) {
   return (
     <Pressable
-      accessibilityRole="switch"
-      accessibilityLabel={name}
-      accessibilityState={{ checked: on }}
-      onPress={onPress}
-      hitSlop={6}
-      style={{ minHeight: 36, paddingHorizontal: 12, borderRadius: 18, borderWidth: 1, borderColor: on ? (solid ? C.text : C.accent) : C.borderStrong, backgroundColor: filled ? C.text : 'transparent', justifyContent: 'center' }}
+      accessibilityRole="button"
+      accessibilityLabel="Hold to hear it raw"
+      accessibilityState={{ selected: raw }}
+      accessibilityActions={[{ name: 'activate' }]}
+      onAccessibilityAction={() => set(!raw)}
+      onPressIn={() => set(true)}
+      onPressOut={() => set(false)}
+      // Losing focus mid-hold must not leave the raw take playing.
+      onBlur={() => raw && set(false)}
+      style={{ minHeight: 44, borderRadius: 22, borderWidth: 1, borderColor: raw ? C.text : C.borderStrong, backgroundColor: raw ? C.text : 'transparent', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 }}
     >
-      <Txt size={13} w="semi" color={filled ? C.bg : on ? C.accent : C.text}>
-        {label}
+      <Txt size={14} w="semi" color={raw ? C.bg : C.text}>
+        {raw ? 'Playing it raw' : 'Hold to hear it raw'}
       </Txt>
     </Pressable>
   );
 }
 
 /**
- * Play and the position in the take. Which bars of the beat a take sits over is chosen on the mic
- * screen, before it is recorded. `compare` adds the switch to the raw take, for pages that loaded it.
+ * Play and the position in the take, or in the beat when it is being mixed alone. Which bars of the beat a take sits over is chosen on the mic
+ * screen, before it is recorded. `compare` adds the button that plays the raw take while it is held, for pages that loaded it.
  */
-export function Transport({ take, song, compare }: { project: Project; take: Take; song: Pick<ReturnType<typeof useSong>, 't' | 'mix' | 'toggle' | 'seek' | 'setSide'>; compare?: boolean }) {
+export function Transport({ project, take, song, compare }: { project: Project; /** The take being played, or none when it is the beat alone. */ take: Take | null; song: Pick<ReturnType<typeof useSong>, 't' | 'mix' | 'toggle' | 'seek' | 'setSide'>; compare?: boolean }) {
   const { t, mix } = song;
   const raw = t.side === 'b';
 
@@ -40,9 +47,9 @@ export function Transport({ take, song, compare }: { project: Project; take: Tak
     <View style={{ gap: 8 }}>
       <View style={[s.row, { gap: 8 }]}>
         <RoundPlay playing={t.playing} onPress={song.toggle} disabled={!mix} />
-        <SeekTrack peaks={take.wave} height={44} progress={t.duration > 0 ? t.position / t.duration : 0} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label="Position in take" duration={t.duration} style={{ flex: 1 }} />
-        {compare && <Pill label="Raw" name="Compare with raw" on={raw} solid onPress={() => song.setSide(raw ? 'a' : 'b')} />}
+        <SeekTrack peaks={take ? take.wave : project.beat.wave} height={44} progress={t.duration > 0 ? t.position / t.duration : 0} disabled={!t.loaded || t.duration <= 0} onSeek={(f) => song.seek(f * t.duration)} label={take ? 'Position in take' : 'Position in beat'} duration={t.duration} style={{ flex: 1 }} />
       </View>
+      {compare && <HoldRaw raw={raw} set={(on) => song.setSide(on ? 'b' : 'a')} />}
     </View>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -8,7 +8,7 @@ import { beatsIn } from '@/data/songs';
 import { useLibrary } from '@/data/store';
 
 import { useTask } from './hooks';
-import { Eyebrow, Muted, Screen, Txt, go, s, type Nav } from './kit';
+import { Btn, Eyebrow, Muted, NavLink, Screen, Txt, go, s, type Nav } from './kit';
 import { C } from './theme';
 import { useWide } from './wide';
 
@@ -88,16 +88,29 @@ function useFileDrop(onFile: (file: File) => void) {
   }, []);
 }
 
-/** The three ways to bring a beat in, as a row of tiles. Home leads with it, and so does any screen with no song to show. */
-export function AddBeat() {
+/**
+ * The three ways to bring a beat in, as a row of tiles. Home leads with it while there is no beat, and so does any
+ * screen with no song to show. With `fold`, for a Home that already has beats, it is one "New beat" button that opens the tiles.
+ */
+export function AddBeat({ fold }: { fold?: boolean }) {
+  const [open, setOpen] = useState(false);
   const any = useLibrary((l) => beatsIn(l.projects).length > 0);
   const task = useTask();
-  const add = () => task.run(async () => void ((await importBeat()) && router.push('/song')));
+  const add = () => task.run(async () => void ((await importBeat()) && router.push('/vocals')));
   const wide = useWide();
-  useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, file)) && router.push('/song'))));
+  useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, file)) && router.push('/vocals'))));
+  // An import that is running or has failed keeps the tiles in view, so its progress and its error are seen.
+  if (fold && !open && !task.busy && !task.error) return <Btn kind="outline" label="New beat" onPress={() => setOpen(true)} style={{ flex: 0 }} />;
   return (
     <View style={{ gap: 10 }}>
-      <Eyebrow>Add a beat</Eyebrow>
+      <View style={[s.row, s.between, { minHeight: 20 }]}>
+        <Eyebrow>{fold ? 'New beat' : 'Add a beat'}</Eyebrow>
+        {fold && (
+          <NavLink tone="quiet" size={13} w="semi" style={{ minHeight: 44, marginVertical: -12 }} onPress={() => setOpen(false)}>
+            Close
+          </NavLink>
+        )}
+      </View>
       <View style={[s.row, { gap: 10 }]}>
         <Create icon="capture" label="Capture" name="Capture from your gear" to="/capture" disabled={task.busy} />
         <Create icon="file" label="Import" name="Import a file" busy={task.busy} onPress={add} />

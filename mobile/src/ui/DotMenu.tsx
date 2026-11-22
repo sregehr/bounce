@@ -11,6 +11,8 @@ export type MenuItem = {
   onPress: () => void;
   /** Asks "Sure?" on the first tap and only acts on the second, for things that cannot be undone. */
   confirm?: boolean;
+  /** Shown in red without asking first, for a removal that can be undone. */
+  danger?: boolean;
 };
 
 /**
@@ -58,7 +60,7 @@ export function DotMenu({ label, items }: { label: string; items: MenuItem[] }) 
             <View accessibilityRole="menu" style={{ minWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingVertical: 6, boxShadow: '0 12px 32px rgba(0,0,0,0.55)' }}>
               {items.map((item) => (
                 <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={sure === item.label ? `Sure? ${item.label}` : item.label} onPress={() => choose(item)} style={({ pressed }) => ({ minHeight: 46, paddingHorizontal: 16, justifyContent: 'center', opacity: pressed ? 0.55 : 1 })}>
-                  <Txt size={16} w="medium" color={item.confirm ? C.recText : C.text}>
+                  <Txt size={16} w="medium" color={item.confirm || item.danger ? C.recText : C.text}>
                     {sure === item.label ? `Sure? ${item.label}` : item.label}
                   </Txt>
                 </Pressable>

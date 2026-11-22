@@ -18,10 +18,17 @@ export type VocalStyle = (typeof VOCAL_STYLES)[number];
 export const MASTER_STYLES = ['Auto', 'Punchy', 'Warm', 'Loud', 'Lo-fi'] as const;
 export type MasterStyle = (typeof MASTER_STYLES)[number];
 
-export type Polish = { style: VocalStyle; double: boolean; vocalLevel: number };
+/** How the beat is shaped before it meets the vocal. Auto is nearly transparent. */
+export const BEAT_STYLES = ['Auto', 'Tucked', 'Punchy', 'Warm', 'Bright'] as const;
+export type BeatStyle = (typeof BEAT_STYLES)[number];
+
+/** `beatStyle` left out is Auto; `beatLevel` left out is the automatic balance, as 68 is for the vocal. */
+export type Polish = { style: VocalStyle; double: boolean; vocalLevel: number; beatStyle?: BeatStyle; beatLevel?: number };
+/** Where a level slider sits when the balance is the automatic one. */
+export const LEVEL_REST = 68;
 export type MasterSettings = { style: MasterStyle; amount: number; low: number; mid: number; high: number; comp: number };
 
-export const DEFAULT_POLISH: Polish = { style: 'Upfront', double: true, vocalLevel: 68 };
+export const DEFAULT_POLISH: Polish = { style: 'Upfront', double: false, vocalLevel: 68 };
 export const DEFAULT_MASTER: MasterSettings = { style: 'Auto', amount: 70, low: 0, mid: 0, high: 0, comp: 45 };
 
 /** How much reverb and echo one part of the mix gets, each 0–100. */
@@ -84,16 +91,28 @@ export function vocalExtras(style: VocalStyle): VocalExtras {
   }[style];
 }
 
-/** The beat's chain: nearly transparent, with a little room carved out when there is a vocal on top. */
-export function autoBeatChain(beatRmsDb: number, hasVocal: boolean): Chain {
+/**
+ * The beat's chain: nearly transparent, with a little room carved out when there is a vocal on top.
+ * A beat sound other than Auto leans it one way from there.
+ */
+export function autoBeatChain(beatRmsDb: number, hasVocal: boolean, style: BeatStyle = 'Auto'): Chain {
+  const shape = {
+    Auto: { low: 0, mud: 0, presence: 0, air: 0, ratio: 2, attack: 30, release: 150 },
+    // Further out of the voice's way: less of the range where the words sit.
+    Tucked: { low: 0, mud: -1.5, presence: -2, air: -1, ratio: 2, attack: 30, release: 150 },
+    // A slower attack lets the drums through before the compressor closes, with more weight underneath.
+    Punchy: { low: 2, mud: 0, presence: 1, air: 0.5, ratio: 3, attack: 45, release: 120 },
+    Warm: { low: 1, mud: 1, presence: 0, air: -2.5, ratio: 2, attack: 30, release: 150 },
+    Bright: { low: 0, mud: -0.5, presence: 1, air: 2.5, ratio: 2, attack: 30, release: 150 },
+  }[style];
   return {
     eq: [
-      { type: 'lowshelf', freq: 90, gain: 0, q: 0.7 },
-      { type: 'peaking', freq: 350, gain: hasVocal ? -1 : 0, q: 1.4 },
-      { type: 'peaking', freq: 3200, gain: hasVocal ? -1.5 : 0, q: 0.9 },
-      { type: 'highshelf', freq: 10000, gain: 0, q: 0.7 },
+      { type: 'lowshelf', freq: 90, gain: shape.low, q: 0.7 },
+      { type: 'peaking', freq: 350, gain: (hasVocal ? -1 : 0) + shape.mud, q: 1.4 },
+      { type: 'peaking', freq: 3200, gain: (hasVocal ? -1.5 : 0) + shape.presence, q: 0.9 },
+      { type: 'highshelf', freq: 10000, gain: shape.air, q: 0.7 },
     ],
-    comp: { threshold: clamp(Math.round(beatRmsDb + 8), -30, -2), ratio: 2, attack: 30, release: 150, makeup: 0 },
+    comp: { threshold: clamp(Math.round(beatRmsDb + 8), -30, -2), ratio: shape.ratio, attack: shape.attack, release: shape.release, makeup: 0 },
     deess: { freq: 6500, amount: 0 },
     limiter: { ceiling: -1, release: 80 },
   };

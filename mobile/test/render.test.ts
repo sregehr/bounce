@@ -1,7 +1,7 @@
 import { detectTempo } from '../src/dsp/analysis';
 import { integratedLufs, peakOf, toDb } from '../src/dsp/core';
 import { DEMO, makeDemoBeat } from '../src/dsp/demoBeat';
-import { DEFAULT_MASTER, DEFAULT_POLISH, MASTER_STYLES, VOCAL_STYLES, summarise } from '../src/dsp/presets';
+import { BEAT_STYLES, DEFAULT_MASTER, DEFAULT_POLISH, MASTER_STYLES, VOCAL_STYLES, summarise } from '../src/dsp/presets';
 import { renderMix, renderRaw, songLength, type RenderInput } from '../src/dsp/render';
 
 let failed = 0;
@@ -85,6 +85,22 @@ const run = async () => {
     const whole = await renderMix({ ...base, layers: [{ mono: adlib, level: 68, pan: 40 }] });
     check('mix with a layer stays clean', finite(whole.channels) && whole.truePeakDb <= -0.95, `${whole.lufs.toFixed(1)} LUFS, true peak ${whole.truePeakDb.toFixed(2)} dB`);
   }
+  // The beat's sound and level: each sound gives its own chain, and the fader moves the beat alone.
+  for (const beatStyle of BEAT_STYLES) {
+    const out = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, beatStyle } });
+    const same = JSON.stringify(out.chains.beat) === JSON.stringify((await renderMix(base)).chains.beat);
+    check(`beat ${beatStyle}`, finite(out.channels) && same === (beatStyle === 'Auto'), summarise(out.chains.beat).eq);
+  }
+  {
+    const beatOnly = (beatLevel: number) => renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 0, beatLevel }, targetLufs: null });
+    const [beatUp, beatRest, beatDown, beatOff] = [await beatOnly(100), await beatOnly(68), await beatOnly(34), await beatOnly(0)];
+    check('beat level slider', beatUp.lufs > beatRest.lufs + 4 && beatDown.lufs < beatRest.lufs - 9, `${beatDown.lufs.toFixed(1)} → ${beatRest.lufs.toFixed(1)} → ${beatUp.lufs.toFixed(1)} LUFS`);
+    check('beat level at 0 is silence', peakOf(beatOff.channels) === 0 && finite(beatOff.channels), `peak ${peakOf(beatOff.channels)}`);
+    const vox = (beatLevel: number) => renderMix({ ...base, polish: { ...DEFAULT_POLISH, beatLevel }, include: 'vocals' });
+    check('beat level leaves the vocal where it was', Math.abs((await vox(100)).did.vocalGainDb - (await vox(34)).did.vocalGainDb) < 0.01, 'same vocal gain at 34 and 100');
+    const normal = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, beatLevel: 0 } });
+    check('a mix with the beat at 0 stays clean', finite(normal.channels) && normal.truePeakDb <= -0.95, `${normal.lufs.toFixed(1)} LUFS`);
+  }
   const muted = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, vocalLevel: 0 }, include: 'vocals' });
   check('vocal level at 0 is silence', peakOf(muted.channels) === 0, `peak ${peakOf(muted.channels)}`);
   // A quiet take needs all the lift the automatic balance allows; the slider must still work on top of it.
@@ -92,7 +108,7 @@ const run = async () => {
   const quietUp = await renderMix({ ...quiet, polish: { ...DEFAULT_POLISH, vocalLevel: 100 }, include: 'vocals' });
   const quietDown = await renderMix({ ...quiet, polish: { ...DEFAULT_POLISH, vocalLevel: 20 }, include: 'vocals' });
   check('vocal level slider on a quiet take', quietUp.did.vocalGainDb > quietDown.did.vocalGainDb + 15, `${quietDown.did.vocalGainDb.toFixed(1)} → ${quietUp.did.vocalGainDb.toFixed(1)} dB`);
-  const dbl = await renderMix({ ...base, include: 'vocals' });
+  const dbl = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, double: true }, include: 'vocals' });
   const single = await renderMix({ ...base, polish: { ...DEFAULT_POLISH, double: false, style: 'Gritty' }, include: 'vocals' });
   const width = (c: Float32Array[]) => { let d = 0, s = 0; for (let i = 0; i < c[0].length; i += 7) { d += (c[0][i] - c[1][i]) ** 2; s += (c[0][i] + c[1][i]) ** 2; } return d / (s || 1); };
   check('double track widens', width(dbl.channels) > width(single.channels) * 2, `side/mid ${width(single.channels).toFixed(4)} → ${width(dbl.channels).toFixed(4)}`);

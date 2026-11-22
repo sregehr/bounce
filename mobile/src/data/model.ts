@@ -144,8 +144,6 @@ export type Settings = {
   /** No longer read: every take has a count-in. Kept so a library saved with it still loads as typed. */
   countIn?: boolean;
   backup: boolean;
-  /** Mix was last left on its Fine-tune level, so it opens there again. */
-  fineTune?: boolean;
   /** Says which backup on the server is this device's. */
   deviceId: string;
   /** Proves to the backup server that a request comes from this device. Never shown or shared. */

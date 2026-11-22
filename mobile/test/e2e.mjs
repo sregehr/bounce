@@ -291,14 +291,6 @@ async function openSetup() {
 async function closeSetup() {
   if (await showing('Back to recording')) await tap('Back to recording');
 }
-/** Opens Mix's Fine-tune level on a phone, if it is not open already. The wide layout shows both levels at once. */
-async function openTune() {
-  if (!WIDE && !(await showing('Back to the sound'))) await tap('Fine-tune', { exact: false });
-}
-/** Steps back from Fine-tune to the sound, if it is open. */
-async function closeTune() {
-  if (await showing('Back to the sound')) await tap('Back to the sound');
-}
 /** Opens a row that unfolds in place (Settings, Share), if it is not open already. */
 async function openRow(title) {
   const closed = await page.evaluate((title) => [...document.querySelectorAll('[role=button]')].some((n) => n.getBoundingClientRect().width > 0 && (n.innerText ?? '').trim().startsWith(title) && n.getAttribute('aria-expanded') !== 'true'), title);
@@ -462,27 +454,29 @@ async function song() {
   await tap('Mix it');
   await expectText('Take 1', 'playback opens on the new take', 10000);
   await expectText(/Polished\s/, 'polish finishes', 30000);
-  log(await transportPlaying(), 'the polished take plays by itself');
+  await sleep(600);
+  log(!(await transportPlaying()), 'the polished take waits for Play, as on the other tabs');
+  await tap('Play');
+  await sleep(400);
+  log(await transportPlaying(), 'and plays when asked');
   // The take is a few seconds long; with Repeat on, the mix is still going well after it would have ended.
   await sleep(9000);
   log(await transportPlaying(), 'the mix repeats while it is being shaped');
   log(!(await showing('Repeat')) && !(await showing('8 bars')), 'the mix has no Repeat or bars of its own: a take always repeats, over the bars it was recorded on');
   await sleep(500);
   await shot('09-playback');
-  // The raw take plays only while its button is held, so it cannot be left on.
-  const rawBox = await page.evaluate(() => { const r = [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Hold to hear it raw').pop()?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; });
-  await page.mouse.move(rawBox.x, rawBox.y);
-  await page.mouse.down();
+  // The raw take is a tap away and a tap back: holding does not work on a phone's browser, where a long press selects text.
+  await tap('Hear it raw');
   await sleep(400);
-  log(/Playing it raw/.test(await text()), 'holding the raw button plays the raw take');
-  await page.mouse.up();
+  log(/Playing it raw/.test(await text()), 'tapping the raw button plays the raw take');
+  await tap('Playing it raw', { exact: false });
   await sleep(300);
-  log(!/Playing it raw/.test(await text()) && /Hold to hear it raw/.test(await text()), 'and letting go brings the polish back');
-  log(!(await showing('Mix B')) && !(await showing('Save this mix')) && (await showing('Undo')) && (await showing('More for this mix')), 'the first level is the sound alone, with undo and a menu beside its status');
+  log(!/Playing it raw/.test(await text()) && /Hear it raw/.test(await text()), 'and tapping it again brings the polish back');
+  log(!(await showing('Mix B')) && !(await showing('Save this mix')) && (await showing('Undo')) && (await showing('More for this mix')), 'the page has undo and a menu beside its status');
   await tap('Melodic');
   await expectText(/Updating…|Polishing…/, 'changing the style re-renders', 4000);
   await expectText(/Polished\s/, 'second polish finishes', 30000);
-  await expectText('Double track');
+  await expectText('Double the vocal');
   await slide('Vocal level', 0.9);
   await expectText(/Polished\s/, 'vocal level change renders', 30000);
   // Undo steps back through changes to the mix, and Redo forward again.
@@ -494,12 +488,26 @@ async function song() {
   await tap('Redo');
   await sleep(300);
   log((await trackAt('Vocal level')) === levelSet, 'and Redo sets it again', `${await trackAt('Vocal level')}`);
-  // A song has one mix. Fine-tune is the chains for it; there is no second mix to flip to and none to save by name.
-  await openTune();
-  await expectText('Starting from what Auto chose', 'Fine-tune holds the chains');
+  // A song has one mix, with its chains on the same page; there is no second mix to flip to and none to save by name.
+  await expectText('Starting from what Auto chose', 'the chains are on the page, under the sound');
+  log(!(await showing('Fine-tune')) && !(await showing('Back to the sound')), 'with no second level to step into');
+  // The beat has a sound and a level of its own, under its tab.
+  await tap('Beat');
+  await expectText('Beat sound', 'the Beat tab opens on the beat sound');
+  log(!/Vocal level|Double the vocal/.test(await text()), 'and the vocal controls stay under Vocal');
+  await tap('Tucked');
+  await expectText('Starting from the Tucked beat sound', 'choosing a beat sound sets the chain it starts from', 5000);
+  await expectText(/Polished\s/, 'the beat sound renders', 30000);
+  const beatAt = await trackAt('Beat level');
+  await slide('Beat level', 0.4);
+  await expectText(/Polished\s/, 'the beat level renders', 30000);
+  log((await trackAt('Beat level')) !== beatAt, 'the beat level moves', `${beatAt} -> ${await trackAt('Beat level')}`);
+  await tap('Undo');
+  await tap('Auto');
+  await expectText('Starting from what Auto chose for this beat', 'and Auto puts the beat back', 5000);
+  await tap('Vocal');
   log(!(await showing('Mix A')) && !(await showing('Mix B')) && !(await showing('Save this mix')) && !/Saved mixes|Compare/i.test(await text()), 'with no second mix and no saved mixes');
   await shot('10-fine-tune');
-  await closeTune();
   await expectText('saved as you change it', 'the page says the mix is kept as it is changed');
   await slide('Vocal level', 0.5);
   await sleep(900);
@@ -671,9 +679,9 @@ async function song() {
   log(at >= 18 && at <= 45, 'tapping the track during playback jumps there', `at ${at}%`);
   await tap('Pause');
 
-  // The chains are under Fine-tune: EQ, compressor, de-esser and limiter for vocal, beat and master.
-  await openTune();
+  // The chains sit under each tab's sound: EQ, compressor, de-esser and limiter for vocal, beat and master.
   await expectText('Starting from what Auto chose for this take', 'the song page shows the automatic chain', 15000);
+  await tap('EQ', { exact: false, optional: WIDE });
   await shot('11-advanced');
   await slide('Gain', 0.9);
   await expectText('Set by hand', 'editing a band marks the chain as set by hand', 5000);
@@ -721,7 +729,7 @@ async function song() {
   await sleep(800);
   // A tab comes back where it was left. (The wide layout fits on one screen, so there is nothing to scroll.)
   if (!WIDE) {
-    const scroller = () => [...document.querySelectorAll('div')].filter((n) => n.scrollHeight > n.clientHeight + 200 && getComputedStyle(n).overflowY !== 'visible' && n.getBoundingClientRect().width > 0 && n.innerText.includes('Fine-tune')).pop();
+    const scroller = () => [...document.querySelectorAll('div')].filter((n) => n.scrollHeight > n.clientHeight + 200 && getComputedStyle(n).overflowY !== 'visible' && n.getBoundingClientRect().width > 0 && n.innerText.includes('Reverb and echo')).pop();
     await page.evaluate(`(${scroller})().scrollTop = 320`);
     await sleep(400);
     const before = await page.evaluate(`(() => { const n = (${scroller})(); return [n.scrollTop, n.scrollHeight, n.clientHeight].join('/'); })()`);
@@ -734,7 +742,8 @@ async function song() {
     log(Math.abs(top - 320) < 40, 'Mix is still scrolled to where it was left', `scrollTop ${top}, before ${before}, after ${await page.evaluate(`(() => { const n = (${scroller})(); return n ? [n.scrollTop, n.scrollHeight, n.clientHeight].join('/') : 'none'; })()`)}`);
   }
   await shot('13-mix-master');
-  await closeTune();
+  // Mix comes back on the tab it was left on; the next steps are the vocal's.
+  await tap('Vocal');
 
   // Larger text. A browser has no Dynamic Type, so the app follows the browser's own font size:
   // turned up to the most the app allows, a slider's label and value move above its track,
@@ -797,7 +806,7 @@ async function finish() {
   await tap('Mix take', { exact: false });
   await expectText(/Polished\s/, 'the mix opens from the song', 30000);
   await shot('13c-mix');
-  await openTune();
+  await tap('Vocal');
   await expectText(/Reverb 60% · Echo off/i, 'the vocal reverb starts where the style puts it');
   await tap('Reverb and echo', { exact: false, optional: WIDE });
   await expectText('Room cut', 'reverb, echo and room cut are on the mix page');
@@ -1174,7 +1183,8 @@ async function library() {
   await expectText('Beat only', 'mastering the beat opens the Mix page', 30000);
   await expectText(/Mastered\s/, 'an instrumental can be mastered on its own', 30000);
   log((await showing('Master')) && (await showing('Beat')) && !(await showing('Vocal')), 'with the Beat and Master chains, and no Vocal one');
-  log(!(await showing('Upfront')) && !/Vocal level|Double track/.test(await text()), 'and none of the vocal controls');
+  log(!(await showing('Upfront')) && !/Vocal level|Double the vocal/.test(await text()), 'and none of the vocal controls');
+  log(/Beat sound/i.test(await text()) && !/Beat level/.test(await text()), 'the beat has its sound, and no level of its own with nothing to balance it against');
   log((await showing('Finish song')) && (await showing('Home', 'tab')) && (await showing('Vault', 'tab')), 'the navigation stays at the bottom, and the song can be finished from here');
   await shot('26b-beat-on-mix');
   await tap('Pause', { optional: true });
@@ -1252,6 +1262,8 @@ async function library() {
   await tap('Mix it');
   await expectText('Take 1', 'the take opens in playback', 10000);
   await expectText(/Polished\s/, 'and is polished', 30000);
+  await tap('Play');
+  await sleep(400);
   log(await transportPlaying(), 'and plays');
   await shot('28-playback-48k');
 

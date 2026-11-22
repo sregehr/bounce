@@ -209,14 +209,9 @@ export default function Song() {
           </View>
         );
 
-  // The beat's card is for a song with nothing recorded yet: playing the beat and mastering it alone. Once there
-  // are takes the song's own player is the one that matters, and the card steps back to a link that opens it.
-  const beat =
-    project.takes.length === 0 || details ? (
-      <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" />
-    ) : (
-      <RowLink first title="Beat details" summary="Tempo, level, and the beat by itself" onPress={() => setDetails(true)} />
-    );
+  // The beat's card is for a song with nothing recorded yet: playing the beat, its tempo and level, and mastering it alone.
+  // Once there are takes it is gone: the song's own player is the one that matters, and the page is about the takes.
+  const beat = project.takes.length === 0 ? <BeatCard project={project} open={details} onToggle={() => setDetails(!details)} note="The beat by itself" /> : null;
 
   const hasLyrics = project.lyrics.trim().length > 0;
   const editing = hasLyrics || writing;

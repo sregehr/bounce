@@ -97,7 +97,7 @@ function Demos() {
     if (task.busy) return;
     setPicked(id);
     stopTransport();
-    void task.run(async () => void ((await work()) && router.replace('/vocals')));
+    void task.run(async () => void ((await work()) && router.replace('/song')));
   };
 
   const title = <TopBar back left="Demo songs" />;

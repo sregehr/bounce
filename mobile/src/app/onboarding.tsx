@@ -98,7 +98,7 @@ function Onboarding() {
     route.set(outcome.ms !== null ? ms : null);
     setTiming({ ms, measured: outcome.ms !== null, heard: outcome.matched, of: outcome.clicks, by: outcome.by });
   };
-  const finish = (work?: () => Promise<Project | null>, to: '/vocals' | '/capture' | '/demos' | '/' = '/vocals') =>
+  const finish = (work?: () => Promise<Project | null>, to: '/song' | '/capture' | '/demos' | '/' = '/song') =>
     start.run(async () => {
       if (work && !(await work())) return;
       setProfile({ onboarded: true });
@@ -142,7 +142,7 @@ function Onboarding() {
             </Txt>
           )}
           <View style={{ gap: 12 }}>
-            <Choice primary title="Try a demo beat" body="No gear needed: pick a ready-made beat and go straight to the mic." disabled={start.busy} onPress={() => finish(undefined, '/demos')} />
+            <Choice primary title="Try a demo beat" body="No gear needed: pick a ready-made beat and start a song." disabled={start.busy} onPress={() => finish(undefined, '/demos')} />
             <Choice title="Capture from your gear" body="Plug in your MPC, sampler or audio interface by USB and press play." disabled={start.busy} onPress={() => finish(undefined, '/capture')} />
             <Choice title="Import a file" body="A WAV, MP3 or M4A of a beat you already have." disabled={start.busy} onPress={() => finish(importBeat)} />
           </View>

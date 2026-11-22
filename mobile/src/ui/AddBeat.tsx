@@ -96,9 +96,9 @@ export function AddBeat({ fold }: { fold?: boolean }) {
   const [open, setOpen] = useState(false);
   const any = useLibrary((l) => beatsIn(l.projects).length > 0);
   const task = useTask();
-  const add = () => task.run(async () => void ((await importBeat()) && router.push('/vocals')));
+  const add = () => task.run(async () => void ((await importBeat()) && router.push('/song')));
   const wide = useWide();
-  useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, file)) && router.push('/vocals'))));
+  useFileDrop((file) => !task.busy && task.run(async () => void ((await importAudio(file.name, file)) && router.push('/song'))));
   // An import that is running or has failed keeps the tiles in view, so its progress and its error are seen.
   if (fold && !open && !task.busy && !task.error) return <Btn kind="outline" label="New beat" onPress={() => setOpen(true)} style={{ flex: 0 }} />;
   return (

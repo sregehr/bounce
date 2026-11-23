@@ -97,12 +97,17 @@ export function carryOver(l: Library): Library {
   return { ...l, vault: 1, projects: [...done.map((p) => makeSong(p, p.name, p.updatedAt)), ...l.projects] };
 }
 
-/** The beat the mic records over: the one being worked on, or the one the loaded song was made from. */
+/**
+ * The beat the mic records over: the one being worked on, or the one the loaded song was made from.
+ * With neither, such as after the open beat is deleted, it is the first beat Home lists. A beat that is
+ * done and only reached from its song in the Vault is not picked by itself, so Song, the mic and Mix
+ * never show a beat that Home does not.
+ */
 export function workBeat(l: Library): Project | null {
   const current = l.projects.find((p) => p.id === l.currentId);
   if (current && !current.saved) return current;
   const from = current?.saved ? l.projects.find((p) => p.id === current.saved!.from && !p.saved) : null;
-  return from ?? beatsIn(l.projects)[0] ?? null;
+  return from ?? activeBeats(l.projects)[0] ?? null;
 }
 
 /** The finished song played last, or the newest one when none has been. */

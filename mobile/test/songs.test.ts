@@ -86,6 +86,10 @@ check('the song played last is remembered', loadedSong(full)?.id === older.id);
 check('…or the newest when none has been', loadedSong({ ...full, songId: null })?.id === song.id);
 check('with a finished song open, Song, Mix and the mic go to the beat it came from', workBeat(full)?.id === 'a' && micLead(full).id === 'a' && songLead(full).id === 'a' && mixLead(full).id === 'a');
 check('if that beat is gone, the mic has nothing to record over', micLead(lib([song], { currentId: song.id })).id === null);
+// After the open beat is deleted nothing is open. The tabs then go to a beat Home lists, never to one that is done and only reached from the Vault.
+const afterDelete = lib([song, a], { currentId: null });
+check('with the open beat deleted and only a finished one left, Song, the mic and Mix show no beat', activeBeats(afterDelete.projects).length === 0 && [micLead, songLead, mixLead].every((f) => f(afterDelete).id === null));
+check('…and with another beat in progress, they go to that one', [micLead, songLead, mixLead].every((f) => f(lib([song, a, beat('c')], { currentId: null })).id === 'c'));
 
 // Carrying over a library from before the Vault held finished songs only.
 const old: Library = { ...emptyLibrary(), projects: [beat('plain', [take(1)]), beat('lyric', [take(1)], { lyrics: 'bars' }), beat('cover', [take(1)], { cover: { scene: 'stage', photoKey: 'p', cutoutKey: null, imageKey: 'c' } }), beat('notake', [], { lyrics: 'bars' })] };

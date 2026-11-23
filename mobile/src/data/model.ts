@@ -159,6 +159,8 @@ export type Library = {
   /** Beats being worked on and finished songs together; a finished song has `saved` set. */
   projects: Project[];
   currentId: string | null;
+  /** The beat opened last to be worked on. Playing a finished song makes that song current, and leaves this as it was. */
+  beatId?: string | null;
   coverPhotoKey: string | null;
   /** The finished song played last. */
   songId?: string | null;

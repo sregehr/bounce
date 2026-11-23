@@ -329,8 +329,8 @@ export async function getRaw(project: Project): Promise<Stereo> {
 export type MixState = { mix: RenderOutput | null; busy: boolean; stage: string; error: string | null };
 
 /** Keeps a project's mix up to date as its settings change, holding on to the last one while the next renders. */
-export function useMix(project: Project | null, options: MixOptions = {}): MixState {
-  const [state, setState] = useState<MixState>({ mix: null, busy: !!project, stage: '', error: null });
+export function useMix(project: Project | null, options: MixOptions = {}, /** A mix already made for these settings, to start from instead of nothing. */ seed: RenderOutput | null = null): MixState {
+  const [state, setState] = useState<MixState>({ mix: seed, busy: !!project && !seed, stage: '', error: null });
   const signature = project ? mixSignature(project, options) : '';
   const latest = useRef(signature);
   latest.current = signature;
@@ -339,7 +339,8 @@ export function useMix(project: Project | null, options: MixOptions = {}): MixSt
       setState({ mix: null, busy: false, stage: '', error: null });
       return;
     }
-    setState((s) => ({ ...s, busy: true, error: null }));
+    // A mix this started from is still the one for these settings, so nothing is shown as being worked on.
+    setState((s) => ({ ...s, busy: !(seed && s.mix === seed), error: null }));
     // A short pause lets a slider settle before the work starts.
     const timer = setTimeout(() => {
       getMix(project, options, (stage) => latest.current === signature && setState((s) => ({ ...s, stage }))).then(

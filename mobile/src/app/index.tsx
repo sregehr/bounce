@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 
 import { tempoLine } from '@/data/labels';
 import type { Project } from '@/data/model';
-import { activeBeats, beatsIn, stageOf } from '@/data/songs';
+import { beatsIn, homeBeats, stageOf } from '@/data/songs';
 import { removeProject, setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { AddBeat } from '@/ui/AddBeat';
 import { EmptyBeats } from '@/ui/EmptyBeats';
@@ -16,9 +16,10 @@ import { C } from '@/ui/theme';
 import { Columns, useWide } from '@/ui/wide';
 
 export default function Home() {
-  // Finished songs live in the Vault; this is the list of beats still being worked on.
-  const all = useLibrary((l) => l.projects);
-  const projects = activeBeats(all);
+  // Finished songs live in the Vault; this is the list of beats still being worked on, and the one that is open even if it is done.
+  const library = useLibrary((l) => l);
+  const all = library.projects;
+  const projects = homeBeats(library);
   const done = beatsIn(all).length - projects.length;
   const saveError = useSaveError();
   const latest = projects[0];

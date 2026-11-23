@@ -2,7 +2,7 @@ import { DEFAULT_MASTER, DEFAULT_POLISH } from '../src/dsp/presets';
 import { emptyLibrary, type Library, type Project, type Take } from '../src/data/model';
 import { routeKey, timingFor, withTiming } from '../src/data/timing';
 import { gearName } from '../src/data/labels';
-import { activeBeats, beatsIn, carryOver, loadedSong, makeSong, mendSongs, micLead, mixLead, songLead, songsIn, stageOf, workBeat } from '../src/data/songs';
+import { activeBeats, beatFromSong, beatsIn, carryOver, homeBeats, loadedSong, makeSong, mendSongs, micLead, mixLead, openBeat, songLead, songsIn, stageOf, workBeat } from '../src/data/songs';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -84,8 +84,20 @@ check('Mix keeps the song that is open, even when another beat has takes and it 
 const full = lib([song, older, a], { currentId: song.id, songId: older.id });
 check('the song played last is remembered', loadedSong(full)?.id === older.id);
 check('…or the newest when none has been', loadedSong({ ...full, songId: null })?.id === song.id);
-check('with a finished song open, Song, Mix and the mic go to the beat it came from', workBeat(full)?.id === 'a' && micLead(full).id === 'a' && songLead(full).id === 'a' && mixLead(full).id === 'a');
-check('if that beat is gone, the mic has nothing to record over', micLead(lib([song], { currentId: song.id })).id === null);
+// Playing a finished song does not open the beat it came from: the tabs stay with the beat opened last, or one Home lists.
+check('with a finished song playing, Song, Mix and the mic do not go to the beat it came from', workBeat(full) === null && [micLead, songLead, mixLead].every((f) => f(full).id === null));
+check('…they stay with the beat that was open before it', [micLead, songLead, mixLead].every((f) => f(lib([song, a, beat('c')], { currentId: song.id, beatId: 'c' })).id === 'c'));
+check('…or go to one still in progress', workBeat(lib([song, a, beat('c')], { currentId: song.id }))?.id === 'c');
+// "Record over this beat" opens a done beat, and Home then lists it with the ones in progress.
+const reopened = lib([song, a, beat('c')], { currentId: 'a', beatId: 'a' });
+check('a done beat that is opened is the one the tabs work on', openBeat(reopened)?.id === 'a' && [micLead, songLead, mixLead].every((f) => f(reopened).id === 'a'));
+check('…and Home lists it, in its place', homeBeats(reopened).map((p) => p.id).join() === 'a,c');
+check('…and still does while one of its songs plays', homeBeats({ ...reopened, currentId: song.id }).map((p) => p.id).join() === 'a,c');
+check('with a song only playing, Home does not list its beat', homeBeats(lib([song, a, beat('c')], { currentId: song.id })).map((p) => p.id).join() === 'c');
+// A finished song whose beat was deleted can still be recorded over: the beat is made again from the song.
+const remade = beatFromSong(song, 200);
+check('a beat made again from a song is a beat in progress, with the song\'s beat and takes', !remade.saved && remade.id !== song.id && remade.beat.key === song.beat.key && remade.takes.length === song.takes.length && remade.name === 'Night bus');
+check('a beat that is gone is not open', openBeat(lib([song], { currentId: song.id, beatId: 'a' })) === null);
 // After the open beat is deleted nothing is open. The tabs then go to a beat Home lists, never to one that is done and only reached from the Vault.
 const afterDelete = lib([song, a], { currentId: null });
 check('with the open beat deleted and only a finished one left, Song, the mic and Mix show no beat', activeBeats(afterDelete.projects).length === 0 && [micLead, songLead, mixLead].every((f) => f(afterDelete).id === null));

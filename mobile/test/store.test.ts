@@ -5,7 +5,8 @@ import { renderToString } from 'react-dom/server';
 
 import { kv } from '../src/data/db';
 import { LAYER_START, emptyLibrary, type Beat, type Library, type Take } from '../src/data/model';
-import { addTake, createProject, deleteTake, flushLibrary, getLibrary, getProject, loadLibrary, setProfile, useLoadError, useReady } from '../src/data/store';
+import { homeBeats, openBeat } from '../src/data/songs';
+import { addTake, createProject, deleteTake, finishSong, flushLibrary, getLibrary, getProject, loadLibrary, openBeatOf, openSong, removeProject, setProfile, useLoadError, useReady } from '../src/data/store';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -78,6 +79,21 @@ const run = async () => {
   await deleteTake(project.id, 't2');
   check('deleting that take removes its layer', getProject(project.id)?.layers?.length === 0 && getProject(project.id)?.takeId === 't1');
 
+  // Recording over a finished song again: its beat is opened, or made again from the song when it has been deleted.
+  {
+    const made = createProject({ ...beat, key: 'beat-again' }, 'Again');
+    addTake(made.id, take(7));
+    const song = finishSong(made.id, 'Again')!;
+    check('finishing a song closes its beat', openBeat(getLibrary()) === null && getLibrary().currentId === song.id);
+    check('recording over it again opens the same beat', openBeatOf(song.id)?.id === made.id && openBeat(getLibrary())?.id === made.id && homeBeats(getLibrary()).some((p) => p.id === made.id));
+    openSong(song.id);
+    check('playing the song leaves that beat open', openBeat(getLibrary())?.id === made.id);
+    removeProject(made.id);
+    check('with the beat deleted, nothing is open', openBeat(getLibrary()) === null && !getProject(made.id));
+    const back = openBeatOf(song.id);
+    check('recording over the song again makes its beat again', !!back && back.id !== made.id && !back.saved && back.beat.key === 'beat-again' && back.takes.length === 1 && getLibrary().currentId === back.id);
+    check('and the song is tied to the new beat', getProject(song.id)?.saved?.from === back?.id && homeBeats(getLibrary()).some((p) => p.id === back?.id));
+  }
   console.log(failed ? `\n${failed} FAILED` : '\nall passed');
   process.exit(failed ? 1 : 0);
 };

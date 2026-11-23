@@ -43,6 +43,15 @@ export function makeSong(project: Project, title: string, now = Date.now()): Pro
   return { ...project, id: newId(), name: title.trim() || project.name, createdAt: now, updatedAt: now, takes: project.takes.filter((t) => heard.has(t.id)), takeId: take?.id ?? null, saved: { at: now, from: project.id } };
 }
 
+/**
+ * A beat to record over again, made from a finished song whose own beat has been deleted: the song's beat, takes
+ * and settings as a beat in progress. The audio and cover files are shared by key, as they are with the song.
+ */
+export function beatFromSong(song: Project, now = Date.now()): Project {
+  const { saved: _saved, ...rest } = song;
+  return { ...rest, id: newId(), createdAt: now, updatedAt: now };
+}
+
 /** The takes a song plays besides its chosen one: its layers, and the takes its best bars come from. */
 const partsOf = (p: Project) => [...(p.layers ?? []).map((l) => l.takeId), ...Object.values(p.comp ?? {})];
 
@@ -98,16 +107,28 @@ export function carryOver(l: Library): Library {
 }
 
 /**
- * The beat the mic records over: the one being worked on, or the one the loaded song was made from.
- * With neither, such as after the open beat is deleted, it is the first beat Home lists. A beat that is
- * done and only reached from its song in the Vault is not picked by itself, so Song, the mic and Mix
- * never show a beat that Home does not.
+ * The beat that is open to be worked on: the one opened last, from Home, the switcher or a song's "Record over this
+ * beat". Playing a finished song in the Vault does not open the beat it came from, and finishing a song closes its beat.
  */
-export function workBeat(l: Library): Project | null {
+export function openBeat(l: Library): Project | null {
   const current = l.projects.find((p) => p.id === l.currentId);
   if (current && !current.saved) return current;
-  const from = current?.saved ? l.projects.find((p) => p.id === current.saved!.from && !p.saved) : null;
-  return from ?? activeBeats(l.projects)[0] ?? null;
+  return l.projects.find((p) => !p.saved && p.id === l.beatId) ?? null;
+}
+
+/**
+ * The beat the mic records over: the one that is open or, with none open, the first that Home lists. A beat that
+ * is done is never picked by itself, so Song, the mic and Mix do not show a beat that Home does not.
+ */
+export function workBeat(l: Library): Project | null {
+  return openBeat(l) ?? activeBeats(l.projects)[0] ?? null;
+}
+
+/** What Home lists: the beats still being worked on, and the open one among them even when it is done. */
+export function homeBeats(l: Library): Project[] {
+  const active = activeBeats(l.projects);
+  const open = openBeat(l);
+  return beatsIn(l.projects).filter((p) => p.id === open?.id || active.includes(p));
 }
 
 /** The finished song played last, or the newest one when none has been. */

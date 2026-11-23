@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 
 import type { Project } from '@/data/model';
 import { artistOf, songsIn } from '@/data/songs';
-import { activeTake, openSong, setCurrent, useLibrary } from '@/data/store';
+import { activeTake, openBeatOf, openSong, useLibrary } from '@/data/store';
 import { useSong } from '@/data/song';
 
 import { PauseIcon, PlayIcon, SkipIcon, Slider, Txt, s } from './kit';
@@ -21,7 +21,8 @@ import { C, clock, lufs } from './theme';
 export function useNowPlaying(project: Project | null, { autoplay, open = openSong }: { autoplay?: boolean; open?: (id: string) => void } = {}) {
   const projects = useLibrary((l) => l.projects);
   const profile = useLibrary((l) => l.profile);
-  const song = useSong(project, { autoplay });
+  // The Vault's panel and the full-screen player are two views of one song playing: moving between them carries it on.
+  const song = useSong(project, { autoplay, carry: true });
   const take = activeTake(project);
 
   // Skipping moves through the finished songs in the Vault.
@@ -35,11 +36,11 @@ export function useNowPlaying(project: Project | null, { autoplay, open = openSo
   /** Back goes to the top of the song first, and to the song before it from there. */
   const previous = () => (song.t.position > 3 ? song.seek(0) : jump(-1));
 
-  // The beat this song was made from, if it is still in the library: recording over it again starts another version.
-  const beat = project ? projects.find((p) => !p.saved && p.id === project.saved?.from) : undefined;
+  // Recording over a finished song's beat again starts another version. It opens the beat the song was made from;
+  // if that beat has since been deleted, it is made again from the song, so the way back is always there.
+  const canRecord = !!project?.saved;
   const again = () => {
-    if (!beat) return;
-    setCurrent(beat.id);
+    if (!project || !openBeatOf(project.id)) return;
     if (router.canDismiss()) router.dismissAll();
     router.push('/vocals');
   };
@@ -48,7 +49,7 @@ export function useNowPlaying(project: Project | null, { autoplay, open = openSo
   const credit = [artist, profile.producer ? `Prod. ${profile.producer}` : null].filter(Boolean).join(' · ');
   const mastering = !project ? '' : song.error ? 'Could not render' : !song.mix ? song.stage || 'Mastering' : [take ? 'Mastered' : 'Beat', project.overrides.master ? 'by hand' : project.master.style, lufs(song.mix.lufs, 0)].join(' · ');
 
-  return { project, song, take, jump, previous, beat, again, againLabel: project?.takes.length ? 'Record another version' : 'Record a vocal over this beat', credit, mastering, hasLyrics: !!project?.lyrics.trim() };
+  return { project, song, take, jump, previous, canRecord, again, againLabel: project?.takes.length ? 'Record another version' : 'Record a vocal over this beat', credit, mastering, hasLyrics: !!project?.lyrics.trim() };
 }
 
 export type NowPlaying = ReturnType<typeof useNowPlaying>;

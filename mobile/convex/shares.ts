@@ -4,10 +4,19 @@ import { LIMITS, owner, owns, requireOwner, storedFile } from "./backup";
 
 const MAX_NOTES = 300;
 
+/** How long a new link's code is. Links made before it was shortened have 36 characters and still open. */
+const TOKEN_LENGTH = 12;
+
+/** A code nobody could guess, short enough to read out: twelve of a to z and 0 to 9, about 62 bits. */
 function newToken() {
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return [...bytes].map((b) => b.toString(36).padStart(2, "0")).join("");
+  let token = "";
+  while (token.length < TOKEN_LENGTH) {
+    const bytes = new Uint8Array(TOKEN_LENGTH * 2);
+    crypto.getRandomValues(bytes);
+    // 252 is the largest multiple of 36 a byte can hold; anything above it would favour the first few characters.
+    for (const b of bytes) if (b < 252 && token.length < TOKEN_LENGTH) token += (b % 36).toString(36);
+  }
+  return token;
 }
 
 /**

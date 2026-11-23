@@ -889,7 +889,7 @@ async function finish() {
   if (await tap('Make a listening link', { optional: true })) {
     await expectText('Update the link', 'a listening link is made for the song', 90000);
     const link = await state(() => [...document.querySelectorAll('input,textarea')].find((n) => n.getAttribute('aria-label') === 'Listening link')?.value ?? '');
-    log(/\/s\/[a-z0-9]{20,}$/.test(link), 'the link ends in a long random token', link.replace(/[a-z0-9]{20,}$/, '<token>'));
+    log(/\/s\/[a-z0-9]{12}$/.test(link), 'the link ends in a short random code', link.replace(/[a-z0-9]{12}$/, '<code>'));
     const listener = await browser.newPage();
     const response = await listener.goto(link, { waitUntil: 'domcontentloaded' });
     const pageText = await listener.evaluate(() => document.body.innerText);
@@ -903,7 +903,7 @@ async function finish() {
     await Promise.all([listener.waitForNavigation({ waitUntil: 'domcontentloaded' }), listener.click('button[type=submit]')]);
     const after = await listener.evaluate(() => ({ text: document.body.innerText, scripts: document.querySelectorAll('li script, li b:not([data-at])').length }));
     log(/0:03/.test(after.text) && /This bar <script>alert\(1\)<\/script> hits/.test(after.text) && after.scripts === 0, 'a note is pinned to its moment and shown as plain text', after.text.split('NOTES')[1]?.trim().slice(0, 80) ?? '');
-    const gone = await listener.goto(link.replace(/[a-z0-9]{20,}$/, 'a'.repeat(36)), { waitUntil: 'domcontentloaded' });
+    const gone = await listener.goto(link.replace(/[a-z0-9]{12}$/, 'a'.repeat(12)), { waitUntil: 'domcontentloaded' });
     log(gone.status() === 404, 'a wrong token finds nothing', `status ${gone.status()}`);
     await listener.close();
     await page.bringToFront();

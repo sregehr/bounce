@@ -44,7 +44,7 @@
     "e2e": "node test/e2e.mjs",
     "e2e:review": "node test/e2e-review.mjs",
     "build:web": "expo export -p web",
-    "build:site": "EXPO_PUBLIC_CONVEX_URL=${BOUNCE_SERVER_URL:-} EXPO_PUBLIC_CONVEX_SITE_URL= expo export -p web --output-dir dist-site",
+    "build:site": "EXPO_PUBLIC_CONVEX_URL=${BOUNCE_SERVER_URL:-} EXPO_PUBLIC_CONVEX_SITE_URL= EXPO_PUBLIC_LINKS_HERE=1 expo export -p web --output-dir dist-site",
     "deploy:server": "convex deploy --env-file ../.deploy-key.local --cmd 'npm run build:site' --cmd-url-env-var-name BOUNCE_SERVER_URL",
     "serve": "node scripts/serve.mjs",
     "serve:phone": "node scripts/serve.mjs --phone",

@@ -22,7 +22,10 @@ export const linksAvailable = !!client && !!site;
 export type Note = { atSec: number; name: string; text: string; at: number };
 
 const owner = () => ({ deviceId: getLibrary().settings.deviceId, secret: getLibrary().settings.deviceSecret });
-const linkFor = (token: string) => `${site}/s/${token}`;
+// The site built for bounce.stefanstudio.com passes /s/<code> through to the server (worker.js), so there a link carries
+// the page's own address. Anywhere else, such as a dev server or the phone app, it is the server's address.
+const here = process.env.EXPO_PUBLIC_LINKS_HERE && typeof window !== 'undefined' && window.location?.origin?.startsWith('http') ? window.location.origin : '';
+const linkFor = (token: string) => `${here || site}/s/${token}`;
 
 /**
  * Renders the song as it would be shared, puts it on the server and returns its link. Making a

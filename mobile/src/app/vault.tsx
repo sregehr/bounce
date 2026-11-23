@@ -10,6 +10,7 @@ import type { Project } from '@/data/model';
 import { songLead, songsIn } from '@/data/songs';
 import { openSong, removeProject, setCurrent, useLibrary } from '@/data/store';
 import { DotMenu } from '@/ui/DotMenu';
+import { EmptyVault } from '@/ui/EmptyVault';
 import { Btn, Eyebrow, Field, Foot, Muted, NavLink, PlayIcon, Screen, TopBar, Txt, s } from '@/ui/kit';
 import { useStopOnLeave, useTransport } from '@/ui/hooks';
 import { DeletedToast } from '@/ui/parts';
@@ -148,12 +149,16 @@ export default function Vault() {
 
   const empty =
         all.length === 0 ? (
-          <View style={{ gap: 14, paddingVertical: 8 }}>
-            <Txt size={22} w="display">
-              Nothing finished yet
-            </Txt>
-            <Muted>The Vault holds your finished songs: the ones you want to play, share and promote. Pick a take on the Song tab, shape it in Mix, then tap Finish song.</Muted>
-            <Btn label={next.to === '/song' ? 'Open your song' : 'Add a beat'} onPress={start} style={{ flex: 0 }} />
+          // One centred column: the picture, what the Vault is for, and the step that gets a song here.
+          <View style={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 24 }}>
+            <View style={{ width: '100%', maxWidth: 400, alignItems: 'center', gap: 14 }}>
+              <EmptyVault width={wide ? 300 : 240} />
+              <Txt size={22} w="display" center style={{ marginTop: 6 }}>
+                Nothing finished yet
+              </Txt>
+              <Muted center>The Vault holds your finished songs: the ones you want to play, share and promote. Pick a take on the Song tab, shape it in Mix, then tap Finish song.</Muted>
+              <Btn label={next.to === '/song' ? 'Open your song' : 'Add a beat'} onPress={start} style={{ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', alignSelf: 'stretch' }} />
+            </View>
           </View>
         ) : (
           shown.length === 0 && (
@@ -163,12 +168,13 @@ export default function Vault() {
           )
         );
 
-  const foot = (
+  // With no songs yet the page is about getting the first one here, so only a backup that needs attention is mentioned.
+  const none = all.length === 0;
+  const backedUp = backup.status === 'full' ? 'The backup is full; newer work is only on this device.' : backup.status === 'done' && backup.skipped ? 'Backed up, except files too big to back up.' : backup.status === 'done' ? 'Everything is backed up.' : backup.status === 'working' ? `Backing up${backup.pending ? ` (${backup.pending} left)` : ''}…` : backup.status === 'unreachable' ? 'Backup server not reachable; your work is safe on this device.' : backup.status === 'off' ? 'Backup is off.' : '';
+  const footLine = none ? (backup.status === 'full' || backup.status === 'unreachable' || (backup.status === 'done' && backup.skipped) ? backedUp : '') : `Deleting a song here leaves its beat and takes where they are. ${backedUp}`;
+  const foot = !!footLine && (
       <Foot gap={12}>
-        <Muted size={13}>
-          {all.length > 0 ? 'Deleting a song here leaves its beat and takes where they are. ' : ''}
-          {backup.status === 'full' ? 'The backup is full; newer work is only on this device.' : backup.status === 'done' && backup.skipped ? 'Backed up, except files too big to back up.' : backup.status === 'done' ? 'Everything is backed up.' : backup.status === 'working' ? `Backing up${backup.pending ? ` (${backup.pending} left)` : ''}…` : backup.status === 'unreachable' ? 'Backup server not reachable; your work is safe on this device.' : backup.status === 'off' ? 'Backup is off.' : ''}
-        </Muted>
+        <Muted size={13}>{footLine}</Muted>
       </Foot>
   );
 
@@ -220,7 +226,7 @@ export default function Vault() {
                 );
               })}
           </View>
-          {empty && <View style={{ maxWidth: 520 }}>{empty}</View>}
+          {empty && (all.length === 0 ? empty : <View style={{ maxWidth: 520 }}>{empty}</View>)}
 
           {foot}
         </ScrollView>
@@ -261,7 +267,7 @@ export default function Vault() {
         </View>
       )}
 
-      <View>
+      <View style={all.length === 0 && { flexGrow: 1 }}>
         {shown.map((p) => (
           <View key={p.id} style={[s.row, s.divided, { gap: 12, minHeight: 84 }]}>
             <Pressable accessibilityRole="button" accessibilityLabel={`Open ${p.name}`} onPress={() => open(p)} style={[s.row, { flex: 1, gap: 14, minHeight: 84 }]}>

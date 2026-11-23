@@ -40,7 +40,7 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx, request) => {
     const token = new URL(request.url).pathname.split("/")[2] ?? "";
-    const song = /^[a-z0-9]{20,60}$/.test(token) ? await ctx.runQuery(internal.shares.page, { token }) : null;
+    const song = /^[a-z0-9]{12,60}$/.test(token) ? await ctx.runQuery(internal.shares.page, { token }) : null;
     if (!song || !song.audioUrl) return html(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bounce</title><style>${STYLE}</style><main><h1>This link is no longer here</h1><p>The song was taken down, or the link is not complete.</p></main>`, 404);
     const bars = song.peaks.map((p) => `<i style="height:${Math.max(4, Math.round(Math.sqrt(p) * 100))}%"></i>`).join("");
     const notes = song.notes.map((n) => `<li><b data-at="${n.atSec}">${clock(n.atSec)}</b>${esc(n.text)} <small>${esc(n.name)}</small></li>`).join("");
@@ -80,7 +80,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const [, , token, action] = new URL(request.url).pathname.split("/");
-    if (action !== "note" || !/^[a-z0-9]{20,60}$/.test(token ?? "")) return html("Not found", 404);
+    if (action !== "note" || !/^[a-z0-9]{12,60}$/.test(token ?? "")) return html("Not found", 404);
     // The page's form posts as plain url-encoded fields; anything larger than a note is not read.
     const body = await request.text().catch(() => "");
     const form = new URLSearchParams(body.slice(0, 4000));

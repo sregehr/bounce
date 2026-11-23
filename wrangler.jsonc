@@ -1,4 +1,4 @@
-// Bounce: the built Expo web app (mobile/dist-site/) served as static assets by a Worker.
+// Bounce: the built Expo web app (mobile/dist-site/) served as static assets by a Worker (worker.js).
 // Unknown paths get index.html so the app's own routes (/vocals, /player, ...) work.
 // Deploy with: npm run deploy (wrangler needs Node 22.12 or newer). That publishes the Convex
 // server first (it needs .deploy-key.local in this folder holding CONVEX_DEPLOY_KEY; keep it out of mobile/,
@@ -7,10 +7,16 @@
 {
   "name": "mpc-mastering",
   "compatibility_date": "2026-11-13",
+  // The Worker passes listening links (/s/<code>) through to the Convex server; every other path is a static file.
+  "main": "./worker.js",
   "assets": {
     "directory": "./mobile/dist-site",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/s/*"]
   },
+  // Where the listening pages are served from: the production Convex deployment's site address.
+  "vars": { "LINKS_ORIGIN": "https://adjoining-bulldog-168.convex.site" },
   // Keep the workers.dev address working alongside the custom domain.
   "workers_dev": true,
   "routes": [{ "pattern": "bounce.stefanstudio.com", "custom_domain": true }]

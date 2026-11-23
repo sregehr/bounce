@@ -5,7 +5,7 @@ import { DEFAULT_MASTER, DEFAULT_POLISH, type Chain, type VocalStyle } from '@/d
 import { adopts, artistNamed, artistsIn, sessionArtist, withArtist } from './artists';
 import { blobs, kv, persist } from './db';
 import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
-import { carryOver, makeSong, mendSongs, oneMix } from './songs';
+import { carryOver, makeSong, mendSongs, oneMix, beatFromSong } from './songs';
 
 let library: Library = emptyLibrary();
 let ready = false;
@@ -63,8 +63,14 @@ export function onLibraryChange(fn: (l: Library) => void) {
   return () => changeHooks.delete(fn);
 }
 
+/** Notes the beat being worked on whenever one is opened, so it is still known while a finished song is the one playing. */
+function withOpenBeat(l: Library): Library {
+  const current = l.projects.find((p) => p.id === l.currentId);
+  return current && !current.saved && l.beatId !== current.id ? { ...l, beatId: current.id } : l;
+}
+
 export function update(change: (l: Library) => Library) {
-  library = change(library);
+  library = withOpenBeat(change(library));
   notify();
   if (loadError) return;
   if (saveTimer) clearTimeout(saveTimer);
@@ -478,12 +484,31 @@ export async function dropBlob(key: string) {
 /** Makes a finished song the one the player shows. */
 export const openSong = (id: string) => update((l) => (l.currentId === id && l.songId === id ? l : { ...l, currentId: id, songId: id }));
 
+/**
+ * Opens the beat a finished song was made from, to record over it again. If that beat has been deleted it is made
+ * again from the song, and every song that came from it is tied to the new one.
+ */
+export function openBeatOf(songId: string): Project | null {
+  const song = getProject(songId);
+  if (!song?.saved) return null;
+  const from = song.saved.from;
+  const there = library.projects.find((p) => !p.saved && p.id === from);
+  if (there) {
+    setCurrent(there.id);
+    return there;
+  }
+  const beat = beatFromSong(song);
+  update((l) => ({ ...l, projects: [beat, ...l.projects.map((p) => (p.saved?.from === from ? { ...p, saved: { ...p.saved, from: beat.id } } : p))], currentId: beat.id }));
+  return beat;
+}
+
 /** Saves the take and settings a beat has now as a finished song in the Vault, ready to play. */
 export function finishSong(projectId: string, title: string): Project | null {
   const project = getProject(projectId);
   if (!project) return null;
   const song = makeSong(project, title);
-  update((l) => ({ ...l, projects: [song, ...l.projects], currentId: song.id, songId: song.id }));
+  // The beat is done once its song is in the Vault, so it is no longer the one open. Recording over it again opens it.
+  update((l) => ({ ...l, projects: [song, ...l.projects], currentId: song.id, songId: song.id, beatId: l.beatId === projectId ? null : l.beatId }));
   return song;
 }
 

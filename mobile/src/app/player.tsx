@@ -74,7 +74,7 @@ function Player() {
 
   if (!project) return <Redirect href="/vault" />;
 
-  const { song, credit, hasLyrics, beat } = now;
+  const { song, credit, hasLyrics } = now;
   const t = song.t;
   const pill = { backgroundColor: C.bg } as const;
 
@@ -89,7 +89,7 @@ function Player() {
   // The same close button as every sheet, in the same corner, on a disc so it reads over any cover.
   const shut = <BackButton disc label="Close the player" />;
 
-  const again = beat && (
+  const again = now.canRecord && (
           <NavLink center size={14} onPress={now.again}>
             {now.againLabel}
           </NavLink>

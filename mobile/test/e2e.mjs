@@ -1050,12 +1050,12 @@ async function finish() {
   await expectText(IN_VAULT, 'closing the player returns to the Vault');
   // On a wide screen the Vault shows around the player's card, so its text is there before the card has gone.
   log(await page.waitForFunction(() => location.pathname !== '/player', { timeout: 5000 }).then(() => true, () => false), 'and the player itself is gone');
-  // The finished song is its own copy: the beat keeps all three takes.
+  // Playing a finished song does not open the beat it came from: that beat is done, so Song and Mix go to one still in progress.
   await tap('Song');
-  await expectText('3 takes', 'Song opens the beat the finished song came from', 10000);
-  await expectText('In the Vault', 'and says it has been finished');
+  await expectText('Small Steps, Big City', 'with a song finished, Song opens a beat still in progress', 10000);
+  log(!/3 takes/.test(await text()), 'and not the beat the finished song came from');
   await tap('Mix');
-  await expectText(/Take 1 · 0:0\d/, 'Mix opens the same beat', 10000);
+  await expectText('Beat only', 'Mix opens the same beat', 10000);
 }
 
 async function library() {
@@ -1069,6 +1069,14 @@ async function library() {
   await openSong('Night bus');
   await tap('Record another version');
   await expectText('On the mic', 'a finished song leads back to its beat', 10000);
+  // Asking to record over it again is what opens a done beat, and Home lists it from then on.
+  await tap('Home');
+  await sleep(400);
+  log(await state(() => [...document.querySelectorAll('[role=button]')].some((n) => n.getBoundingClientRect().width > 0 && n.getAttribute('aria-label') === 'Open Night bus')), 'opened that way, the beat is back on Home before anything is recorded');
+  await tap('Vault');
+  await openSong('Night bus');
+  await tap('Record another version');
+  await expectText('On the mic', 'and the mic is still on it', 10000);
   await sleep(800);
   await tap('Start recording');
   await counted();

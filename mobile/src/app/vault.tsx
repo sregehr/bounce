@@ -89,8 +89,8 @@ function Docked({ project, autoplay, open, toggleRef, onRemove }: { project: Pro
           <Btn kind="outline" label="Snippet" onPress={() => go('/snippet')} style={{ flex: 1, borderRadius: 14 }} />
           <Btn kind="outline" label="Share" onPress={() => go('/export')} style={{ flex: 1, borderRadius: 14 }} />
         </View>
-        <View style={[s.row, { justifyContent: now.beat ? 'space-between' : 'flex-end' }]}>
-          {now.beat && (
+        <View style={[s.row, { justifyContent: now.canRecord ? 'space-between' : 'flex-end' }]}>
+          {now.canRecord && (
             <NavLink size={14} onPress={now.again}>
               {now.againLabel}
             </NavLink>

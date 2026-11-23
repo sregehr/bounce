@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useFocusEffect, useIsFocused, usePreventRemove } from 'expo-router';
 
-import { stopTransport, useEngine } from '@/engine/engine';
+import { engineState, stopTransport, useEngine } from '@/engine/engine';
 
 import { leavesOnPurpose, setGuard } from './guard';
 import { fail, tick, warn } from './haptics';
@@ -20,7 +20,38 @@ export function useTransport(id: string) {
  * another screen is pushed on top of it (the screen underneath stays alive in the stack).
  */
 export function useStopOnLeave() {
-  useFocusEffect(useCallback(() => () => stopTransport(), []));
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        const id = engineState().transport.id;
+        // The screen taking over has already said it carries this on.
+        if (id && carried && carried.id === id && Date.now() - carried.at < 1000) return;
+        if (!id) return stopTransport();
+        // Or it may say so in a moment: the two screens change places in no fixed order.
+        if (leaving) clearTimeout(leaving.timer);
+        leaving = {
+          id,
+          timer: setTimeout(() => {
+            leaving = null;
+            if (engineState().transport.id === id) stopTransport();
+          }, 60),
+        };
+      },
+      [],
+    ),
+  );
+}
+
+// Playback handed from one screen to the next, such as a song going from the Vault's panel to the full-screen player and back.
+let leaving: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
+let carried: { id: string; at: number } | null = null;
+
+/** Said by a screen coming into view that plays what is already playing, so the screen it replaces does not stop it. */
+export function carryOn(id: string) {
+  carried = { id, at: Date.now() };
+  if (leaving?.id !== id) return;
+  clearTimeout(leaving.timer);
+  leaving = null;
 }
 
 /** Runs `enter` when the screen comes into view and whatever it returns when it leaves. */

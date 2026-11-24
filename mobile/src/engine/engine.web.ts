@@ -68,6 +68,27 @@ export function useEngine<T>(pick: (s: EngineState) => T): T {
 }
 export const engineState = () => state;
 
+// ---------- Audio session ----------
+
+type SessionType = 'playback' | 'play-and-record';
+const audioSession = typeof navigator !== 'undefined' ? ((navigator as Navigator & { audioSession?: { type: string } }).audioSession ?? null) : null;
+
+/**
+ * Tells the phone what kind of app this is. Left alone, Safari treats the page's sound as
+ * incidental: the ringer switch silences it, and once a microphone has been open it stays
+ * routed like a call. As 'playback' it is a music app, on the media volume and through the
+ * silent switch. The microphone only works as 'play-and-record', so that is held just while
+ * an input is open.
+ */
+function sessionType(type: SessionType) {
+  try {
+    if (audioSession && audioSession.type !== type) audioSession.type = type;
+  } catch {
+    // Browsers without the setting choose for themselves.
+  }
+}
+sessionType('playback');
+
 // ---------- Context ----------
 
 let ctx: AudioContext | null = null;
@@ -235,6 +256,7 @@ async function doOpen(deviceId: string | null | undefined, prefer: 'gear' | 'mic
     return;
   }
   closeInput(true);
+  sessionType('play-and-record');
   set('input', { status: 'opening', error: null, levelL: 0, levelR: 0 });
   try {
     let s: MediaStream;
@@ -331,6 +353,7 @@ export function closeInput(quiet = false) {
     t.stop();
   });
   stream = null;
+  sessionType('playback');
   if (!quiet) set('input', { status: 'idle', error: null, levelL: 0, levelR: 0, muted: false });
 }
 

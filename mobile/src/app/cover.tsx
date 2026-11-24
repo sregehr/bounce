@@ -46,13 +46,13 @@ function Cover() {
   // The AI scene can be the saved choice with no AI picture left to show, after the photo was
   // changed. Then the photo's own first scene is shown, so the picture is never empty above its scenes.
   const lostAi = scene === 'ai' && !ai && !!made && !project?.cover.imageKey;
-  // Otherwise, picking the AI scene brings its card up, so another can be made straight away. Hide still puts it away.
+  // The dialog only opens from its button: once a scene is made it closes, so the picture can be seen.
   useEffect(() => {
     if (lostAi) {
       setScene('photo');
       setAiOpen(false);
-    } else if (scene === 'ai') setAiOpen(true);
-  }, [scene, lostAi]);
+    }
+  }, [lostAi]);
   const [hasCutout, setHasCutout] = useState(true);
   const [stage, setStage] = useState('');
   const urls = useRef<string[]>([]);

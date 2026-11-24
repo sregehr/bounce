@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 
@@ -8,7 +7,7 @@ import { beatsIn, homeBeats, stageOf } from '@/data/songs';
 import { removeProject, setCurrent, useLibrary, useSaveError } from '@/data/store';
 import { AddBeat } from '@/ui/AddBeat';
 import { EmptyBeats } from '@/ui/EmptyBeats';
-import { Eyebrow, Foot, MicIcon, Muted, NavLink, Screen, Txt, s } from '@/ui/kit';
+import { Eyebrow, Foot, MicIcon, Muted, Screen, Txt, s } from '@/ui/kit';
 import { DotMenu } from '@/ui/DotMenu';
 import { DeletedToast, SwipeRow } from '@/ui/parts';
 import { useLargeText, useRowLines } from '@/ui/type';
@@ -24,7 +23,6 @@ export default function Home() {
   const saveError = useSaveError();
   const latest = projects[0];
   const wide = useWide();
-  const [adding, setAdding] = useState(false);
   const large = useLargeText();
   const lines = useRowLines();
 
@@ -84,22 +82,11 @@ export default function Home() {
         </View>
       );
 
-  // On a phone, adding a beat starts from the heading of the list, where it stays in reach however long the list grows, and its tiles open just under it.
   const beats = projects.length > 0 && (
         <View>
           <View style={[s.row, s.between, { paddingBottom: 2, minHeight: 20 }]}>
             <Eyebrow>Your beats</Eyebrow>
-            {!wide && (
-              <NavLink tone={adding ? 'quiet' : 'accent'} size={14} w="semi" style={{ minHeight: 44, marginVertical: -12 }} onPress={() => setAdding(!adding)}>
-                {adding ? 'Close' : 'New beat'}
-              </NavLink>
-            )}
           </View>
-          {!wide && (
-            <View style={adding && { paddingTop: 12, paddingBottom: 14 }}>
-              <AddBeat fold open={adding} onOpen={setAdding} />
-            </View>
-          )}
           {projects.map((p, i) => (
             // Deleting is one tap, from the menu or a swipe, and can be taken back for a few seconds.
             <SwipeRow key={p.id} once label={`Delete ${p.name}${p.takes.length ? ' and its takes' : ''}`} onDelete={() => removeProject(p.id)}>
@@ -148,7 +135,7 @@ export default function Home() {
         </Foot>
       );
 
-  // Wide: the way in on the left, the beats in progress on the right.
+  // Wide: the way in on the left, the beats in progress on the right, with the way to add one above them.
   if (wide)
     return (
       <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -158,11 +145,13 @@ export default function Home() {
           left={
             <>
               {hero}
-              <AddBeat fold={!none} />
+              {none && <AddBeat />}
             </>
           }
           right={
             <>
+              {/* Once there are beats, adding another leads their list. */}
+              {!none && <AddBeat fold />}
               {beats}
               {none && (
                 <View style={{ flex: 1, justifyContent: 'center' }}>
@@ -182,9 +171,9 @@ export default function Home() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
     <Screen gap={20}>
-      {/* Continuing leads. With no beat yet, the card says where to start and the ways to add one follow it; once there are beats, adding is a link in their heading. */}
+      {/* Continuing leads. With no beat yet, the card says where to start and the ways to add one follow it; once there are beats, adding is one button above their list. */}
       {hero}
-      {none && <AddBeat />}
+      <AddBeat fold={!none} />
       {beats}
       {none && <EmptyBeats width={240} />}
       {finished}

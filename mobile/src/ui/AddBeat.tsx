@@ -90,8 +90,7 @@ function useFileDrop(onFile: (file: File) => void) {
 
 /**
  * The three ways to bring a beat in, as a row of tiles. Home leads with it while there is no beat, and so does any
- * screen with no song to show. With `fold`, for a Home that already has beats, it is one "New beat" button that opens the tiles;
- * on a phone that button is a link in the heading of the list, and this stays mounted under it so a dropped file is still caught.
+ * screen with no song to show. With `fold`, for a Home that already has beats, it is one "New beat" button that opens the tiles.
  */
 export function AddBeat({ fold, open: shown, onOpen }: { fold?: boolean; /** Given, the tiles are opened from somewhere else, and folded it shows nothing. */ open?: boolean; onOpen?: (open: boolean) => void }) {
   const [own, setOwn] = useState(false);

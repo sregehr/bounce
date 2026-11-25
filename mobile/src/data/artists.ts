@@ -25,6 +25,29 @@ export function namesWithoutProfile(l: Pick<Library, 'artists' | 'projects'>): s
 }
 
 /**
+ * The names recorded here most recently, newest first: whoever is on a song or a take, or was last put on the mic.
+ * These are what is offered wherever a name is typed, so nobody has to be saved first.
+ */
+export function recentArtists(l: Pick<Library, 'artists' | 'projects'>, limit = 10): string[] {
+  const seen = new Map<string, { name: string; at: number }>();
+  const note = (name: string | null | undefined, at: number) => {
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    const had = seen.get(trimmed.toLowerCase());
+    if (!had || at > had.at) seen.set(trimmed.toLowerCase(), { name: trimmed, at });
+  };
+  for (const p of l.projects) {
+    note(p.artist, Math.max(p.updatedAt ?? 0, p.createdAt ?? 0, p.saved?.at ?? 0));
+    for (const t of p.takes) note(artistById(l, t.artistId)?.name, t.createdAt);
+  }
+  for (const a of artistsIn(l)) note(a.name, a.createdAt);
+  return [...seen.values()].sort((a, b) => b.at - a.at).slice(0, limit).map((n) => n.name);
+}
+
+/** Whether anything still needs what is kept for this name: a song or a take of theirs, or a vocal sound saved for them. */
+export const artistInUse = (l: Pick<Library, 'projects'>, a: Artist) => !!a.chain || l.projects.some((p) => p.artistId === a.id || p.takes.some((t) => t.artistId === a.id));
+
+/**
  * What changes on a song when an artist is put on it: their name, and their vocal chain and style
  * when they have one. A vocal chain already set by hand on a song that has takes is left alone:
  * someone shaped that sound on purpose.

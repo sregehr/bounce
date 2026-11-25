@@ -1,7 +1,7 @@
 // The parts of the newer features that are plain sums: where a slider's bubble sits, what undo
 // puts back, how an artist's profile reaches a song, and when each lyric line shows on a snippet.
 import { DEFAULT_POLISH } from '../src/dsp/presets';
-import { artistNamed, namesWithoutProfile, withArtist } from '../src/data/artists';
+import { artistNamed, namesWithoutProfile, recentArtists, withArtist } from '../src/data/artists';
 import { blobs, kv } from '../src/data/db';
 import type { Project, Take } from '../src/data/model';
 import { addTake, createProject, deleteProject, deleteTake, getLibrary, getProject, loadLibrary, redoSong, removeArtist, renameArtist, saveArtist, setArtistSound, setCompBar, setLayers, setLyrics, setSession, undoSong, update } from '../src/data/store';
@@ -192,6 +192,15 @@ async function artistTests() {
   const empty = createProject(beat('beat-empty'), 'Empty song');
   setSession(jay.id, empty.id);
   check('picking who is on the mic puts them on a song with no takes', now(empty.id).artist === 'Jay Oh');
+
+  // Names are typed where they are used; the last few are offered, and one nobody recorded under is dropped.
+  check('the people recorded most recently are offered, each once', recentArtists(getLibrary()).slice().sort().join() === 'Jay Oh,Mina Cole' && recentArtists(getLibrary(), 1).length === 1);
+  const typo = saveArtist('Jya')!;
+  setSession(typo.id);
+  check('a name just typed is offered first', recentArtists(getLibrary())[0] === 'Jya');
+  setSession(jay.id);
+  check('a name changed before anything was recorded under it is forgotten', !artistNamed(getLibrary(), 'Jya') && !!artistNamed(getLibrary(), 'Mina Cole') && !recentArtists(getLibrary()).includes('Jya'));
+  setSession(null);
 
   renameArtist(mina.id, 'Mina C');
   check('renaming an artist renames their songs', now(old.id).artist === 'Mina C' && now(fresh.id).artist === 'Mina C');

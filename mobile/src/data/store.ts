@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 import { DEFAULT_MASTER, DEFAULT_POLISH, type Chain, type VocalStyle } from '@/dsp/presets';
 
-import { adopts, artistNamed, artistsIn, sessionArtist, withArtist } from './artists';
+import { adopts, artistInUse, artistNamed, artistsIn, sessionArtist, withArtist } from './artists';
 import { blobs, kv, persist } from './db';
 import { LAYER_START, emptyLibrary, newId, type Artist, type Beat, type Layer, type Library, type MixSettings, type Profile, type Project, type Settings, type Take } from './model';
 import { carryOver, makeSong, mendSongs, oneMix, beatFromSong } from './songs';
@@ -157,6 +157,8 @@ export function setSession(artistId: string | null, projectId?: string | null) {
   const artist = sessionArtist(library);
   const project = getProject(projectId ?? null);
   if (artist && project && !project.saved && (adopts(project) || project.takes.length === 0)) setSongArtist(project.id, artist);
+  // A name that was typed and then changed before anything was recorded under it is not kept.
+  if (artistsIn(library).some((a) => a.id !== artistId && !artistInUse(library, a))) update((l) => ({ ...l, artists: artistsIn(l).filter((a) => a.id === artistId || artistInUse(l, a)) }));
 }
 
 export function useProject(): Project | null {

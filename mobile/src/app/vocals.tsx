@@ -15,9 +15,10 @@ import { engineState, inputAllowed, openInput, play, startTake, stopTake, stopTr
 import type { RecordedTake } from '@/engine/types';
 import { NoSong } from '@/ui/AddBeat';
 import { setArtistViewOpen } from '@/ui/artistViewOpen';
-import { Btn, Card, Chip, Disclosure, Eyebrow, Field, Muted, NavLink, Pulse, RowLink, RoundPlay, Screen, SeekTrack, Segmented, StopButton, TopBar, Txt, s } from '@/ui/kit';
+import { Btn, Card, Chip, Disclosure, Eyebrow, Field, Muted, NavLink, Pulse, RoundPlay, Screen, SeekTrack, Segmented, StopButton, TopBar, Txt, s } from '@/ui/kit';
 import { NATIVE, reduceMotion } from '@/ui/motion';
 import { OnTheMic } from '@/ui/OnTheMic';
+import { MicSetup } from '@/ui/MicSetup';
 import { useTiming } from '@/ui/timing';
 import { WindowTrack } from '@/ui/WindowTrack';
 import { success, thump } from '@/ui/haptics';
@@ -89,7 +90,7 @@ export default function Vocals() {
   // A take that could not be written to storage. It stays here until it is saved, exported or dropped.
   const [unsaved, setUnsaved] = useState<Pending | null>(null);
   // Which page of this screen is showing: recording, or the session's setup one step in.
-  const [page, setPage] = useState<'record' | 'setup'>('record');
+  const [page, setPage] = useState<'record' | 'setup' | 'mic'>('record');
   // On a phone, a song with lyrics has them on a tab of their own, with a small record button under them.
   const [tab, setTab] = useState<(typeof RECORD_TABS)[number]>('Record');
   const finishing = useRef(false);
@@ -199,7 +200,7 @@ export default function Vocals() {
     redoing.current = null;
     await task.run(async () => {
       if (!recorded) throw new Error(lost ? `${lost} Nothing had been recorded yet.` : 'Nothing was recorded. Check the microphone level and try again.');
-      if (recorded.peak < 0.003) throw new Error(lost ? `${lost} What was recorded up to then was silent, so it was not kept.` : 'That take was silent. Check that the right microphone is picked under Microphone and timing, then try again.');
+      if (recorded.peak < 0.003) throw new Error(lost ? `${lost} What was recorded up to then was silent, so it was not kept.` : 'That take was silent. Check that the right microphone is picked under Mic and timing, then try again.');
       const layer = !replaces && layering && canLayer;
       await store({ recorded, note: lost, origin: 'recorded', punchAtSec: !layer && !replaces && punch && canPunch && bar ? punchBar * bar : undefined, layer, replaces }, layer ? () => router.push('/song') : then);
       setLayering(false);
@@ -527,9 +528,10 @@ export default function Vocals() {
   const summary = who ?? 'No one picked';
   const sessionSetup = !booth && !active && !unsaved && <Drill title="On the mic" summary={summary} onPress={() => setPage('setup')} />;
 
-  // Timing starts from an estimate for whatever is connected. Until it has been measured, the check is one tap from here.
+  // Which microphone records and how far takes are moved to land on the beat stay one tap from here, measured or not.
+  // Timing starts from an estimate for whatever is connected, and the row says so until it has been checked.
   // It sits flush under the session row, sharing the line between them.
-  const timingRow = live && !timing.measured && !booth && !active && !unsaved && <View style={{ marginTop: wide ? -17 : -15 }}><Drill title="Timing" summary={`Estimated, ${latencyMs} ms · Check it`} onPress={() => router.push('/onboarding?setup=1')} /></View>;
+  const timingRow = !booth && !active && !unsaved && <View style={{ marginTop: wide ? -17 : -15 }}><Drill title="Mic and timing" summary={timing.measured ? `${latencyMs} ms, measured` : `${latencyMs} ms, estimated · Check it`} onPress={() => setPage('mic')} /></View>;
 
   const saveName = (name: string) => setProfile(name.trim() ? { artist: name.trim(), nameAsked: true } : { nameAsked: true });
   const askName = !ownName.trim() && !nameAsked && project.takes.length > 0 && !booth && !active && !unsaved && (
@@ -570,10 +572,14 @@ export default function Vocals() {
                 </View>
                 <Chip label="Open artist view" style={{ paddingHorizontal: 16, borderColor: C.text }} onPress={() => (setSaved(null), task.setError(null), setPage('record'), setBooth(true))} />
               </View>
-              {/* Which microphone records and how takes are timed is set once for the device, in Settings. */}
-              <RowLink title="Microphone and timing" summary="Set once for this device, in Settings" to="/settings" />
             </>
-          ) : null}
+          ) : (
+            <>
+              {/* The same controls as in Settings, here where a take that sits early or late is noticed. */}
+              <TopBar back={{ onBack: () => setPage('record'), label: 'Back to recording' }} left="Mic and timing" />
+              <MicSetup />
+            </>
+          )}
         </SlideIn>
       </Screen>
     );

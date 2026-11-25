@@ -101,7 +101,7 @@ export default function Playback() {
         { label: stems.busy ? 'Gathering the stems…' : 'Send stems to an engineer', onPress: () => !stems.busy && void sendStems() },
         { label: 'Mix the beat alone', onPress: () => patchProject(project.id, { takeId: null }, false) },
         // Undo on the Song tab brings a deleted take back, so it is not asked about first.
-        { label: `Delete take ${take.number}`, danger: true, onPress: () => deleteTake(project.id, take.id) },
+        { label: `Delete take ${take.number}`, danger: true, onPress: () => (song.stop(), deleteTake(project.id, take.id)) },
       ]
     : [];
   // Where the mix stands, with stepping back and forth through its changes and the menu beside it.

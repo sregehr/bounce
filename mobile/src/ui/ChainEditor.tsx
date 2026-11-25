@@ -5,7 +5,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 
 import type { Project } from '@/data/model';
 import { artistById } from '@/data/artists';
-import { activeTake, patchProject, setArtistSound, setSettings, useLibrary } from '@/data/store';
+import { activeTake, patchProject, saveArtist, setArtistSound, setSettings, useLibrary } from '@/data/store';
 import type { useSong } from '@/data/song';
 import { biquad, responseDb } from '@/dsp/core';
 import { BEAT_STYLES, DEFAULT_ROOM_CUT, LEVEL_REST, MASTER_STYLES, VOCAL_STYLES, styleReverb, summarise, type Band, type Chain, type MasterSettings, type Polish, type Send } from '@/dsp/presets';
@@ -158,6 +158,7 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
   const preset = useLibrary((l) => l.settings.vocalPreset);
   // The artist on this song, when they have a profile: their vocal sound is kept there, the way "my preset" is kept in Settings.
   const artist = useLibrary((l) => artistById(l, project.artistId));
+  const named = project.artist?.trim() ?? '';
   const wide = useWide();
   const take = activeTake(project);
   // With no vocal on it the beat is the whole track, so the master is the one place it is shaped: a Beat tab beside it would be the same audio twice.
@@ -346,6 +347,8 @@ export function ChainEditor({ project, song }: { project: Project; song: Pick<Re
         <Btn kind="outline" label={preset && JSON.stringify(preset) === JSON.stringify(chain) ? 'Saved as my preset' : 'Save as my preset'} style={{ flex: 1 }} onPress={() => setSettings({ vocalPreset: chain })} />
         {preset && <Btn kind="outline" label="Use my preset" style={{ flex: 1 }} onPress={() => commit(preset)} />}
       </View>
+      {/* A name that has only been typed gets its sound kept the first time it is saved. */}
+      {!artist && named && <Btn kind="outline" label={`Save for ${named}`} style={{ flex: 0 }} onPress={() => void ((kept) => kept && setArtistSound(kept.id, chain, project.polish.style))(saveArtist(named))} />}
       {artist && (
         <View style={[s.row, { gap: 10 }]}>
           <Btn kind="outline" label={artist.chain && JSON.stringify(artist.chain) === JSON.stringify(chain) ? `Saved for ${artist.name}` : `Save for ${artist.name}`} style={{ flex: 1 }} onPress={() => setArtistSound(artist.id, chain, project.polish.style)} />

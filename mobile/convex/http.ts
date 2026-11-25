@@ -44,10 +44,12 @@ http.route({
     if (!song || !song.audioUrl) return html(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bounce</title><style>${STYLE}</style><main><h1>This link is no longer here</h1><p>The song was taken down, or the link is not complete.</p></main>`, 404);
     const bars = song.peaks.map((p) => `<i style="height:${Math.max(4, Math.round(Math.sqrt(p) * 100))}%"></i>`).join("");
     const notes = song.notes.map((n) => `<li><b data-at="${n.atSec}">${clock(n.atSec)}</b>${esc(n.text)} <small>${esc(n.name)}</small></li>`).join("");
-    return html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(song.title)} · Bounce</title><meta property="og:title" content="${esc(song.title)}"><meta property="og:description" content="${esc(song.artist)}">${song.coverUrl ? `<meta property="og:image" content="${esc(song.coverUrl)}">` : ""}<style>${STYLE}</style>
+    // Credited as the app credits it: the artist, then who made the beat.
+    const credit = [song.artist, song.producer ? `Prod. ${song.producer}` : ""].filter(Boolean).join(" · ");
+    return html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(song.title)} · Bounce</title><meta property="og:title" content="${esc(song.title)}"><meta property="og:description" content="${esc(credit)}">${song.coverUrl ? `<meta property="og:image" content="${esc(song.coverUrl)}">` : ""}<style>${STYLE}</style>
 ${song.coverUrl ? `<div class="cover" style="background-image:url('${esc(song.coverUrl)}')"></div><div class="shade"></div>` : ""}
 <main${song.coverUrl ? ' class="over"' : ""}>
-<h1>${esc(song.title)}</h1><p>${esc(song.artist)}</p>
+<h1>${esc(song.title)}</h1><p>${esc(credit)}</p>
 <div class="wave" id="wave" role="slider" aria-label="Position in song" aria-valuemin="0" aria-valuemax="${Math.round(song.durationSec)}" aria-valuenow="0" tabindex="0">${bars}</div>
 <div class="row"><span id="now">0:00</span><span>${clock(song.durationSec)}</span></div>
 <audio id="audio" preload="metadata" src="${esc(song.audioUrl)}"></audio>

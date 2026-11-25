@@ -25,7 +25,7 @@ function newToken() {
  * string when the audio is too big or the device already has as many links as it may.
  */
 export const create = mutation({
-  args: { ...owner, localId: v.string(), title: v.string(), artist: v.string(), audio: v.id("_storage"), durationSec: v.number(), peaks: v.array(v.number()), cover: v.optional(v.id("_storage")) },
+  args: { ...owner, localId: v.string(), title: v.string(), artist: v.string(), producer: v.optional(v.string()), audio: v.id("_storage"), durationSec: v.number(), peaks: v.array(v.number()), cover: v.optional(v.id("_storage")) },
   returns: v.string(),
   handler: async (ctx, { secret, cover: sent, ...args }) => {
     await requireOwner(ctx, args.deviceId, secret);
@@ -41,7 +41,7 @@ export const create = mutation({
       if (cover) await ctx.storage.delete(cover);
       return "";
     }
-    const song = { ...args, title: args.title.slice(0, 80), artist: args.artist.slice(0, 80), peaks: args.peaks.slice(0, 160).map((p) => Math.max(0, Math.min(1, p))) };
+    const song = { ...args, title: args.title.slice(0, 80), artist: args.artist.slice(0, 80), producer: args.producer?.trim().slice(0, 80) || undefined, peaks: args.peaks.slice(0, 160).map((p) => Math.max(0, Math.min(1, p))) };
     const existing = await ctx.db
       .query("shares")
       .withIndex("by_device_local", (q) => q.eq("deviceId", args.deviceId).eq("localId", args.localId))
@@ -128,6 +128,7 @@ export const page = internalQuery({
     return {
       title: share.title,
       artist: share.artist,
+      producer: share.producer ?? null,
       durationSec: share.durationSec,
       peaks: share.peaks,
       audioUrl: await ctx.storage.getUrl(share.audio),

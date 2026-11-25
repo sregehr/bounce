@@ -84,6 +84,7 @@ export async function makeLink(project: Project, onStage?: (stage: string) => vo
     localId: project.id,
     title: project.name,
     artist: artistOf(project, getLibrary().profile),
+    producer: getLibrary().profile.producer.trim() || undefined,
     audio: storageId,
     cover,
     durationSec: mix.durationSec,

@@ -97,6 +97,8 @@ export default defineSchema({
     localId: v.string(),
     title: v.string(),
     artist: v.string(),
+    /** Who made the beat, when the song names one. Links made before it was sent have none. */
+    producer: v.optional(v.string()),
     audio: v.id("_storage"),
     durationSec: v.number(),
     /** The waveform drawn on the page, as 0 to 1 peaks. */

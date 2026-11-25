@@ -101,10 +101,13 @@ export default defineSchema({
     durationSec: v.number(),
     /** The waveform drawn on the page, as 0 to 1 peaks. */
     peaks: v.array(v.number()),
+    /** The song's cover, shown behind the page. Links made before covers were sent have none. */
+    cover: v.optional(v.id("_storage")),
   })
     .index("by_token", ["token"])
     .index("by_device_local", ["deviceId", "localId"])
-    .index("by_audio", ["audio"]),
+    .index("by_audio", ["audio"])
+    .index("by_cover", ["cover"]),
 
   shareNotes: defineTable({
     shareId: v.id("shares"),

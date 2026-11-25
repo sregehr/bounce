@@ -78,6 +78,8 @@ export const LIMITS = {
   files: 2000,
   projects: 1000,
   shares: 100,
+  /** The picture behind one listening link. The app sends it scaled down, so this is generous. */
+  cover: 8 * 1024 * 1024,
 };
 
 /** The true size of an uploaded file, as the server stored it; what the app says it sent is not trusted. */

@@ -25,15 +25,20 @@ function newToken() {
  * string when the audio is too big or the device already has as many links as it may.
  */
 export const create = mutation({
-  args: { ...owner, localId: v.string(), title: v.string(), artist: v.string(), audio: v.id("_storage"), durationSec: v.number(), peaks: v.array(v.number()) },
+  args: { ...owner, localId: v.string(), title: v.string(), artist: v.string(), audio: v.id("_storage"), durationSec: v.number(), peaks: v.array(v.number()), cover: v.optional(v.id("_storage")) },
   returns: v.string(),
-  handler: async (ctx, { secret, ...args }) => {
+  handler: async (ctx, { secret, cover: sent, ...args }) => {
     await requireOwner(ctx, args.deviceId, secret);
+    // The picture is only kept when it is one, of a sensible size; the link is made without it otherwise.
+    const picture = sent ? await storedFile(ctx, sent) : null;
+    const cover = sent && picture && picture.size <= LIMITS.cover && /^image\/(jpeg|png|webp)$/.test(picture.contentType ?? "") ? sent : undefined;
+    if (sent && picture && !cover) await ctx.storage.delete(sent);
     // Only audio of a sensible size goes behind a link; anything else is thrown away.
     const stored = await storedFile(ctx, args.audio);
     if (!stored) throw new Error("That upload was not found.");
     if (stored.size > LIMITS.share() || !(stored.contentType ?? "").startsWith("audio/")) {
       await ctx.storage.delete(args.audio);
+      if (cover) await ctx.storage.delete(cover);
       return "";
     }
     const song = { ...args, title: args.title.slice(0, 80), artist: args.artist.slice(0, 80), peaks: args.peaks.slice(0, 160).map((p) => Math.max(0, Math.min(1, p))) };
@@ -43,7 +48,9 @@ export const create = mutation({
       .unique();
     if (existing) {
       if (existing.audio !== song.audio) await ctx.storage.delete(existing.audio);
-      await ctx.db.patch(existing._id, song);
+      // The link shows the song as it is now: a new cover replaces the old one, and a song with none loses it.
+      if (existing.cover && existing.cover !== cover) await ctx.storage.delete(existing.cover);
+      await ctx.db.patch(existing._id, { ...song, cover });
       return existing.token;
     }
     const mine = await ctx.db
@@ -52,10 +59,11 @@ export const create = mutation({
       .take(LIMITS.shares);
     if (mine.length >= LIMITS.shares) {
       await ctx.storage.delete(args.audio);
+      if (cover) await ctx.storage.delete(cover);
       return "";
     }
     const token = newToken();
-    await ctx.db.insert("shares", { ...song, token });
+    await ctx.db.insert("shares", { ...song, cover, token });
     return token;
   },
 });
@@ -77,6 +85,7 @@ export const remove = mutation({
       .take(MAX_NOTES);
     for (const note of notes) await ctx.db.delete(note._id);
     await ctx.storage.delete(share.audio);
+    if (share.cover) await ctx.storage.delete(share.cover);
     await ctx.db.delete(share._id);
     return null;
   },
@@ -122,6 +131,7 @@ export const page = internalQuery({
       durationSec: share.durationSec,
       peaks: share.peaks,
       audioUrl: await ctx.storage.getUrl(share.audio),
+      coverUrl: share.cover ? await ctx.storage.getUrl(share.cover) : null,
       notes: rows.map((n) => ({ atSec: n.atSec, name: n.name, text: n.text })).sort((a, b) => a.atSec - b.atSec),
     };
   },

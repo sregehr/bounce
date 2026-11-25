@@ -15,6 +15,7 @@ const BATCH = 100;
 async function claimed(ctx: QueryCtx, id: Id<"_storage">) {
   if (await ctx.db.query("backupFiles").withIndex("by_storage", (q) => q.eq("storageId", id)).first()) return true;
   if (await ctx.db.query("shares").withIndex("by_audio", (q) => q.eq("audio", id)).first()) return true;
+  if (await ctx.db.query("shares").withIndex("by_cover", (q) => q.eq("cover", id)).first()) return true;
   if (await ctx.db.query("beats").withIndex("by_audio", (q) => q.eq("audio", id)).first()) return true;
   if (await ctx.db.query("takes").withIndex("by_audio", (q) => q.eq("audio", id)).first()) return true;
   return false;

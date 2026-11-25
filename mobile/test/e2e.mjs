@@ -917,7 +917,7 @@ async function finish() {
     await again.close();
     await page.bringToFront();
   }
-  // Credits and splits: naming people adds a split sheet to what goes out.
+  // Credits and splits: the credits go inside the file, and a split sheet to sign goes out when asked for.
   await tap('Credits and splits', { exact: false });
   await tap('Add credits');
   await expectText('Splits add up to 100%', 'credits start from the artist and producer, split evenly');
@@ -927,6 +927,8 @@ async function finish() {
   await expectText('Splits add up to 110%, not 100%', 'a split that does not add up is pointed out');
   await type('Share 2, percent', '40');
   await expectText('Splits add up to 100%', 'and fixed by changing a share');
+  await expectText('credits in the file', 'credits are written into the file, not sent as a second one');
+  await tap('Include a split sheet to sign');
   if (!(await tap('Save to Files', { optional: true }))) await tap('Save 2 files');
   await expectText('2 files saved to your downloads as Night bus.zip', 'the split sheet is saved with the song', 60000);
   await sleep(800);

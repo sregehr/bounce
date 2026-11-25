@@ -1,6 +1,8 @@
 // M4A files: AAC audio from the browser's own encoder (WebCodecs), wrapped in an MP4 container
 // written here. A tenth the size of a WAV, and every phone and messaging app plays it.
 
+import { m4aTags, type Tags } from './tags';
+
 const CODEC = 'mp4a.40.2'; // AAC-LC
 const FRAME = 1024; // samples in every AAC frame
 const RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
@@ -16,8 +18,8 @@ export async function aacSupported(sampleRate = 44100, channels = 2): Promise<bo
   }
 }
 
-/** Encodes audio as AAC and returns a complete M4A file. */
-export async function encodeM4a(channels: Float32Array[], sampleRate: number, bitrate = 256_000): Promise<ArrayBuffer> {
+/** Encodes audio as AAC and returns a complete M4A file, carrying the tags it is given. */
+export async function encodeM4a(channels: Float32Array[], sampleRate: number, bitrate = 256_000, tags?: Tags): Promise<ArrayBuffer> {
   const count = Math.min(2, channels.length);
   const length = channels[0]?.length ?? 0;
   if (!count || !length || !(await aacSupported(sampleRate, count))) throw new Error('This browser cannot make M4A files. Pick WAV instead.');
@@ -52,7 +54,7 @@ export async function encodeM4a(channels: Float32Array[], sampleRate: number, bi
   if (encoder.state !== 'closed') encoder.close();
   if (failed || frames.length === 0) throw new Error('The M4A file could not be made. Pick WAV instead.');
 
-  return mux(frames, config ?? audioConfig(sampleRate, count), sampleRate, count, bitrate);
+  return mux(frames, config ?? audioConfig(sampleRate, count), sampleRate, count, bitrate, tags ? m4aTags(tags) : null);
 }
 
 /** The two bytes that tell a decoder this is AAC-LC at this rate and channel count, for an encoder that does not supply them. */
@@ -130,7 +132,7 @@ const descriptor = (tag: number, ...parts: Part[]) => {
 
 const MATRIX = [...u32(0x10000), ...zeros(12), ...u32(0x10000), ...zeros(12), ...u32(0x40000000)];
 
-function mux(frames: Uint8Array[], config: Uint8Array, sampleRate: number, channels: number, bitrate: number): ArrayBuffer {
+function mux(frames: Uint8Array[], config: Uint8Array, sampleRate: number, channels: number, bitrate: number, tags: Uint8Array | null): ArrayBuffer {
   const duration = frames.length * FRAME;
   const size = frames.reduce((n, f) => n + f.length, 0);
 
@@ -164,6 +166,8 @@ function mux(frames: Uint8Array[], config: Uint8Array, sampleRate: number, chann
           box('minf', box('smhd', u32(0), u32(0)), box('dinf', box('dref', u32(0), u32(1), box('url ', u32(1)))), table(offset)),
         ),
       ),
+      // The song's name, who made it and its cover, where players look for them.
+      tags ?? [],
     );
 
   const type = box('ftyp', text('M4A '), u32(0), text('M4A '), text('mp42'), text('isom'));

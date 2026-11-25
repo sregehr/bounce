@@ -1,16 +1,21 @@
-/** Encodes float channels as a PCM WAV file. */
-export function encodeWav(channels: Float32Array[], sampleRate: number, bits: 16 | 24 = 24): ArrayBuffer {
+import { wavTags, type Tags } from './tags';
+
+/** Encodes float channels as a PCM WAV file. Tags, when given, follow the audio, so the audio starts where every reader expects it. */
+export function encodeWav(channels: Float32Array[], sampleRate: number, bits: 16 | 24 = 24, tags?: Tags): ArrayBuffer {
   const count = channels.length;
   const frames = channels[0]?.length ?? 0;
   const bytes = bits / 8;
   const dataSize = frames * count * bytes;
-  const buffer = new ArrayBuffer(44 + dataSize);
+  const info = tags ? wavTags(tags) : null;
+  // A chunk starts on an even byte, so audio of an odd length is followed by one byte of padding.
+  const tail = info ? (dataSize % 2) + info.length : 0;
+  const buffer = new ArrayBuffer(44 + dataSize + tail);
   const view = new DataView(buffer);
   const text = (at: number, s: string) => {
     for (let i = 0; i < s.length; i++) view.setUint8(at + i, s.charCodeAt(i));
   };
   text(0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
+  view.setUint32(4, 36 + dataSize + tail, true);
   text(8, 'WAVE');
   text(12, 'fmt ');
   view.setUint32(16, 16, true);
@@ -38,6 +43,7 @@ export function encodeWav(channels: Float32Array[], sampleRate: number, bits: 16
       at += bytes;
     }
   }
+  if (info) new Uint8Array(buffer).set(info, 44 + dataSize + (dataSize % 2));
   return buffer;
 }
 

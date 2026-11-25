@@ -1,6 +1,7 @@
 import { detectKey, detectTempo, measureVoice, strongestStretch, tonalBalance } from '../src/dsp/analysis';
 import { finalise, integratedLufs, limit, peakOf, reduceNoise, toDb, trimRange, truePeakDb, wavePeaks, rmsDb } from '../src/dsp/core';
 import { DEMO, makeDemoBeat } from '../src/dsp/demoBeat';
+import { m4aTags } from '../src/dsp/tags';
 import { encodeWav, parseWav } from '../src/dsp/wav';
 import { analyseClaps, analyseClicks, analyseTaps, makeClickTrain, TAPS, tapTrainSeconds } from '../src/dsp/latency';
 
@@ -104,6 +105,22 @@ const back = parseWav(encodeWav([L, R], DEMO.sampleRate, 24));
 let worst = 0;
 if (back) for (let i = 0; i < L.length; i += 97) worst = Math.max(worst, Math.abs(back.channels[0][i] - L[i]), Math.abs(back.channels[1][i] - R[i]));
 check('wav round trip', !!back && back.sampleRate === DEMO.sampleRate && back.channels.length === 2 && back.channels[0].length === L.length && worst < 1e-6, `worst error ${worst.toExponential(1)}`);
+// Tags follow the audio: the audio is where it was, the file's stated length covers the tags, and it still reads back.
+{
+  const odd = [new Float32Array(3).fill(0.25)];
+  const tagged = encodeWav(odd, 44100, 24, { title: 'Night bus', artist: 'Mina Cole', producer: 'Jay Oh', comment: 'Credits: Mina Cole (Performer, 50%)' });
+  const view = new DataView(tagged);
+  const bytes = new Uint8Array(tagged);
+  const said = new TextDecoder().decode(bytes.subarray(44 + 9));
+  check('wav tags sit after the audio, on an even byte', view.getUint32(40, true) === 9 && said.startsWith('\0LISTINFO'.slice(0, 5)) && view.getUint32(4, true) === tagged.byteLength - 8 && tagged.byteLength % 2 === 0, `${tagged.byteLength} bytes`);
+  check('and name the song, the artist and the producer', said.includes('INAM') && said.includes('Night bus') && said.includes('IART') && said.includes('Mina Cole') && said.includes('Produced by Jay Oh.') && said.includes('50%'), '');
+  check('a tagged wav still reads back', parseWav(tagged)?.channels[0].length === 3, '');
+  check('a wav with nothing to say is as it was', encodeWav(odd, 44100, 24, {}).byteLength === 44 + 9, '');
+  const udta = m4aTags({ title: 'Night bus', artist: 'Mina Cole', producer: 'Jay Oh' });
+  const text = udta ? new TextDecoder('latin1').decode(udta) : '';
+  check('m4a tags are one box as long as it says', !!udta && new DataView(udta.buffer).getUint32(0) === udta.length && text.slice(4, 8) === 'udta' && text.includes('\u00a9nam') && text.includes('\u00a9ART') && text.includes('PRODUCER') && text.includes('Jay Oh'), '');
+  check('and there are none when there is nothing to say', m4aTags({}) === null, '');
+}
 check('wav rejects junk', parseWav(new ArrayBuffer(100)) === null, 'null');
 
 // Latency: the click train delayed by 37.5 ms with some hiss should measure 37.5 ms.

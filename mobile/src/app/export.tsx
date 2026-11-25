@@ -3,8 +3,8 @@ import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Redirect } from 'expo-router';
 
-import { creditsOf, exportFiles, LOUDNESS } from '@/data/exporting';
-import { canShareFiles, saveFiles, shareFiles, type OutFile } from '@/data/files';
+import { creditsOf, exportFiles, fileBase, LOUDNESS } from '@/data/exporting';
+import { canShareFiles, oneFile, saveFiles, shareFiles, type OutFile } from '@/data/files';
 import type { Credit, ExportChoice } from '@/data/model';
 import { activeTake, patchProject, useLibrary, useProject } from '@/data/store';
 import { artistOf } from '@/data/songs';
@@ -73,17 +73,21 @@ function Export() {
       song.pause();
       // Rendering needs the room: the copy of the song loaded for playing here is let go, and loads again on Play.
       if (!ready) stopTransport();
-      const files = ready ?? (await exportFiles(project, setStage));
+      // Whatever was asked for goes out as one file: the song alone as it is, anything more as one ZIP.
+      // It is bundled here, once, so a share that has to wait for a second tap sends it at once.
+      const made = ready ? null : await exportFiles(project, setStage);
+      if (made && made.length > 1) setStage('Bundling the files');
+      const files = ready ?? [await oneFile(made!, fileBase(project.name))];
       setStage('');
       if (how === 'save') {
         const saved = await saveFiles(files, project.name);
-        setDone(files.length === 1 ? `Saved ${saved} to your downloads.` : `${plural(files.length, 'file')} saved to your downloads as ${saved}.`);
+        setDone(count === 1 ? `Saved ${saved} to your downloads.` : `${plural(count, 'file')} saved to your downloads as ${saved}.`);
       } else {
         const result = await shareFiles(files, project.name);
         // A long render outlasts the moment a browser allows a share after a tap. The files are kept, and the next tap sends them at once.
         setReady(result === 'blocked' || result === 'cancelled' ? files : null);
-        if (result === 'blocked') return setDone(`${files.length === 1 ? 'Your file is' : 'Your files are'} ready. Tap Share now to send.`);
-        setDone(result === 'shared' ? 'Shared.' : result === 'saved' ? `This browser has no share sheet for audio, so ${files.length === 1 ? 'the file was' : 'a ZIP of the files was'} saved to your downloads instead.` : null);
+        if (result === 'blocked') return setDone(`${count === 1 ? 'Your file is' : 'Your ZIP is'} ready. Tap Share now to send.`);
+        setDone(result === 'shared' ? 'Shared.' : result === 'saved' ? `This browser's share sheet would not take ${count === 1 ? 'the file, so it was' : 'a ZIP, so the ZIP was'} saved to your downloads instead.` : null);
       }
     });
   const asMastered = project.stats ? lufs(project.stats.lufs) : 'as it is';
@@ -98,7 +102,7 @@ function Export() {
   const megabytes = (seconds * project.beat.sampleRate * 2 * (choice.format === 'wav24' ? 3 : 2)) / (choice.format === 'm4a' ? 10 : 1) / 1e6;
   const extras = take ? [choice.instrumental ? 'instrumental' : null, choice.vocals ? 'vocals' : null].filter(Boolean).join(' and ') : '';
   const summary = [
-    plural(count, 'file'),
+    count === 1 ? '1 file' : `${count} files in one ZIP`,
     FORMAT[choice.format],
     choice.loudness === 'streaming' ? 'streaming, −14 LUFS' : choice.loudness === 'loud' ? 'loud, −9 LUFS' : 'as mastered',
     extras || null,

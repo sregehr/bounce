@@ -17,16 +17,11 @@ function download(name: string, blob: Blob) {
 }
 
 /**
- * Saves files to the browser's downloads folder. Browsers block a page from downloading
- * several files at once, so more than one is bundled into a single ZIP named `bundle`.
- * Returns the name of what was saved.
+ * What goes out as one file: a single file as it is, and several as one ZIP named `bundle`, so a
+ * song sent with its stems or its split sheet arrives as one thing and not a handful.
  */
-export async function saveFiles(files: OutFile[], bundle = 'Bounce export'): Promise<string> {
-  if (files.length === 1) {
-    const f = files[0];
-    download(f.name, f.data instanceof Blob ? f.data : new Blob([f.data], { type: f.type }));
-    return f.name;
-  }
+export async function oneFile(files: OutFile[], bundle = 'Bounce export'): Promise<OutFile> {
+  if (files.length === 1) return files[0];
   // The archive is put together from the files where they are, with only its small headers made
   // here. Each file is looked at once, alone, for its checksum, so a long song's three WAVs are
   // never all in memory together, let alone twice over.
@@ -37,8 +32,18 @@ export async function saveFiles(files: OutFile[], bundle = 'Bounce export'): Pro
   }
   const { headers, end } = zipFrame(entries);
   const parts: BlobPart[] = files.flatMap((f, i) => [headers[i] as Uint8Array<ArrayBuffer>, f.data]);
-  download(`${bundle}.zip`, new Blob([...parts, end as Uint8Array<ArrayBuffer>], { type: 'application/zip' }));
-  return `${bundle}.zip`;
+  return { name: `${bundle}.zip`, data: new Blob([...parts, end as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), type: 'application/zip' };
+}
+
+/**
+ * Saves files to the browser's downloads folder. Browsers block a page from downloading
+ * several files at once, so more than one is bundled into a single ZIP named `bundle`.
+ * Returns the name of what was saved.
+ */
+export async function saveFiles(files: OutFile[], bundle = 'Bounce export'): Promise<string> {
+  const f = await oneFile(files, bundle);
+  download(f.name, f.data instanceof Blob ? f.data : new Blob([f.data], { type: f.type }));
+  return f.name;
 }
 
 /** True when the browser can hand files to its share sheet. */

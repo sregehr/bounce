@@ -3,6 +3,9 @@ export type OutFile = { name: string; data: ArrayBuffer | Blob; type: string };
 export async function saveFiles(_files: OutFile[], _bundle?: string): Promise<string> {
   return '';
 }
+export async function oneFile(files: OutFile[], _bundle?: string): Promise<OutFile> {
+  return files[0];
+}
 export const canShareFiles = () => false;
 export async function shareFiles(_files: OutFile[], _title: string): Promise<'shared' | 'saved' | 'cancelled' | 'blocked'> {
   return 'cancelled';

@@ -864,7 +864,7 @@ async function finish() {
   log(await state(() => { const r = [...document.querySelectorAll('[role=button]')].filter((n) => n.getBoundingClientRect().width > 0 && /^(Save|Share) 1 file$/.test(n.innerText?.trim() ?? '')).pop()?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= window.innerHeight; }), 'and the button is in view without scrolling');
   await shot('14-export');
   await tap('Send to an engineer');
-  await expectText(/3 files · WAV 24-bit · as mastered · instrumental and vocals/, 'a choice sets loudness, format and extras together');
+  await expectText(/3 files in one ZIP · WAV 24-bit · as mastered · instrumental and vocals/, 'a choice sets loudness, format and extras together');
   // Today's settings are still there, one row down.
   await tap('Custom loudness and format', { exact: false });
   await tap('Loud, for socials and demos');

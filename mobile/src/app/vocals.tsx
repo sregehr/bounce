@@ -1,3 +1,4 @@
+import { whyNotSaved } from '@/data/saveError';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
@@ -165,9 +166,9 @@ export default function Vocals() {
     let made;
     try {
       made = await saveTake(project.id, pending.recorded, { latencyMs, origin: pending.origin, punchAtSec: pending.punchAtSec, layer: pending.layer ? 'adlib' : undefined });
-    } catch {
+    } catch (e) {
       setUnsaved(pending);
-      throw new Error('That take could not be saved. Storage on this device may be full. It is still here.');
+      throw new Error(`That take could not be saved. ${whyNotSaved(e)} It is still here.`);
     }
     setUnsaved(null);
     if (!made) throw new Error('That take was too short to keep.');

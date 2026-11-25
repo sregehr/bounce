@@ -52,9 +52,23 @@ export const kv = {
   set: (key: string, value: unknown) => run('kv', 'readwrite', (s) => s.put(value, key)).then(() => {}),
 };
 
+/** A file kept as its bytes, for a browser that will not store it as a file. */
+type Bytes = { bytes: ArrayBuffer; type: string };
+const isBytes = (stored: unknown): stored is Bytes => !!stored && !(stored instanceof Blob) && (stored as Bytes).bytes instanceof ArrayBuffer;
+const full = (e: unknown) => (e as { name?: string } | null)?.name === 'QuotaExceededError';
+
 export const blobs = {
-  get: (key: string) => run<Blob | undefined>('blobs', 'readonly', (s) => s.get(key)),
-  put: (key: string, blob: Blob) => run('blobs', 'readwrite', (s) => s.put(blob, key)).then(() => {}),
+  get: (key: string) => run<Blob | Bytes | undefined>('blobs', 'readonly', (s) => s.get(key)).then((stored) => (isBytes(stored) ? new Blob([stored.bytes], { type: stored.type }) : stored)),
+  // Some browsers refuse a file in this kind of storage while it has room: other browsers on an iPhone, and private windows.
+  // There the same file is kept as its bytes, and read back as a file. Out of room is still out of room.
+  put: (key: string, blob: Blob) =>
+    run('blobs', 'readwrite', (s) => s.put(blob, key))
+      .catch(async (e) => {
+        if (full(e)) throw e;
+        const kept: Bytes = { bytes: await blob.arrayBuffer(), type: blob.type };
+        await run('blobs', 'readwrite', (s) => s.put(kept, key));
+      })
+      .then(() => {}),
   delete: (key: string) => run('blobs', 'readwrite', (s) => s.delete(key)).then(() => {}),
   keys: () => run<IDBValidKey[]>('blobs', 'readonly', (s) => s.getAllKeys()).then((k) => k.map(String)),
 };

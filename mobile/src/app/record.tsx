@@ -1,3 +1,4 @@
+import { whyNotSaved } from '@/data/saveError';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Redirect, router } from 'expo-router';
@@ -64,7 +65,7 @@ export default function Record() {
       }
       // Keep the only copy rather than arming for a new one over it.
       setFailed(captured);
-      setNotice('That capture could not be saved. Storage on this device may be full. It is still here.');
+      setNotice(`That capture could not be saved. ${whyNotSaved(e)} It is still here.`);
     }
   };
 

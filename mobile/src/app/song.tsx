@@ -78,6 +78,12 @@ export default function Song() {
     patchProject(project.id, { takeId: k.id }, false);
   };
 
+  /** A deleted take stops if it is the one playing, so it is not heard after it is gone, and the take picked in its place waits to be played. */
+  const remove = (k: Take) => {
+    if (k.id === take?.id) song.stop();
+    deleteTake(project.id, k.id);
+  };
+
   const header = (
         <SongHeader project={project}>
           <StatusLine
@@ -101,7 +107,7 @@ export default function Song() {
             {[...project.takes].reverse().map((k) => {
               const on = k.id === take.id;
               return (
-                <SwipeRow key={k.id} once label={`Delete take ${k.number}`} onDelete={() => deleteTake(project.id, k.id)}>
+                <SwipeRow key={k.id} once label={`Delete take ${k.number}`} onDelete={() => remove(k)}>
                 <View style={[s.row, { gap: 4 }, s.divided]}>
                 <Pressable accessibilityRole="radio" accessibilityLabel={`Take ${k.number}`} accessibilityState={{ checked: on }} onPress={() => pick(k)} style={[s.row, s.between, { flex: 1, minHeight: 48, gap: 12 }]}>
                   {/* The picked take carries a check mark as well as the colour. */}
@@ -119,7 +125,7 @@ export default function Song() {
                   label={`More for take ${k.number}`}
                   items={[
                     ...(on ? [] : [{ label: 'Pick this take', onPress: () => pick(k) }]),
-                    { label: `Delete take ${k.number}`, danger: true, onPress: () => deleteTake(project.id, k.id) },
+                    { label: `Delete take ${k.number}`, danger: true, onPress: () => remove(k) },
                   ]}
                 />
                 </View>

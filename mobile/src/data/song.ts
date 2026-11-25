@@ -98,5 +98,5 @@ export function useSong(project: Project | null, options: { autoplay?: boolean; 
     }).catch((e) => setError(e instanceof Error ? e.message : 'Could not play.'));
   }
 
-  return { ...state, error: state.error ?? error, t, took, id, toggle: () => (t.loaded ? toggle() : load(true)), playWhenReady: () => void (wanted.current = true), pause, seek, setSide };
+  return { ...state, error: state.error ?? error, t, took, id, toggle: () => (t.loaded ? toggle() : load(true)), playWhenReady: () => void (wanted.current = true), /** Stops, and forgets any request to play what is still being made: for when what is playing is being deleted. */ stop: () => ((wanted.current = false), pause()), pause, seek, setSide };
 }

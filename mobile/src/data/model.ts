@@ -54,7 +54,7 @@ export type Cover = {
   imageKey: string | null;
 };
 
-export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format: 'wav24' | 'wav16' | 'm4a'; instrumental: boolean; vocals: boolean };
+export type ExportChoice = { loudness: 'streaming' | 'loud' | 'mastered'; format: 'wav24' | 'wav16' | 'm4a'; instrumental: boolean; vocals: boolean; /** A split sheet to sign goes out with the song. The credits themselves are always written into the files. */ sheet?: boolean };
 /** `startSec` is where the snippet begins when the user moved it; without one the strongest stretch is used. */
 export type SnippetChoice = {
   lengthSec: 15 | 20 | 30;

@@ -66,7 +66,9 @@ function Export() {
 
   const set = (patch: Partial<ExportChoice>) => (setDone(null), setReady(null), patchProject(project.id, { exporting: { ...choice, ...patch } }, false));
   const credits = project.credits ?? [];
-  const count = (take ? 1 : 0) + (!take || choice.instrumental ? 1 : 0) + (take && choice.vocals ? 1 : 0) + (creditsOf(project).length ? 1 : 0);
+  // The credits go inside the files. The sheet to sign is a file of its own, and only goes when asked for.
+  const sheet = !!choice.sheet && creditsOf(project).length > 0;
+  const count = (take ? 1 : 0) + (!take || choice.instrumental ? 1 : 0) + (take && choice.vocals ? 1 : 0) + (sheet ? 1 : 0);
   const run = (how: 'share' | 'save') =>
     task.run(async () => {
       setDone(null);
@@ -107,7 +109,7 @@ function Export() {
     choice.loudness === 'streaming' ? 'streaming, −14 LUFS' : choice.loudness === 'loud' ? 'loud, −9 LUFS' : 'as mastered',
     extras || null,
     count === 1 ? `about ${megabytes < 1 ? megabytes.toFixed(1) : Math.round(megabytes)} MB` : null,
-    creditsOf(project).length ? 'split sheet' : null,
+    sheet ? 'split sheet' : creditsOf(project).length ? 'credits in the file' : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -248,7 +250,7 @@ function Export() {
       </View>
   );
 
-  // Who did what and who gets what. With anyone named, a split sheet goes out with the files.
+  // Who did what and who gets what. It is written into the files, and a split sheet to sign can go out with them.
   const setCredits = (next: Credit[]) => (setDone(null), setReady(null), patchProject(project.id, { credits: next }, false));
   const editCredit = (i: number, patch: Partial<Credit>) => setCredits(credits.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const startCredits = () => {
@@ -261,7 +263,7 @@ function Export() {
       <View style={{ gap: 8 }}>
         {credits.length === 0 ? (
           <View style={{ gap: 8 }}>
-            <Muted size={13}>Say who wrote, produced and performed, and how it is split. A split sheet then goes out with the song.</Muted>
+            <Muted size={13}>Say who wrote, produced and performed, and how it is split. The credits are written into the song's file.</Muted>
             <Chip label="Add credits" onPress={startCredits} style={{ alignSelf: 'flex-start', paddingHorizontal: 16 }} />
           </View>
         ) : (
@@ -290,6 +292,8 @@ function Export() {
                 {total === 100 ? 'Splits add up to 100%' : `Splits add up to ${total}%, not 100%`}
               </Txt>
             </View>
+            <Option boxFirst label="Include a split sheet to sign" checked={!!choice.sheet} onChange={(on) => set({ sheet: on })} />
+            <Muted size={13}>{choice.sheet ? 'A page for everyone to sign goes out with the song, in one ZIP.' : 'These credits are written into the song\'s file.'}</Muted>
           </>
         )}
       </View>

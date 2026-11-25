@@ -31,7 +31,7 @@ export async function encodeM4a(channels: Float32Array[], sampleRate: number, bi
       chunk.copyTo(bytes);
       frames.push(bytes);
       const described = meta?.decoderConfig?.description;
-      if (described && !config) config = ArrayBuffer.isView(described) ? new Uint8Array(described.buffer, described.byteOffset, described.byteLength).slice() : new Uint8Array(described).slice();
+      if (described && !config) config = specificConfig(ArrayBuffer.isView(described) ? new Uint8Array(described.buffer, described.byteOffset, described.byteLength).slice() : new Uint8Array(described).slice());
     },
     error: (e) => void (failed = e),
   });
@@ -59,6 +59,43 @@ export async function encodeM4a(channels: Float32Array[], sampleRate: number, bi
 function audioConfig(sampleRate: number, channels: number) {
   const rate = RATES.indexOf(sampleRate);
   return new Uint8Array([(2 << 3) | (rate >> 1), ((rate & 1) << 7) | (channels << 3)]);
+}
+
+/**
+ * The decoder's settings as an encoder describes them. Chrome gives the two bytes themselves; Safari
+ * gives the whole descriptor an MP4 keeps them in, and they are taken out of it here, since the
+ * container below writes that descriptor itself. Wrapped twice, the file plays nowhere.
+ */
+function specificConfig(described: Uint8Array): Uint8Array {
+  // One descriptor: a tag, a length of one to four bytes, then what it holds.
+  const read = (at: number) => {
+    let size = 0;
+    let next = at + 1;
+    for (let i = 0; i < 4 && next < described.length; i++) {
+      const byte = described[next++];
+      size = (size << 7) | (byte & 0x7f);
+      if (!(byte & 0x80)) break;
+    }
+    return { tag: described[at], body: next, end: Math.min(described.length, next + size) };
+  };
+  if (described[0] !== 0x03) return described;
+  const es = read(0);
+  // Past the stream's id and flags, and whatever the flags say follows them.
+  const flags = described[es.body + 2] ?? 0;
+  let at = es.body + 3 + (flags & 0x80 ? 2 : 0) + (flags & 0x40 ? 1 + (described[es.body + 3 + (flags & 0x80 ? 2 : 0)] ?? 0) : 0) + (flags & 0x20 ? 2 : 0);
+  while (at < es.end) {
+    const part = read(at);
+    if (part.tag === 0x04) {
+      // The decoder's settings follow thirteen bytes of type, buffer size and bitrates.
+      for (let inner = part.body + 13; inner < part.end; ) {
+        const found = read(inner);
+        if (found.tag === 0x05) return described.slice(found.body, found.end);
+        inner = found.end;
+      }
+    }
+    at = part.end;
+  }
+  return described;
 }
 
 // ---------- MP4 container ----------
